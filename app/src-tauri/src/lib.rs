@@ -8,6 +8,7 @@ mod db;
 mod error;
 
 use std::sync::{Mutex, MutexGuard};
+use std::time::Duration;
 
 use rusqlite::Connection;
 use tauri::Manager;
@@ -33,6 +34,23 @@ impl AppState {
     }
 }
 
+/// The main window starts hidden (tauri.conf.json) and the frontend shows it once the right theme
+/// is applied. Safety net: if the frontend has not done it after a few seconds (a JavaScript
+/// error, for instance), show the window anyway so the app never stays invisible.
+fn show_window_if_frontend_fails(app: &tauri::App) {
+    if let Some(window) = app.get_webview_window("main") {
+        // `move` gives the thread its own `window` handle: the closure takes ownership of it,
+        // so it stays valid after this function returns.
+        std::thread::spawn(move || {
+            std::thread::sleep(Duration::from_secs(3));
+            if !window.is_visible().unwrap_or(true) {
+                // `let _ =` ignores the result: there is nothing more to do if this fails.
+                let _ = window.show();
+            }
+        });
+    }
+}
+
 // Entry point shared by desktop (`main.rs`) and mobile (Android) builds.
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -45,6 +63,7 @@ pub fn run() {
             app.manage(AppState {
                 db: Mutex::new(conn),
             });
+            show_window_if_frontend_fails(app);
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![

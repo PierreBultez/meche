@@ -79,9 +79,18 @@ pub fn rich_search_text(markdown: &str) -> String {
     out
 }
 
+/// A line without the quote markers (">") and the indentation (list items) that hold it.
+fn without_containers(line: &str) -> &str {
+    let mut rest = line.trim_start();
+    while let Some(inner) = rest.strip_prefix('>') {
+        rest = inner.trim_start();
+    }
+    rest
+}
+
 /// "```php" or "~~~": the character and the length of the fence that opens a code block.
 fn opening_fence(line: &str) -> Option<(char, usize)> {
-    let trimmed = line.trim_start();
+    let trimmed = without_containers(line);
     let character = trimmed.chars().next().filter(|c| *c == '`' || *c == '~')?;
     let length = trimmed.chars().take_while(|c| *c == character).count();
     (length >= 3).then_some((character, length))
@@ -89,7 +98,7 @@ fn opening_fence(line: &str) -> Option<(char, usize)> {
 
 /// A line made only of the same fence character, at least as long as the opening one.
 fn closes_fence(line: &str, character: char, length: usize) -> bool {
-    let trimmed = line.trim();
+    let trimmed = without_containers(line).trim_end();
     trimmed.chars().count() >= length && trimmed.chars().all(|c| c == character)
 }
 
@@ -356,7 +365,19 @@ mod tests {
     fn entities_in_code_are_still_found() {
         let conn = open_in_memory().unwrap();
         let id = note(&conn, "", "```html\n<td>&nbsp;</td>\n```");
-        assert_eq!(found(&conn, "nbsp"), [id]);
+        let quoted = note(&conn, "", "> ```html\n> <td>&nbsp;</td>\n> ```");
+        assert_eq!(found(&conn, "nbsp"), [id, quoted]);
+    }
+
+    #[test]
+    fn excerpts_skip_the_backslash_of_a_second_line_break() {
+        let conn = open_in_memory().unwrap();
+        note(&conn, "", "Courses :  \n\\\nlait");
+        let result = &search(&conn, "lait").unwrap()[0];
+        assert_eq!(
+            result.excerpt,
+            format!("Courses : {MATCH_START}lait{MATCH_END}")
+        );
     }
 
     #[test]

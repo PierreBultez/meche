@@ -61,14 +61,36 @@ function withLeadingParagraph(item: JSONContent): void {
   }
 }
 
+/** A list item whose text is empty but which has sub-items. */
+function isEmptiedParent(item: JSONContent | undefined): boolean {
+  return (
+    item?.type === "listItem" &&
+    (item.content?.length ?? 0) > 1 &&
+    item.content?.[0]?.type === "paragraph" &&
+    !item.content[0].content?.length
+  );
+}
+
 const SafeListItem = ListItem.extend({
-  // An emptied bullet with sub-items is written "-" alone on its line: the parser reads "- "
-  // followed by a line break as a paragraph, and the sub-items would move up a level.
   renderMarkdown(node, helpers, context) {
-    const markdown = this.parent?.(node, helpers, context) ?? "";
-    return context?.parentType === "bulletList" && markdown.startsWith("- \n")
-      ? `-${markdown.slice(2)}`
-      : markdown;
+    let markdown = this.parent?.(node, helpers, context) ?? "";
+    // An emptied bullet with sub-items is written "-" alone on its line: the parser reads "- "
+    // followed by a line break as a paragraph, and the sub-items would move up a level.
+    if (context?.parentType === "bulletList" && markdown.startsWith("- \n")) {
+      markdown = `-${markdown.slice(2)}`;
+    }
+    // Right under this item's text, that "-" would underline it as a heading: a blank line
+    // separates them.
+    const [text, subList] = node.content ?? [];
+    if (
+      text?.type === "paragraph" &&
+      text.content?.length &&
+      subList?.type === "bulletList" &&
+      isEmptiedParent(subList.content?.[0])
+    ) {
+      markdown = markdown.replace(/\n([ \t]*-)(?=\n)/, "\n\n$1");
+    }
+    return markdown;
   },
   parseMarkdown(token, helpers) {
     const parsed = this.parent?.(token, helpers);
@@ -92,6 +114,13 @@ const stockOrderedTokenizer = OrderedList.config.markdownTokenizer;
  *   paragraph: the stock parser made it invalid, and it was dropped on the next save.
  */
 const SafeOrderedList = OrderedList.extend({
+  // No lettered or roman lists (TipTap makes some from a pasted « a) … b) … »): GFM can only
+  // write digits, so such a list could not be read back. It is numbered 1., 2., … instead.
+  addAttributes() {
+    const attributes: Record<string, unknown> = { ...this.parent?.() };
+    delete attributes.type;
+    return attributes as ReturnType<NonNullable<typeof this.parent>>;
+  },
   markdownTokenizer: stockOrderedTokenizer && {
     ...stockOrderedTokenizer,
     tokenize: (src, tokens, lexer) =>

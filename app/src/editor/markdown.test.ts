@@ -156,6 +156,56 @@ describe("what the editor writes reads back the same (phase 1 review)", () => {
       ],
     ],
     ["two line breaks in a row", [paragraph(text("a"), hardBreak, hardBreak, text("b"))]],
+    ["a line of spaces between two breaks", [paragraph(text("a"), hardBreak, text(" "), hardBreak, text("b"))]],
+    ["a paragraph of two spaces", [paragraph(text("  "))]],
+    ["two spaces after a break", [paragraph(text("a"), hardBreak, text("  "))]],
+    [
+      "an emptied first sub-item under a bullet",
+      [
+        {
+          type: "bulletList",
+          content: [
+            item(
+              paragraph(text("Courses")),
+              { type: "bulletList", content: [item(paragraph(), { type: "bulletList", content: [item(paragraph(text("pommes")))] })] },
+            ),
+          ],
+        },
+      ],
+    ],
+    [
+      "an emptied first sub-item under a numbered item",
+      [
+        {
+          type: "orderedList",
+          content: [
+            item(
+              paragraph(text("a")),
+              { type: "bulletList", content: [item(paragraph(), { type: "bulletList", content: [item(paragraph(text("s")))] })] },
+            ),
+          ],
+        },
+      ],
+    ],
+    [
+      "an emptied first sub-item in a quote",
+      [
+        {
+          type: "blockquote",
+          content: [
+            {
+              type: "bulletList",
+              content: [
+                item(
+                  paragraph(text("a")),
+                  { type: "bulletList", content: [item(paragraph(), { type: "bulletList", content: [item(paragraph(text("s")))] })] },
+                ),
+              ],
+            },
+          ],
+        },
+      ],
+    ],
     ["three line breaks in a row", [paragraph(text("a"), hardBreak, hardBreak, hardBreak, text("b"))]],
     [
       "two line breaks in a quote",
@@ -199,6 +249,15 @@ describe("what the editor writes reads back the same (phase 1 review)", () => {
       ],
     }).getMarkdown();
     expect(saved).toContain("a<br><br>b");
+    expect(roundTrip(saved)).toBe(saved);
+  });
+
+  it("numbers a lettered list (from a paste) with digits, which GFM can store", () => {
+    const saved = editorFor({
+      type: "doc",
+      content: [{ type: "orderedList", attrs: { type: "a" }, content: [item(paragraph(text("premier"))), item(paragraph(text("second")))] }],
+    }).getMarkdown();
+    expect(saved).toBe("1. premier\n2. second");
     expect(roundTrip(saved)).toBe(saved);
   });
 

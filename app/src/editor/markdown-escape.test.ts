@@ -41,8 +41,10 @@ describe("escapeBlockStarts", () => {
     expect(escapeBlockStarts(input)).toBe(input);
   });
 
-  it("writes a second line break in a row as a backslash", () => {
+  it("writes a second line break in a row as a backslash, except at the end", () => {
     expect(escapeBlockStarts("a  \n  \nb")).toBe("a  \n\\\nb");
+    expect(escapeBlockStarts("a  \n  \n")).toBe("a  \n&#32; \n");
+    expect(escapeBlockStarts("   \nb")).toBe("&#32;  \nb");
   });
 
   it("leaves the spaces of table cells alone (a cell is trimmed)", () => {

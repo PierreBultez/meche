@@ -354,8 +354,8 @@ pub(crate) fn markdown_line_to_text(line: &str, entities: Entities) -> Option<St
             break;
         }
     }
-    // Code fences such as "```php".
-    if rest.starts_with("```") || rest.starts_with("~~~") {
+    // Code fences such as "```php", and a "\" alone: the editor's second line break in a row.
+    if rest.starts_with("```") || rest.starts_with("~~~") || rest == "\\" {
         return None;
     }
 
@@ -977,6 +977,13 @@ mod tests {
         );
         assert_eq!(title, "indenté");
         assert_eq!(preview, "&lt; reste &lt;");
+    }
+
+    #[test]
+    fn list_texts_skip_the_backslash_of_a_second_line_break() {
+        let (title, preview) = list_texts("", "Courses :  \n\\\nlait", NoteKind::Rich);
+        assert_eq!(title, "Courses :");
+        assert_eq!(preview, "lait");
     }
 
     #[test]

@@ -23,20 +23,24 @@ const BLOCK_STARTS: Array<[RegExp, string]> = [
 
 /** Rules for the lines of a paragraph outside table cells (a cell is one trimmed line). */
 const LINE_STARTS: Array<[RegExp, string]> = [
-  // Leading spaces or tabs before some text: read back, they would be dropped, or make an
-  // indented code block from 4 on. The first one is written as an entity, so the line no longer
-  // starts with one.
-  [/^ (?=[ \t]*\S)/, "&#32;"],
-  [/^\t(?=[ \t]*\S)/, "&#9;"],
-  // A line that is only the "  " of a second line break in a row would be read as a blank line,
-  // ending the paragraph: it is written as the other form of line break, a backslash.
-  [/^ {2}$/, "\\"],
+  // Leading spaces or tabs: read back, they would be dropped, make an indented code block from
+  // 4 on, or (a line of spaces only) end the paragraph. The first one is written as an entity,
+  // so the line no longer starts with one.
+  [/^ /, "&#32;"],
+  [/^\t/, "&#9;"],
 ];
 
 export function escapeBlockStarts(markdown: string, inTableCell = false): string {
   const rules = inTableCell ? BLOCK_STARTS : [...BLOCK_STARTS, ...LINE_STARTS];
-  return markdown
-    .split("\n")
-    .map((line) => rules.reduce((text, [pattern, replacement]) => text.replace(pattern, replacement), line))
+  const lines = markdown.split("\n");
+  return lines
+    .map((line, index) => {
+      // A line that is only "  " is the mark of a second line break in a row. Followed by more
+      // text, it is written as the other form of line break, a backslash (spaces alone would be
+      // read as a blank line). At the end of the paragraph a backslash would show as text: the
+      // spaces are kept, the first one as an entity.
+      if (!inTableCell && line === "  ") return lines[index + 1] ? "\\" : "&#32; ";
+      return rules.reduce((text, [pattern, replacement]) => text.replace(pattern, replacement), line);
+    })
     .join("\n");
 }

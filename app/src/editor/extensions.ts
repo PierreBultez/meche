@@ -18,7 +18,8 @@ export interface RichExtensionOptions {
   codeBlock?: AnyExtension;
 }
 
-export const baseCodeBlock = CodeBlockLowlight.configure({ lowlight, defaultLanguage: null });
+// Without a language, a block stays plain text (lowlight would otherwise guess one).
+export const baseCodeBlock = CodeBlockLowlight.configure({ lowlight, defaultLanguage: "plaintext" });
 
 /** Table without the blank lines the default renderer adds around it (one even at the very
  * start of a note that begins with a table). */

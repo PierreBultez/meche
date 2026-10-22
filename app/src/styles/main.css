@@ -62,3 +62,25 @@
     outline-offset: 2px;
   }
 }
+
+@layer components {
+  /* A note card in the list (docs/11): its colors come from data-note-color. */
+  .note-card {
+    box-shadow: inset var(--note-stripe) 0 0 0 var(--note);
+  }
+
+  /* An entry of a menu (note menu, command palette). */
+  .menu-item {
+    display: flex;
+    width: 100%;
+    align-items: center;
+    gap: 0.6rem;
+    border-radius: 8px;
+    padding: 0.4rem 0.5rem;
+    text-align: left;
+  }
+  .menu-item:hover,
+  .menu-item:focus-visible {
+    background: var(--surface);
+  }
+}

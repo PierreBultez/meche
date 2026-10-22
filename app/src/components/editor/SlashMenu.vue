@@ -44,6 +44,8 @@ defineExpose({ onKeyDown });
 </script>
 
 <template>
+  <!-- The root is always an element: the editor positions it, even before results arrive. -->
+  <div>
   <div
     v-if="items.length > 0"
     role="listbox"
@@ -64,5 +66,6 @@ defineExpose({ onKeyDown });
       <component :is="item.icon" :size="16" aria-hidden="true" />
       {{ item.label }}
     </button>
+  </div>
   </div>
 </template>

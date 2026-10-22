@@ -28,7 +28,8 @@ function renderMenu() {
   return {
     onStart(props: MenuProps) {
       renderer = new VueRenderer(SlashMenu, { props, editor: props.editor });
-      const element = renderer.element as HTMLElement;
+      const element = renderer.element as HTMLElement | null;
+      if (!element) return;
       element.style.position = "fixed";
       element.style.zIndex = "50";
       document.body.append(element);

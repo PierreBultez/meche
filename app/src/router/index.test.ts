@@ -2,11 +2,19 @@ import { describe, expect, it } from "vitest";
 import { router } from ".";
 
 describe("router", () => {
-  it("resolves the home route", () => {
-    expect(router.resolve("/").name).toBe("home");
+  it("opens the note list by default", async () => {
+    await router.push("/");
+    expect(router.currentRoute.value.name).toBe("notes");
   });
 
-  it("uses hash URLs", () => {
-    expect(router.resolve("/").href).toBe("#/");
+  it("opens a note by id with hash URLs", () => {
+    const route = router.resolve("/notes/0192f1c2");
+    expect(route.name).toBe("notes");
+    expect(route.params.noteId).toBe("0192f1c2");
+    expect(route.href).toBe("#/notes/0192f1c2");
+  });
+
+  it("has a settings page", () => {
+    expect(router.resolve("/settings").name).toBe("settings");
   });
 });

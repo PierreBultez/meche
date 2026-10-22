@@ -1,7 +1,7 @@
 <script setup lang="ts">
 // A code block of a rich note: language selector and « Copier » button in its corner (docs/05).
 import { NodeViewContent, NodeViewWrapper, nodeViewProps } from "@tiptap/vue-3";
-import { Check, Copy } from "lucide-vue-next";
+import { Check, ChevronDown, Copy } from "lucide-vue-next";
 import { computed, ref } from "vue";
 import { CODE_LANGUAGES, normalizeLanguage } from "../../editor/languages";
 
@@ -31,16 +31,19 @@ async function copy(): Promise<void> {
 <template>
   <NodeViewWrapper class="code-block">
     <div class="code-block-toolbar" contenteditable="false">
-      <select
-        v-model="language"
-        class="code-block-language"
-        aria-label="Langage du bloc de code"
-        :disabled="!editor.isEditable"
-      >
-        <option v-for="option in options" :key="option.id" :value="option.id">
-          {{ option.label }}
-        </option>
-      </select>
+      <label class="code-block-language-wrapper">
+        <select
+          v-model="language"
+          class="code-block-language"
+          aria-label="Langage du bloc de code"
+          :disabled="!editor.isEditable"
+        >
+          <option v-for="option in options" :key="option.id" :value="option.id">
+            {{ option.label }}
+          </option>
+        </select>
+        <ChevronDown :size="12" class="code-block-chevron" aria-hidden="true" />
+      </label>
       <button
         type="button"
         class="code-block-copy"

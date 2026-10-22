@@ -27,6 +27,8 @@
   --fuse: #a8815b;
   --spark: #da6800;
   --selection: #7b2ff733;
+  /* Left stripe of note cards in the note's color: none in Fugace, 3 px in Feu d'artifice. */
+  --note-stripe: 0px;
 
   /* Note colors: accent / card background / text on card (title, icons, selected ring) /
      secondary text on card (preview, date). A selected card keeps its background in Fugace;
@@ -109,6 +111,7 @@
   --fuse: #8c7a5b;
   --spark: #ffc93c;
   --selection: #ae81ff4d;
+  --note-stripe: 3px;
 
   /* Note colors: Monokai neon / card = surface-2 tinted with 12 % neon (20 % when selected) /
      secondary text on card / title on card. Violet, rose, corail and orange use a lighter neon

@@ -8,6 +8,7 @@ import { Bold, Code, Italic, Link, Strikethrough, Unlink } from "lucide-vue-next
 import { nextTick, ref, watch } from "vue";
 import { SlashCommandExtension } from "../../editor/SlashCommand";
 import { baseCodeBlock, createRichExtensions } from "../../editor/extensions";
+import { serializeMarkdown } from "../../editor/serialize";
 import { useToastsStore } from "../../stores/toasts";
 import CodeBlockView from "./CodeBlockView.vue";
 
@@ -99,7 +100,7 @@ function cancelLink(): void {
 }
 
 defineExpose({
-  getMarkdown: (): string => editor.value?.getMarkdown() ?? props.content,
+  getMarkdown: (): string => (editor.value ? serializeMarkdown(editor.value) : props.content),
   focus: (position: "start" | "end" = "start") => editor.value?.commands.focus(position),
 });
 </script>

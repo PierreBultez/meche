@@ -78,6 +78,7 @@ pub fn run() {
             commands::notes::restore_note,
             commands::notes::delete_note_forever,
             commands::notes::empty_trash,
+            commands::notes::search,
         ])
         .run(tauri::generate_context!())
         .expect("error while running Mèche");

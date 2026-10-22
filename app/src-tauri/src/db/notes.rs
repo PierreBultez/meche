@@ -307,8 +307,9 @@ fn truncate_chars(text: &str, max: usize) -> String {
 }
 
 /// Plain text of one Markdown line, or `None` for lines that carry no text (code fences,
-/// separators, table borders, empty paragraphs).
-fn markdown_line_to_text(line: &str) -> Option<String> {
+/// separators, table borders, empty paragraphs). `pub(crate)`: visible to the rest of this
+/// crate (the search module), but not part of any public API.
+pub(crate) fn markdown_line_to_text(line: &str) -> Option<String> {
     let trimmed = line.trim();
     let only_symbols = !trimmed.is_empty()
         && trimmed

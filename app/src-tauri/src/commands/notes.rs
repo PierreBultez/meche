@@ -5,6 +5,7 @@ use tauri::State;
 
 use crate::AppState;
 use crate::db::notes::{self, ListFilter, Note, NoteKind, NotePatch, NoteSummary};
+use crate::db::search::{self, SearchResult};
 use crate::error::Result;
 use crate::time::now_ms;
 
@@ -54,6 +55,13 @@ pub async fn restore_note(state: State<'_, AppState>, id: String) -> Result<()> 
 pub async fn delete_note_forever(state: State<'_, AppState>, id: String) -> Result<()> {
     let conn = state.lock_db()?;
     notes::delete_forever(&conn, &id, now_ms())
+}
+
+/// Full-text search, run at each keystroke (docs/08: under 30 ms for 1,000 notes).
+#[tauri::command]
+pub async fn search(state: State<'_, AppState>, query: String) -> Result<Vec<SearchResult>> {
+    let conn = state.lock_db()?;
+    search::search(&conn, &query)
 }
 
 /// Returns how many notes were deleted.

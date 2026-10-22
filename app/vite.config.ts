@@ -36,5 +36,7 @@ export default defineConfig(() => ({
   test: {
     environment: "happy-dom",
     include: ["src/**/*.test.ts"],
+    // Vitest blanks CSS files by default; the contrast test needs the real tokens.css.
+    css: { include: [/tokens\.css/] },
   },
 }));

@@ -8,6 +8,7 @@ import { Placeholder } from "@tiptap/extensions";
 import { Markdown } from "@tiptap/markdown";
 import Paragraph from "@tiptap/extension-paragraph";
 import StarterKit from "@tiptap/starter-kit";
+import { codeFence } from "../utils/code-fence";
 import { lowlight } from "./lowlight";
 import { escapeBlockStarts } from "./markdown-escape";
 
@@ -19,7 +20,17 @@ export interface RichExtensionOptions {
 }
 
 // Without a language, a block stays plain text (lowlight would otherwise guess one).
-export const baseCodeBlock = CodeBlockLowlight.configure({ lowlight, defaultLanguage: "plaintext" });
+// The stock Markdown renderer always writes a ``` fence, so a code block containing a ``` line
+// (Markdown pasted in a block, a code note converted to rich) would be cut when read back:
+// the fence is made longer than any run of backticks in the code.
+export const baseCodeBlock = CodeBlockLowlight.extend({
+  renderMarkdown(node, helpers) {
+    const language = (node.attrs?.language as string | null | undefined) ?? "";
+    const code = node.content ? helpers.renderChildren(node.content) : "";
+    const fence = codeFence(code);
+    return `${fence}${language}\n${code}\n${fence}`;
+  },
+}).configure({ lowlight, defaultLanguage: "plaintext" });
 
 /** Table without the blank lines the default renderer adds around it (one even at the very
  * start of a note that begins with a table). */

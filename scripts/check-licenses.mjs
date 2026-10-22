@@ -33,6 +33,7 @@ const TRANSITIVE_EXTRA = new Set([
   "CC0-1.0",
   "MIT-0",
   "BSL-1.0",
+  "BlueOak-1.0.0",
 ]);
 
 /**

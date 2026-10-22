@@ -17,7 +17,12 @@ const props = defineProps<{
   content: string;
   editable: boolean;
 }>();
-const emit = defineEmits<{ changed: []; escape: [] }>();
+const emit = defineEmits<{
+  changed: [];
+  escape: [];
+  /** The editor is ready; its own Markdown for the content it was given. */
+  ready: [markdown: string];
+}>();
 const toasts = useToastsStore();
 
 const codeBlockWithToolbar = baseCodeBlock.extend({
@@ -64,6 +69,7 @@ const editor = useEditor({
     attributes: { class: "rich-editor", "aria-label": "Contenu de la note", spellcheck: "true" },
     handleClick: (_view, _position, event) => openLinkOnModifierClick(event),
   },
+  onCreate: ({ editor: created }) => emit("ready", serializeMarkdown(created)),
   onUpdate: () => emit("changed"),
 });
 

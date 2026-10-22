@@ -51,12 +51,16 @@ const titleSave = useAutosave({
   onError: saveFailed,
 });
 
+/** The text in the editor, which may be newer than the saved one. */
+function currentContent(): string {
+  return props.note.kind === "rich"
+    ? (rich.value?.getMarkdown() ?? props.note.content)
+    : (code.value?.getText() ?? props.note.content);
+}
+
 const contentSave = useAutosave({
   initial: props.note.content,
-  read: () =>
-    props.note.kind === "rich"
-      ? (rich.value?.getMarkdown() ?? props.note.content)
-      : (code.value?.getText() ?? props.note.content),
+  read: currentContent,
   write: (value) => notes.save(id, { content: value }),
   onError: saveFailed,
 });
@@ -97,8 +101,7 @@ onMounted(() => {
 const convert = () => actions.convert(props.note);
 
 async function copyMarkdown(): Promise<void> {
-  await flush();
-  const markdown = noteAsMarkdown(props.note.kind, props.note.content, props.note.codeLanguage);
+  const markdown = noteAsMarkdown(props.note.kind, currentContent(), props.note.codeLanguage);
   try {
     await navigator.clipboard.writeText(markdown);
     toasts.show("Markdown copié.");
@@ -230,6 +233,7 @@ defineExpose({
         :editable="!inTrash"
         @changed="contentSave.touch()"
         @escape="ui.escapeFromNote()"
+        @ready="contentSave.rebase"
       />
       <CodeEditor
         v-else

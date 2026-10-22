@@ -14,9 +14,26 @@ export function useNoteActions() {
   const toasts = useToastsStore();
   const router = useRouter();
 
-  async function create(kind: NoteKind): Promise<Note | null> {
+  /**
+   * Saves what is being typed before leaving the open note. When it cannot be saved, says so and
+   * returns false: the action stops and the note stays open, so nothing typed is lost.
+   */
+  async function saveOpenNote(): Promise<boolean> {
     try {
       await flushAllAutosaves();
+      return true;
+    } catch (error) {
+      toasts.error(
+        "La note ouverte n'a pas pu être enregistrée. Elle reste ouverte pour que rien ne soit perdu.",
+        error,
+      );
+      return false;
+    }
+  }
+
+  async function create(kind: NoteKind): Promise<Note | null> {
+    if (!(await saveOpenNote())) return null;
+    try {
       const note = await notes.create(kind);
       await notes.search("");
       await router.push(noteRoute(note.id));
@@ -38,8 +55,8 @@ export function useNoteActions() {
 
   /** Moves a note to the trash, with « Annuler » in the message (docs/08). */
   async function trash(id: string): Promise<void> {
+    if (!(await saveOpenNote())) return;
     try {
-      await flushAllAutosaves();
       await notes.trash(id);
       await router.push("/notes");
       toasts.show("Note mise à la corbeille.", {
@@ -69,8 +86,8 @@ export function useNoteActions() {
 
   /** Rich ↔ code (docs/05). Saves the editor first: Rust converts the stored content. */
   async function convert(note: Note): Promise<void> {
+    if (!(await saveOpenNote())) return;
     try {
-      await flushAllAutosaves();
       await notes.save(note.id, { kind: note.kind === "rich" ? "code" : "rich" });
     } catch (error) {
       toasts.error("Impossible de convertir la note.", error);
@@ -81,5 +98,5 @@ export function useNoteActions() {
     await router.push(noteRoute(id));
   }
 
-  return { create, restore, trash, togglePin, setColor, convert, open };
+  return { saveOpenNote, create, restore, trash, togglePin, setColor, convert, open };
 }

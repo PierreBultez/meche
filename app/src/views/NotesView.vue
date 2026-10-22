@@ -1,9 +1,10 @@
 <script setup lang="ts">
 // Main screen on desktop (docs/08): resizable note list on the left, open note on the right.
 import { computed, onMounted, ref, watch } from "vue";
-import { useRoute, useRouter } from "vue-router";
+import { onBeforeRouteLeave, onBeforeRouteUpdate, useRoute, useRouter } from "vue-router";
 import NoteEditor from "../components/notes/NoteEditor.vue";
 import NoteList from "../components/notes/NoteList.vue";
+import { useNoteActions } from "../composables/useNoteActions";
 import { useNotesStore } from "../stores/notes";
 import { useSettingsStore } from "../stores/settings";
 import { useToastsStore } from "../stores/toasts";
@@ -18,6 +19,7 @@ const notes = useNotesStore();
 const settings = useSettingsStore();
 const toasts = useToastsStore();
 const ui = useUiStore();
+const actions = useNoteActions();
 
 const editor = ref<InstanceType<typeof NoteEditor> | null>(null);
 const noteId = computed(() => (route.params.noteId as string | undefined) || null);
@@ -28,6 +30,11 @@ onMounted(() => {
   // Warm up the rich editor while the user looks at the list, so the first note opens at once.
   setTimeout(() => void import("../components/editor/RichEditor.vue"), 300);
 });
+
+// Leaving the open note (another note, the settings) waits for its text to be saved, and is
+// cancelled if it cannot be: the editor, and what was typed, stay on screen (docs/05).
+onBeforeRouteUpdate(() => actions.saveOpenNote());
+onBeforeRouteLeave(() => actions.saveOpenNote());
 
 watch(
   noteId,

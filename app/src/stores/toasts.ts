@@ -22,7 +22,9 @@ export const useToastsStore = defineStore("toasts", () => {
 
   function show(message: string, options: Omit<Toast, "id" | "message"> = { tone: "info" }): number {
     const id = nextId++;
-    toasts.value = [...toasts.value.slice(-2), { id, message, ...options }];
+    // The same message again replaces the previous one instead of piling up.
+    const others = toasts.value.filter((toast) => toast.message !== message);
+    toasts.value = [...others.slice(-2), { id, message, ...options }];
     setTimeout(() => dismiss(id), DURATION_MS);
     return id;
   }

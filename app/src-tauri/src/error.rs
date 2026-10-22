@@ -19,6 +19,13 @@ pub enum Error {
 
     #[error("file system error: {0}")]
     Io(#[from] std::io::Error),
+
+    #[error("invalid JSON data: {0}")]
+    Json(#[from] serde_json::Error),
+
+    /// A command panicked while it held the database lock (see `AppState::lock_db`).
+    #[error("the database is unavailable after an internal error")]
+    DatabaseLockPoisoned,
 }
 
 /// Shorthand: `Result<Settings>` means `std::result::Result<Settings, Error>`.
@@ -31,6 +38,8 @@ impl Error {
             Error::Database(_) => "database",
             Error::Migration(_) => "migration",
             Error::Io(_) => "io",
+            Error::Json(_) => "json",
+            Error::DatabaseLockPoisoned => "database_lock",
         }
     }
 }

@@ -1,6 +1,7 @@
 //! Local SQLite database: opening, configuration and migrations (docs/03-modele-donnees.md).
 
 mod migrations;
+pub mod settings;
 
 use std::path::Path;
 

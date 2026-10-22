@@ -38,6 +38,9 @@
   "bundle": {
     "active": true,
     "targets": ["deb", "msi", "nsis"],
+    "category": "Productivity",
+    "shortDescription": "Notes personnelles rapides et colorées",
+    "longDescription": "Mèche : des notes personnelles rapides et colorées. Allumez la mèche d'une note jetable : elle explose toute seule à la fin du compte à rebours.",
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",

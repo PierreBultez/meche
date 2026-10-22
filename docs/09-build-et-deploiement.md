@@ -44,6 +44,8 @@ Puis `composer create-project laravel/laravel server` (Laravel 13) et `php artis
 
 Nom affiché : **Mèche**. Identifiant d'application : `fr.pierrebultez.meche` (**ne plus le changer** une fois l'application Android installée : il identifie l'application et ses données). Nom du binaire / paquet : `meche`.
 
+Un nom de paquet Debian ne peut pas contenir d'accent : `app/src-tauri/tauri.linux.conf.json` fixe donc le nom technique `meche` sous Linux (paquet `meche_x.y.z_amd64.deb`), et `app/src-tauri/linux/meche.desktop` garde « Mèche » comme nom affiché dans le menu des applications.
+
 ## 3. Serveur (API Laravel)
 
 - Sous-domaine dédié **`meche.pierrebultez.com`** (API sous `/api`, la racine reste libre pour une future page de présentation), vhost Apache + certificat Certbot.

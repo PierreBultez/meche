@@ -97,7 +97,9 @@ CREATE TABLE settings (
 );
 -- Clés : server_url, api_token, device_name, sync_cursor, last_sync_at,
 --        default_delay_hours_delay (168), default_delay_hours_on_complete (24),
---        theme ('system'|'light'|'dark')
+--        theme ('system'|'light'|'dark'),
+--        list_width (largeur de la colonne des notes en px, 220 à 520, 280 par défaut),
+--        code_line_wrap (retour à la ligne automatique des notes code, false par défaut)
 
 -- Notes en attente de tri après import (local uniquement)
 CREATE TABLE import_triage (
@@ -112,14 +114,16 @@ Le schéma exact est dans `app/src-tauri/src/db/sql/001_initial.sql` (migration 
 
 Requêtes de recherche :
 ```sql
-SELECT n.id, n.title, snippet(notes_fts, 1, '<mark>', '</mark>', '…', 12) AS excerpt
+SELECT n.id, n.title, snippet(notes_fts, -1, char(57344), char(57345), '…', 12) AS excerpt
 FROM notes_fts
 JOIN notes n ON n.seq = notes_fts.rowid
 WHERE notes_fts MATCH :query AND n.deleted = 0 AND n.trashed_at IS NULL
 ORDER BY bm25(notes_fts, 5.0, 1.0)
 LIMIT 50;
 ```
-La requête utilisateur est transformée en requête FTS en préfixe : chaque mot échappé entre guillemets suivi de `*` (`"cour"* "lidl"*`). Ne jamais injecter la saisie brute (les caractères spéciaux FTS provoquent des erreurs).
+La requête utilisateur est transformée en requête FTS en préfixe : chaque mot échappé entre guillemets suivi de `*` (`"cour"* "lidl"*`). Ne jamais injecter la saisie brute (les caractères spéciaux FTS provoquent des erreurs). Les mots sans lettre ni chiffre sont ignorés.
+
+L'extrait est pris dans la colonne qui correspond le mieux (`-1` : titre ou contenu). Les correspondances y sont entourées de U+E000 / U+E001 (et non de `<mark>`, voir `02-architecture.md`), puis Rust retire la syntaxe Markdown de l'extrait pour n'en garder qu'une ligne de texte.
 
 ## Serveur — MySQL (migration Laravel)
 

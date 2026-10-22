@@ -28,13 +28,13 @@ Définis comme variables CSS (Tailwind 4 `@theme` + surcharge `[data-theme="dark
 | `--surface-2` | `#EFEBF8` | `#2E2575` | Survol, champs, menus |
 | `--border` | `#E4DEF2` | `#3A3180` | Séparateurs |
 | `--text` | `#1C1433` | `#F8F8F2` | Texte principal (le blanc cassé de Monokai) |
-| `--text-muted` | `#6B6489` | `#B9B2F0` | Aperçus, dates |
+| `--text-muted` | `#6B6489` | `#C1BAF8` | Aperçus, dates |
 | `--brand` | `#7B2FF7` | `#FF6B1A` | Bouton +, éléments actifs, focus |
-| `--brand-2` | `#FF4FA3` | `#FFC93C` | Accent secondaire (étincelle) |
+| `--brand-2` | `#F04097` | `#FFC93C` | Accent secondaire (étincelle) |
 | `--on-brand` | `#FFFFFF` | `#1A1446` | Texte sur `--brand` |
-| `--danger` | `#DE3035` | `#FF5370` | Suppression, erreurs |
-| `--fuse` | `#B38C65` | `#8C7A5B` | Mèche non consumée (cordon) |
-| `--spark` | `#E87500` | `#FFC93C` | Étincelle, mèche allumée |
+| `--danger` | `#D11F2A` | `#FF647F` | Suppression, erreurs |
+| `--fuse` | `#A8815B` | `#8C7A5B` | Mèche non consumée (cordon) |
+| `--spark` | `#DA6800` | `#FFC93C` | Étincelle, mèche allumée |
 | `--selection` | `#7B2FF733` | `#AE81FF4D` | Sélection de texte |
 
 ## Couleur par note
@@ -62,25 +62,21 @@ Les néons du thème sombre reprennent volontairement la palette Monokai (`#F926
 **Où la couleur apparaît** :
 | Élément | Fugace | Feu d'artifice |
 |---|---|---|
-| Carte dans la liste | Fond = « fond de carte », titre et aperçu = « texte sur fond » | Fond `--surface-2` mélangé à 12 % de néon (`color-mix`), liseré gauche de 3 px en néon, titre en « titre sur carte » |
-| Note sélectionnée | Bordure 2 px en accent | Fond mélangé à 20 % + liseré 3 px |
+| Carte dans la liste | Fond = « fond de carte », titre, aperçu, date et icônes = « texte sur fond » | Fond `--surface-2` mélangé à 12 % de néon (`color-mix`), liseré gauche de 3 px en néon, titre et icônes en « titre sur carte », aperçu et date en `--text-muted` |
+| Note sélectionnée | Anneau 2 px en « texte sur fond » (le fond ne change pas) | Fond mélangé à 20 % + liseré 3 px + anneau 2 px en « titre sur carte » |
 | Éditeur | Titre de la note en accent, cases cochées remplies avec l'accent, puces et marqueurs de titres en accent | Idem avec le néon |
 | Fond de l'éditeur | Reste `--bg` (blanc) : la lecture reste reposante | Reste `--bg` (indigo) |
 
 **Contraste** : Claude Code doit vérifier par un petit test automatisé (ratio WCAG) que chaque paire texte/fond atteint **4,5:1** (texte courant) ou **3:1** (gros titres, icônes). Ajuster d'un cran si une paire échoue, sans changer l'esprit des couleurs.
 
 - Le test est `app/src/theme/tokens.test.ts` : il lit `tokens.css` et vérifie les deux thèmes.
-- Phase 0 (validé par Pierre) : en Fugace, `--danger`, `--fuse`, `--spark`, les accents orange, citron, pomme et turquoise et cinq couleurs de code ont été légèrement assombris (teinte conservée) ; en Feu d'artifice, la colonne « titre sur carte » a été ajoutée. Les valeurs de ce document sont les valeurs ajustées.
-- **À trancher avant la phase concernée** (paires dont l'usage n'est pas encore défini, elles échouent avec les couleurs actuelles) :
-  - `--danger` sur `--surface` / `--surface-2` (menus, panneaux) : 4,24 et 3,91 en Fugace, 4,86 et 4,11 en sombre (phase 1) ;
-  - le badge mèche posé sur une carte : `--fuse` et `--spark` (3:1) et le texte `--danger` (4,5:1) échouent sur presque toutes les cartes (phase 2) ;
-  - l'aperçu d'une carte sombre sélectionnée en `--text-muted` (4,15 à 4,34 pour citron, pomme, turquoise, bleu) : utiliser `--text` ou la couleur du titre (phase 1) ;
-  - l'indicateur de carte sélectionnée (3:1 attendu pour un élément d'interface) : en Fugace, la bordure 2 px en accent n'atteint que 2,59 à 2,84 sur la carte et sur `--surface` pour rose, corail, orange, citron, pomme et turquoise ; en Feu d'artifice, seul le fond change (12 % → 20 %, contraste de 1,08 à 1,22 entre les deux états). Pistes : bordure dans la couleur « texte sur fond », ou fond sélectionné plus marqué (phase 1).
+- Phase 0 et phase 1 (validé par Pierre : « tout doit passer le test ») : toutes les paires passent, dans les deux thèmes. Les couleurs ont été ajustées d'un cran, teinte conservée : en Fugace `--danger`, `--fuse`, `--spark`, `--brand-2`, les accents orange, citron, pomme et turquoise et cinq couleurs de code ; en Feu d'artifice `--danger`, `--text-muted` et la colonne « titre sur carte ». Les valeurs de ce document sont les valeurs ajustées.
+- Règle : chaque couleur d'interface passe sur les trois fonds (`--bg`, `--surface`, `--surface-2`). Le test couvre aussi les textes sur les cartes (normales et sélectionnées), l'anneau de sélection contre la colonne, et l'accent de chaque note sur `--bg`.
 
 ## La mèche (élément signature)
 
 ### Badge dans la liste
-- Une petite mèche horizontale (≈ 40 px) en bas à droite de la carte : le cordon (`--fuse`) dont la **longueur restante est proportionnelle au temps restant** (`(destroy_at − now) / (delay)`), terminé par une **étincelle** (`--spark`) qui scintille, suivie du texte « 2 j », « 5 h », « 12 min ».
+- Une petite mèche horizontale (≈ 40 px) en bas à droite de la carte, posée sur une **pastille arrondie de fond `--bg`** (ainsi ses couleurs restent lisibles sur toutes les cartes) : le cordon (`--fuse`) dont la **longueur restante est proportionnelle au temps restant** (`(destroy_at − now) / (delay)`), terminé par une **étincelle** (`--spark`) qui scintille, suivie du texte « 2 j », « 5 h », « 12 min ».
 - Moins d'une heure : l'étincelle scintille plus vite, le texte passe en `--danger`.
 - Mode « quand tout est coché » pas encore armé : mèche **éteinte** (cordon entier, pas d'étincelle) + « 3/5 ».
 

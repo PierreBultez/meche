@@ -52,7 +52,7 @@ meche/
 
 1. **Le frontend ne fait jamais d'appel réseau ni d'accès disque direct.** Tout passe par des commandes Tauri (`invoke`) implémentées en Rust. Rust est la seule source de vérité côté client.
 2. **Local d'abord** : toute action utilisateur s'écrit d'abord en SQLite local et répond immédiatement. La synchro est asynchrone et ne bloque jamais l'interface.
-3. **Gratuit et open source uniquement** : aucune dépendance payante (pas de Tiptap Pro / Tiptap Cloud / registre privé Tiptap). Vérifie la licence (MIT, Apache-2.0, BSD, ISC) de chaque nouvelle dépendance.
+3. **Gratuit et open source uniquement** : aucune dépendance payante (pas de Tiptap Pro / Tiptap Cloud / registre privé Tiptap). Toute dépendance ajoutée directement est sous MIT, Apache-2.0, BSD, ISC ou 0BSD (OFL-1.1 accepté pour les polices). Les dépendances indirectes, tirées par la stack imposée, peuvent aussi être sous MPL-2.0, Unicode-3.0, Zlib, Unlicense, CC0-1.0, MIT-0, BSL-1.0 ou BlueOak-1.0.0. Interdit : GPL, AGPL, LGPL seule, licences propriétaires ou absentes. `scripts/check-licenses.mjs` le vérifie en CI (npm et Cargo). Le projet lui-même est sous licence MIT (`LICENSE`).
 4. **Pierre apprend Rust** : il est développeur fullstack junior (Laravel, Vue, TypeScript), débutant en Rust et en mobile. Écris un Rust idiomatique mais **simple et lisible** (pas de génériques ou de macros inutiles), commente les points non évidents (ownership, lifetimes, async) et explique brièvement tes choix Rust dans tes réponses.
 5. **Petites étapes** : suis l'ordre de `docs/10-feuille-de-route.md`. Une phase = des commits atomiques, testés, qui compilent.
 6. **Tests** :

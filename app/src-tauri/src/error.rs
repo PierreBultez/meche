@@ -23,6 +23,13 @@ pub enum Error {
     #[error("invalid JSON data: {0}")]
     Json(#[from] serde_json::Error),
 
+    #[error("note not found: {0}")]
+    NotFound(String),
+
+    /// A request the frontend should never send (too long title, wrong state…).
+    #[error("invalid request: {0}")]
+    InvalidInput(String),
+
     /// A command panicked while it held the database lock (see `AppState::lock_db`).
     #[error("the database is unavailable after an internal error")]
     DatabaseLockPoisoned,
@@ -39,6 +46,8 @@ impl Error {
             Error::Migration(_) => "migration",
             Error::Io(_) => "io",
             Error::Json(_) => "json",
+            Error::NotFound(_) => "not_found",
+            Error::InvalidInput(_) => "invalid_input",
             Error::DatabaseLockPoisoned => "database_lock",
         }
     }

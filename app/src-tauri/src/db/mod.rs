@@ -1,6 +1,8 @@
 //! Local SQLite database: opening, configuration and migrations (docs/03-modele-donnees.md).
 
 mod migrations;
+pub mod notes;
+pub mod search;
 pub mod settings;
 
 use std::path::Path;
@@ -101,6 +103,7 @@ mod tests {
             names_of(&conn, "trigger"),
             ["notes_ad", "notes_ai", "notes_au"]
         );
+        assert_eq!(names_of(&conn, "view"), ["notes_search"]);
 
         let journal_mode: String = conn
             .query_row("PRAGMA journal_mode", [], |row| row.get(0))
@@ -113,7 +116,7 @@ mod tests {
         let version: i64 = conn
             .query_row("PRAGMA user_version", [], |row| row.get(0))
             .unwrap();
-        assert_eq!(version, 1);
+        assert_eq!(version, 2);
     }
 
     #[test]
@@ -149,6 +152,51 @@ mod tests {
         conn.execute("DELETE FROM notes WHERE id = 'b'", [])
             .unwrap();
         assert!(search(&conn, "certbot").is_empty());
+    }
+
+    #[test]
+    fn search_reads_rich_notes_without_html_entities() {
+        let conn = open_in_memory().unwrap();
+        insert_note(
+            &conn,
+            "a",
+            "Couple",
+            "Pierre &amp; Marie, 1 &lt; 2 &gt; 0\n&#32;   x",
+        );
+        conn.execute(
+            "INSERT INTO notes (id, kind, content, created_at, updated_at)
+             VALUES ('b', 'code', 'echo \"&amp;\"', 0, 0)",
+            [],
+        )
+        .unwrap();
+        assert_eq!(search(&conn, "marie"), ["a"]);
+        // Only the code note really contains the word "amp".
+        assert_eq!(search(&conn, "amp*"), ["b"]);
+        assert!(search(&conn, "gt").is_empty());
+        assert!(search(&conn, "32").is_empty());
+
+        // Converting the code note to rich decodes it in the index too.
+        conn.execute("UPDATE notes SET kind = 'rich' WHERE id = 'b'", [])
+            .unwrap();
+        assert!(search(&conn, "amp*").is_empty());
+    }
+
+    #[test]
+    fn migration_2_reindexes_existing_notes() {
+        let mut conn = Connection::open_in_memory().unwrap();
+        let first_only = rusqlite_migration::Migrations::new(vec![rusqlite_migration::M::up(
+            include_str!("sql/001_initial.sql"),
+        )]);
+        migrations::run(&mut conn, &first_only).unwrap();
+        insert_note(&conn, "a", "Couple", "Pierre &amp; Marie");
+        assert_eq!(search(&conn, "amp"), ["a"]);
+
+        migrations::run(&mut conn, &migrations::MIGRATIONS).unwrap();
+        assert!(search(&conn, "amp").is_empty());
+        assert_eq!(search(&conn, "marie"), ["a"]);
+        conn.execute("DELETE FROM notes WHERE id = 'a'", [])
+            .unwrap();
+        assert!(search(&conn, "marie").is_empty());
     }
 
     #[test]

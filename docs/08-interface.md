@@ -36,7 +36,7 @@
 │ Toutes ▾      ● Synchro  │                                               │
 └──────────────────────────┴───────────────────────────────────────────────┘
 ```
-- **Colonne gauche** (280 px, redimensionnable, masquable avec `Ctrl+\`) : recherche, bouton nouvelle note, liste.
+- **Colonne gauche** (280 px, redimensionnable, masquable avec `Ctrl+\`) : recherche, bouton nouvelle note, liste. La largeur va de 220 à 520 px ; on la change en glissant la séparation ou avec `←` `→` quand la séparation a le focus, et elle est mémorisée (réglage `list_width`). Dans la liste, `↑` `↓` passent d'une carte à l'autre et `Entrée` ouvre la note.
 - **Élément de liste** : carte aux couleurs de la note ; titre (ou première ligne), aperçu d'une ligne, date relative, icônes : 📌 épinglée, `</>` note code, badge mèche.
 - **Pied de colonne** : filtre (Toutes / Épinglées / Mèches allumées / Corbeille) et pastille d'état de synchro (vert = à jour, gris = hors ligne, orange = en cours, rouge = erreur ; survol = détail).
 - **En-tête de note** : titre éditable, épingler, bouton mèche, menu ⋯ (couleur de la note, convertir riche/code, copier en Markdown, retour à la ligne pour le code, mettre à la corbeille).
@@ -60,6 +60,12 @@ Recherche floue sur les notes **et** les actions :
 - Afficher : toutes / épinglées / mèches allumées / corbeille.
 - Synchroniser maintenant, thème clair/sombre/système, réglages, importer depuis Standard Notes.
 
+Fonctionnement (phase 1) :
+- Palette vide : les 5 premières notes de la liste, puis toutes les actions.
+- En tapant : d'abord les actions dont chaque mot tapé commence un mot (« nouv code » → « Nouvelle note code »), puis les notes (recherche plein texte, 8 au plus, avec l'extrait surligné). Les actions trouvées seulement en recherche floue (« nvnote ») ne s'affichent que si rien d'autre ne correspond : sinon elles noient les résultats.
+- `↑` `↓` pour choisir, `Entrée` pour lancer, `Échap` ou un clic à côté pour fermer, `Ctrl+K` pour rouvrir ou fermer.
+- Actions de la phase 1 : nouvelle note, nouvelle note code ; pour la note ouverte : épingler / désépingler, les 7 autres couleurs, convertir riche ↔ code, mettre à la corbeille (ou restaurer si elle y est) ; afficher toutes / épinglées / mèches allumées / corbeille ; thème clair / sombre / système ; masquer ou afficher la liste ; mode concentration ; réglages. La mèche, la synchro et l'import arrivent avec leur phase.
+
 ## Raccourcis desktop
 
 | Raccourci | Action |
@@ -69,16 +75,23 @@ Recherche floue sur les notes **et** les actions :
 | `Ctrl+Shift+N` | Nouvelle note code |
 | `Ctrl+F` | Rechercher dans les notes (dans une note code : rechercher dans la note) |
 | `Ctrl+P` | Épingler / désépingler |
-| `Ctrl+Shift+E` | Panneau de la mèche |
+| `Ctrl+Shift+E` | Panneau de la mèche (phase 2) |
 | `Ctrl+Suppr` | Mettre à la corbeille |
 | `Ctrl+↑` / `Ctrl+↓` | Note précédente / suivante |
 | `Ctrl+\` | Afficher / masquer la liste |
 | `Ctrl+Shift+F` | Mode concentration |
 | `Échap` | Revenir à la liste / fermer un panneau |
 
+Précisions (phase 1) :
+- Les raccourcis `Ctrl` sont pris avant les éditeurs : `Ctrl+Suppr` met la note à la corbeille même dans le texte (la notification « Annuler » permet de revenir en arrière), `Ctrl+↑` / `Ctrl+↓` changent de note.
+- Exception : dans une note code, `Ctrl+F` ouvre la recherche de CodeMirror dans la note.
+- Ils ne font rien quand une fenêtre de confirmation est ouverte. `Ctrl+P`, `Ctrl+Suppr` et `Ctrl+↑` / `Ctrl+↓` n'agissent que sur l'écran des notes, et jamais sur une note de la corbeille (lecture seule). Garder les touches enfoncées ne répète que `Ctrl+↑` / `Ctrl+↓`.
+- `Échap`, dans l'ordre : ferme le menu ouvert (menu ⋯, menu `/`, recherche de CodeMirror, palette, confirmation) ; sinon quitte le mode concentration ; sinon, depuis la note, remet le focus sur sa carte dans la liste ; sinon, depuis les réglages, revient à la note ouverte. Dans le champ de recherche, `Échap` efface la recherche.
+
 ## Écrans secondaires
 
 - **Réglages** : serveur (URL, test de connexion, connexion / déconnexion, nom de l'appareil, dernière synchro), autodestruction (délais par défaut des deux modes), apparence (thème, taille du texte), import Standard Notes, à propos (version, mises à jour).
+  En phase 1 : thème, retour à la ligne des notes code, version. Les autres sections arrivent avec leur phase ; la taille du texte n'est pas encore proposée.
 - **Premier lancement** : écran simple « Connecter un serveur » ou « Utiliser hors ligne pour l'instant ».
 - **États vides** : liste vide, recherche sans résultat, corbeille vide. Textes : voir « Ton des textes » dans `11-direction-artistique.md`.
 
@@ -94,3 +107,8 @@ Recherche floue sur les notes **et** les actions :
 | Taille de l'installeur desktop | < 15 Mo |
 
 Moyens : CodeMirror et ses langages chargés à la demande ; TipTap chargé dès la première note ouverte ; liste virtualisée au-delà de 200 éléments ; `list_notes` ne renvoie que les résumés, jamais le contenu complet.
+
+Mise en œuvre (phase 1) :
+- La liste est virtualisée dès le départ : seules les cartes visibles sont dans la page, et toutes les cartes ont la même hauteur (mesurée sur la première). Mesuré avec 1 000 notes : sans cela, ouvrir une note prenait 1 à 2 s, car toute la liste était redessinée.
+- Une carte est un simple lien, pas un `RouterLink` : chacun était recalculé à chaque changement de note.
+- Une note ouverte au clavier (`Ctrl+↑` / `Ctrl+↓`, palette, `Entrée` sur une carte) reçoit le focus dans son texte : on peut taper aussitôt. Un clic de souris sur une carte laisse le focus sur la carte.

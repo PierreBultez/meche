@@ -13,8 +13,10 @@ use crate::error::Result;
 /// `include_str!` copies the SQL file into the binary at compile time: nothing is read from
 /// disk at runtime. `'static` means the borrowed SQL text lives as long as the program,
 /// which is true since it is part of the binary.
-const MIGRATION_LIST: &[M<'static>] =
-    &[M::up(include_str!("sql/001_initial.sql")).foreign_key_check()];
+const MIGRATION_LIST: &[M<'static>] = &[
+    M::up(include_str!("sql/001_initial.sql")).foreign_key_check(),
+    M::up(include_str!("sql/002_search_decoded_text.sql")).foreign_key_check(),
+];
 
 pub const MIGRATIONS: Migrations<'static> = Migrations::from_slice(MIGRATION_LIST);
 
@@ -23,6 +25,8 @@ pub const MIGRATIONS: Migrations<'static> = Migrations::from_slice(MIGRATION_LIS
 ///
 /// `&mut Connection`: migrations need exclusive access because they run inside a transaction.
 pub fn run(conn: &mut Connection, migrations: &Migrations) -> Result<()> {
+    // Migration 002 and its triggers call rich_search_text(): it must exist on this connection.
+    super::search::register_functions(conn)?;
     // Foreign keys stay OFF while migrating. Changing a CHECK constraint later means rebuilding
     // a table (create a copy, drop the original, rename the copy): with foreign keys ON, dropping
     // `notes` would also delete every `import_triage` row (ON DELETE CASCADE). Instead,
@@ -41,8 +45,14 @@ mod tests {
 
     #[test]
     fn migrations_are_valid() {
-        // Applies every migration to a fresh in-memory database.
-        MIGRATIONS.validate().unwrap();
+        // Applies every migration to a fresh in-memory database. (MIGRATIONS.validate() would do
+        // the same, but on a connection without the SQL functions that migration 002 needs.)
+        let mut conn = Connection::open_in_memory().unwrap();
+        run(&mut conn, &MIGRATIONS).unwrap();
+        let version: i64 = conn
+            .query_row("PRAGMA user_version", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(version, MIGRATION_LIST.len() as i64);
     }
 
     #[test]

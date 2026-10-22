@@ -6,6 +6,9 @@
   "permissions": [
     "core:default",
     "core:window:allow-show",
-    "core:window:allow-set-background-color"
+    "core:window:allow-set-background-color",
+    "core:window:allow-destroy",
+    "opener:allow-open-url",
+    "opener:allow-default-urls"
   ]
 }

@@ -5,6 +5,9 @@ import App from "./App.vue";
 import { router } from "./router";
 import { useSettingsStore } from "./stores/settings";
 import { syncWindowBackground } from "./theme/apply";
+// JetBrains Mono for code (docs/11), bundled with the app: never downloaded from the network.
+import "@fontsource/jetbrains-mono/latin-400.css";
+import "@fontsource/jetbrains-mono/latin-700.css";
 import "./styles/main.css";
 
 const app = createApp(App).use(createPinia()).use(router);

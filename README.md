@@ -11,6 +11,14 @@ Allumez la mèche d'une note jetable : elle explose toute seule à la fin du com
 
 La conception complète est dans [`docs/`](docs/). Les consignes pour Claude Code sont dans [`CLAUDE.md`](CLAUDE.md).
 
+## Avancement
+
+Les phases sont décrites dans [`docs/10-feuille-de-route.md`](docs/10-feuille-de-route.md).
+
+- Phase 0, socle : terminée.
+- Phase 1, prise de notes locale sur desktop (notes riches et code, recherche, couleurs, épingles, corbeille, raccourcis, palette `Ctrl+K`) : livrée, en cours de validation.
+- Prochaine : phase 2, la mèche.
+
 ## Développement
 
 Prérequis : voir [`docs/09-build-et-deploiement.md`](docs/09-build-et-deploiement.md) (Rust ≥ 1.95, Node.js LTS, dépendances système de Tauri).
@@ -25,3 +33,7 @@ cargo test --manifest-path src-tauri/Cargo.toml    # tests du cœur Rust
 
 La base locale est créée au premier lancement dans le dossier de données de l'application
 (`~/.local/share/fr.pierrebultez.meche/notes.db` sous Linux).
+
+## Licence
+
+[MIT](LICENSE).

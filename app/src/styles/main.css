@@ -1,5 +1,6 @@
 @import "tailwindcss";
 @import "./tokens.css";
+@import "./editor.css";
 
 /*
  * Tailwind utilities generated from the Mèche tokens (bg-surface, text-muted, border-note…).
@@ -26,6 +27,7 @@
   --color-note-card: var(--note-card);
   --color-note-card-selected: var(--note-card-selected);
   --color-note-on-card: var(--note-on-card);
+  --color-note-card-muted: var(--note-card-muted);
 
   --color-code-bg: var(--code-bg);
   --color-code-text: var(--code-text);
@@ -58,5 +60,42 @@
   :focus-visible {
     outline: 2px solid var(--brand);
     outline-offset: 2px;
+  }
+
+  /* The search fields have their own clear button. */
+  input[type="search"]::-webkit-search-cancel-button {
+    appearance: none;
+  }
+
+  /* Code shows the characters typed (`=>`, `!=`), as in PhpStorm: no ligatures. */
+  code,
+  pre,
+  .cm-scroller {
+    font-variant-ligatures: none;
+  }
+}
+
+@layer components {
+  /* A note card in the list (docs/11): its colors come from data-note-color. */
+  /* Drawn through Tailwind's inset shadow so that the ring of a selected card (ring-2) is
+     added to the stripe instead of replacing it (docs/11). */
+  .note-card {
+    --tw-inset-shadow: inset var(--note-stripe) 0 0 0 var(--note);
+    box-shadow: var(--tw-inset-shadow);
+  }
+
+  /* An entry of a menu (note menu, command palette). */
+  .menu-item {
+    display: flex;
+    width: 100%;
+    align-items: center;
+    gap: 0.6rem;
+    border-radius: 8px;
+    padding: 0.4rem 0.5rem;
+    text-align: left;
+  }
+  .menu-item:hover,
+  .menu-item:focus-visible {
+    background: var(--surface);
   }
 }

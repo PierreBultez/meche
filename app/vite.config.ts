@@ -35,6 +35,9 @@ export default defineConfig(() => ({
   test: {
     environment: "happy-dom",
     include: ["src/**/*.test.ts"],
+    // The transform cache would keep the list of Markdown fixtures (import.meta.glob) of an
+    // unchanged test file: a new fixture would then be skipped without a word.
+    fsModuleCache: false,
     // Vitest blanks CSS files by default; the contrast test needs the real tokens.css.
     css: { include: [/tokens\.css/] },
   },

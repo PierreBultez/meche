@@ -81,6 +81,7 @@
 | `tokio` | Async (fourni par Tauri) |
 | `pulldown-cmark` | Analyse Markdown pour compter les cases à cocher (gère correctement les blocs de code) |
 | `thiserror` | Erreurs typées |
+| `tauri-plugin-opener` | Ouvrir un lien dans le navigateur du système (`Ctrl+clic`) |
 | `tauri-plugin-dialog` | Sélection du fichier d'import |
 | `tauri-plugin-updater` | Mises à jour automatiques desktop |
 
@@ -106,10 +107,12 @@ src-tauri/src/
 | Vue Router | Navigation (indispensable sur mobile : liste → note, bouton retour Android) |
 | Tailwind CSS 4 | Styles |
 | `@tiptap/vue-3` v3 + extensions MIT | Éditeur riche |
+| `@tiptap/markdown` + `marked` (MIT) | Lecture et écriture du Markdown des notes riches (un analyseur `marked` par éditeur, voir `05-editeur.md`) |
 | `lowlight` | Coloration des blocs de code dans TipTap |
-| CodeMirror 6 (`codemirror`, `@codemirror/lang-*`) | Notes code |
+| CodeMirror 6 (`@codemirror/*`, `@codemirror/lang-*`) | Notes code |
 | `lucide-vue-next` | Icônes |
-| `@tauri-apps/api` | `invoke`, événements |
+| `@fontsource/jetbrains-mono` (OFL-1.1) | Police du code, embarquée (sous-ensemble latin, 400 et 700) |
+| `@tauri-apps/api`, `@tauri-apps/plugin-opener` | `invoke`, événements, ouverture des liens |
 
 ### Serveur (`server/`)
 - Laravel 13 (dernière version stable), PHP requis par Laravel 13, MySQL.
@@ -121,14 +124,14 @@ src-tauri/src/
 
 | Commande | Rôle |
 |---|---|
-| `list_notes(filter)` | `filter` = `all` / `pinned` / `ephemeral` / `trash`. Retourne des résumés (id, titre, aperçu, kind, pinned, destroy_at, updated_at) |
-| `get_note(id)` | Note complète |
-| `create_note(kind)` | `rich` ou `code`, retourne la note |
-| `update_note(id, patch)` | Patch partiel (title, content, code_language, pinned, color). Recalcule l'état éphémère |
+| `list_notes(filter)` | `filter` = `all` / `pinned` / `ephemeral` / `trash`. Retourne des résumés (id, titre ou à défaut première ligne, aperçu en texte brut, kind, code_language, pinned, color, ephemeral_mode, destroy_at, trashed_at, updated_at) |
+| `get_note(id)` | Note complète (`not_found` si elle n'existe pas ou a été supprimée définitivement) |
+| `create_note(kind)` | `rich` ou `code`, retourne la note. La couleur est choisie par Rust (`11-direction-artistique.md`, « Attribution ») |
+| `update_note(id, patch)` | Patch partiel (title, content, kind, code_language, pinned, color), retourne la note. Changer `kind` convertit le contenu (`05-editeur.md`). Un patch qui ne change rien n'écrit rien (pas de nouvelle `updated_at`). Recalcule l'état éphémère (phase 2) |
 | `set_ephemeral(id, config)` | Active, modifie ou désactive l'autodestruction |
 | `trash_note(id)` / `restore_note(id)` | Corbeille |
 | `delete_note_forever(id)` / `empty_trash()` | Suppression définitive (tombstone synchronisé) |
-| `search(query)` | Recherche FTS5, résultats avec extrait surligné |
+| `search(query)` | Recherche FTS5 (50 résultats max), avec un extrait d'une ligne où chaque correspondance est entourée des caractères U+E000 et U+E001 |
 | `login(server_url, email, password)` / `logout()` | Gestion du token |
 | `sync_now()` / `get_sync_status()` | Synchro manuelle et état |
 | `import_notes(notes[])` | Insertion en lot (import Standard Notes) |
@@ -137,6 +140,10 @@ src-tauri/src/
 Événements émis par Rust :
 - `notes-changed` : après une synchro qui a modifié des notes ou une autodestruction → le frontend rafraîchit la liste.
 - `sync-status` : `idle` / `syncing` / `offline` / `error` (+ message).
+
+Erreurs : une commande qui échoue renvoie `{ kind, message }`. `kind` est un code stable (`database`, `migration`, `io`, `json`, `not_found`, `invalid_input`, `database_lock`) ; le frontend affiche son propre message en français et garde `message` pour la console.
+
+Extraits de recherche : les correspondances sont marquées par deux caractères Unicode « à usage privé » (U+E000 au début, U+E001 à la fin) plutôt que par des balises `<mark>`. Le frontend découpe l'extrait sur ces caractères et crée lui-même les éléments surlignés : le texte des notes n'est jamais interprété comme du HTML (aucune injection possible, même si une note contient `<script>`).
 
 Types partagés : les structures Rust sont annotées `serde(rename_all = "camelCase")`. Les types TS correspondants sont écrits à la main dans `app/src/types/` (ou générés avec `specta` si cela reste simple).
 

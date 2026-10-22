@@ -1,0 +1,62 @@
+@import "tailwindcss";
+@import "./tokens.css";
+
+/*
+ * Tailwind utilities generated from the Mèche tokens (bg-surface, text-muted, border-note…).
+ * `inline` makes each utility use the variable itself, so switching theme is instant.
+ * `--color-*: initial` removes Tailwind's default palette: no raw color can sneak into a component.
+ */
+@theme inline {
+  --color-*: initial;
+
+  --color-bg: var(--bg);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-border: var(--border);
+  --color-text: var(--text);
+  --color-muted: var(--text-muted);
+  --color-brand: var(--brand);
+  --color-brand-2: var(--brand-2);
+  --color-on-brand: var(--on-brand);
+  --color-danger: var(--danger);
+  --color-fuse: var(--fuse);
+  --color-spark: var(--spark);
+
+  --color-note: var(--note);
+  --color-note-card: var(--note-card);
+  --color-note-card-selected: var(--note-card-selected);
+  --color-note-on-card: var(--note-on-card);
+
+  --color-code-bg: var(--code-bg);
+  --color-code-text: var(--code-text);
+  --color-code-keyword: var(--code-keyword);
+  --color-code-string: var(--code-string);
+  --color-code-function: var(--code-function);
+  --color-code-number: var(--code-number);
+  --color-code-type: var(--code-type);
+  --color-code-variable: var(--code-variable);
+  --color-code-comment: var(--code-comment);
+
+  --font-sans: system-ui, "Segoe UI", Ubuntu, Roboto, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, monospace;
+
+  --radius-card: 12px;
+  --radius-button: 10px;
+}
+
+@layer base {
+  html {
+    background-color: var(--bg);
+    color: var(--text);
+    font-family: var(--font-sans);
+  }
+
+  ::selection {
+    background-color: var(--selection);
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--brand);
+    outline-offset: 2px;
+  }
+}

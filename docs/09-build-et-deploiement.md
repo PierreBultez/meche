@@ -2,7 +2,7 @@
 
 > Pierre n'a jamais développé ni installé d'application mobile hors store. Cette partie doit être accompagnée **pas à pas** par Claude Code au moment de la phase concernée : expliquer chaque commande avant de la lancer et vérifier le résultat avec lui.
 
-## 1. Environnement de développement (Ubuntu 25.10)
+## 1. Environnement de développement (Ubuntu 26.10)
 
 Suivre la page « Prerequisites » de la documentation officielle Tauri 2 au moment de l'installation (les noms de paquets peuvent évoluer). Pour Linux, à titre indicatif :
 
@@ -18,6 +18,10 @@ rustup default stable
 # Node.js LTS (déjà présent chez Pierre normalement)
 node -v && npm -v
 ```
+
+Versions minimales (vérifiées en phase 0) :
+- **Rust ≥ 1.95** (`rust-version` dans `app/src-tauri/Cargo.toml`, imposé par `rusqlite_migration`). `rustup` installe `clippy` et `rustfmt` avec le profil par défaut.
+- **Node.js ≥ 22.12**, de préférence une version **LTS** (24) : les versions impaires comme la 25 n'ont pas de support long terme, et Vitest 5 ne déclare pas les prendre en charge (`^22.12 || ^24 || >=26`). La CI utilise Node 24.
 
 ### Android (phase 5)
 1. Installer **Android Studio** (le plus simple pour obtenir SDK, NDK et émulateur).
@@ -39,6 +43,8 @@ cd app && npm run tauri dev
 Puis `composer create-project laravel/laravel server` (Laravel 13) et `php artisan install:api` (Sanctum).
 
 Nom affiché : **Mèche**. Identifiant d'application : `fr.pierrebultez.meche` (**ne plus le changer** une fois l'application Android installée : il identifie l'application et ses données). Nom du binaire / paquet : `meche`.
+
+Un nom de paquet Debian ne peut pas contenir d'accent : `app/src-tauri/tauri.linux.conf.json` fixe donc le nom technique `meche` sous Linux (paquet `meche_x.y.z_amd64.deb`), et `app/src-tauri/linux/meche.desktop` garde « Mèche » comme nom affiché dans le menu des applications.
 
 ## 3. Serveur (API Laravel)
 

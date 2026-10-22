@@ -1,0 +1,211 @@
+/*
+ * Mèche design tokens — the single source of truth for every color.
+ * Values come from docs/11-direction-artistique.md. Components never use raw colors:
+ * they use these variables, or the Tailwind utilities mapped to them in main.css.
+ *
+ * Rules for this file (the contrast test in src/theme parses it):
+ *   - only two token blocks: `:root` (Fugace, light) and `:root[data-theme="dark"]` (Feu d'artifice);
+ *   - both blocks define exactly the same tokens;
+ *   - values are hex colors, `var(--token)` or `color-mix(in srgb, var(--a) N%, var(--b))`.
+ */
+
+/* ── Fugace (light) ─────────────────────────────────────────────────────── */
+:root {
+  color-scheme: light;
+
+  /* Interface */
+  --bg: #ffffff;
+  --surface: #f7f5fc;
+  --surface-2: #efebf8;
+  --border: #e4def2;
+  --text: #1c1433;
+  --text-muted: #6b6489;
+  --brand: #7b2ff7;
+  --brand-2: #ff4fa3;
+  --on-brand: #ffffff;
+  --danger: #de3035;
+  --fuse: #b38c65;
+  --spark: #e87500;
+  --selection: #7b2ff733;
+
+  /* Note colors: accent / card background / text on card.
+     In Fugace a selected card keeps its background and gets an accent border. */
+  --note-violet: #7b2ff7;
+  --note-violet-card: #f1e8ff;
+  --note-violet-card-selected: var(--note-violet-card);
+  --note-violet-on-card: #3a0f80;
+
+  --note-rose: #ff4fa3;
+  --note-rose-card: #ffe6f2;
+  --note-rose-card-selected: var(--note-rose-card);
+  --note-rose-on-card: #85154d;
+
+  --note-corail: #ff5a5f;
+  --note-corail-card: #ffe8e6;
+  --note-corail-card-selected: var(--note-corail-card);
+  --note-corail-on-card: #8a1c1f;
+
+  --note-orange: #e87500;
+  --note-orange-card: #ffeedc;
+  --note-orange-card-selected: var(--note-orange-card);
+  --note-orange-on-card: #7a3a00;
+
+  --note-citron: #c38800;
+  --note-citron-card: #fff6d6;
+  --note-citron-card-selected: var(--note-citron-card);
+  --note-citron-on-card: #6b4e00;
+
+  --note-pomme: #21ab36;
+  --note-pomme-card: #e5f8e1;
+  --note-pomme-card-selected: var(--note-pomme-card);
+  --note-pomme-on-card: #1f5e1f;
+
+  --note-turquoise: #00a88f;
+  --note-turquoise-card: #ddfbf5;
+  --note-turquoise-card-selected: var(--note-turquoise-card);
+  --note-turquoise-on-card: #04584b;
+
+  --note-bleu: #2f80ff;
+  --note-bleu-card: #e4eeff;
+  --note-bleu-card-selected: var(--note-bleu-card);
+  --note-bleu-on-card: #0e3c8a;
+
+  /* Code highlighting, shared by CodeMirror and lowlight */
+  --code-bg: #f7f5fc;
+  --code-text: #1c1433;
+  --code-keyword: #d4216d;
+  --code-string: #916900;
+  --code-function: #2b8100;
+  --code-number: #7b2ff7;
+  --code-type: #0077b6;
+  --code-variable: #bf4c00;
+  --code-comment: #736c8e;
+}
+
+/* ── Feu d'artifice (dark) ──────────────────────────────────────────────── */
+:root[data-theme="dark"] {
+  color-scheme: dark;
+
+  /* Interface */
+  --bg: #1a1446;
+  --surface: #231b5c;
+  --surface-2: #2e2575;
+  --border: #3a3180;
+  --text: #f8f8f2;
+  --text-muted: #b9b2f0;
+  --brand: #ff6b1a;
+  --brand-2: #ffc93c;
+  --on-brand: #1a1446;
+  --danger: #ff5370;
+  --fuse: #8c7a5b;
+  --spark: #ffc93c;
+  --selection: #ae81ff4d;
+
+  /* Note colors: Monokai neon / card = surface-2 tinted with 12 % neon (20 % when selected) /
+     title on card. Violet, rose, corail and orange use a lighter neon for card titles so they
+     stay readable (WCAG 4.5:1); elsewhere the original neon is used. */
+  --note-violet: #ae81ff;
+  --note-violet-card: color-mix(in srgb, var(--note-violet) 12%, var(--surface-2));
+  --note-violet-card-selected: color-mix(in srgb, var(--note-violet) 20%, var(--surface-2));
+  --note-violet-on-card: #cda1ff;
+
+  --note-rose: #f92672;
+  --note-rose-card: color-mix(in srgb, var(--note-rose) 12%, var(--surface-2));
+  --note-rose-card-selected: color-mix(in srgb, var(--note-rose) 20%, var(--surface-2));
+  --note-rose-on-card: #ff7bb2;
+
+  --note-corail: #ff6b6b;
+  --note-corail-card: color-mix(in srgb, var(--note-corail) 12%, var(--surface-2));
+  --note-corail-card-selected: color-mix(in srgb, var(--note-corail) 20%, var(--surface-2));
+  --note-corail-on-card: #ff918e;
+
+  --note-orange: #fd971f;
+  --note-orange-card: color-mix(in srgb, var(--note-orange) 12%, var(--surface-2));
+  --note-orange-card-selected: color-mix(in srgb, var(--note-orange) 20%, var(--surface-2));
+  --note-orange-on-card: #ff9d2a;
+
+  --note-citron: #e6db74;
+  --note-citron-card: color-mix(in srgb, var(--note-citron) 12%, var(--surface-2));
+  --note-citron-card-selected: color-mix(in srgb, var(--note-citron) 20%, var(--surface-2));
+  --note-citron-on-card: var(--note-citron);
+
+  --note-pomme: #a6e22e;
+  --note-pomme-card: color-mix(in srgb, var(--note-pomme) 12%, var(--surface-2));
+  --note-pomme-card-selected: color-mix(in srgb, var(--note-pomme) 20%, var(--surface-2));
+  --note-pomme-on-card: var(--note-pomme);
+
+  --note-turquoise: #4fe3c1;
+  --note-turquoise-card: color-mix(in srgb, var(--note-turquoise) 12%, var(--surface-2));
+  --note-turquoise-card-selected: color-mix(in srgb, var(--note-turquoise) 20%, var(--surface-2));
+  --note-turquoise-on-card: var(--note-turquoise);
+
+  --note-bleu: #66d9ef;
+  --note-bleu-card: color-mix(in srgb, var(--note-bleu) 12%, var(--surface-2));
+  --note-bleu-card-selected: color-mix(in srgb, var(--note-bleu) 20%, var(--surface-2));
+  --note-bleu-on-card: var(--note-bleu);
+
+  /* Code highlighting (Monokai-like) */
+  --code-bg: #120e33;
+  --code-text: #f8f8f2;
+  --code-keyword: #f92672;
+  --code-string: #e6db74;
+  --code-function: #a6e22e;
+  --code-number: #ae81ff;
+  --code-type: #66d9ef;
+  --code-variable: #fd971f;
+  --code-comment: #8a82c4;
+}
+
+/*
+ * A note's color: put `data-note-color="violet"` (or any of the 8 names) on an element,
+ * then use --note, --note-card, --note-card-selected and --note-on-card inside it
+ * (Tailwind: text-note, bg-note-card, bg-note-card-selected, text-note-on-card, border-note).
+ */
+[data-note-color="violet"] {
+  --note: var(--note-violet);
+  --note-card: var(--note-violet-card);
+  --note-card-selected: var(--note-violet-card-selected);
+  --note-on-card: var(--note-violet-on-card);
+}
+[data-note-color="rose"] {
+  --note: var(--note-rose);
+  --note-card: var(--note-rose-card);
+  --note-card-selected: var(--note-rose-card-selected);
+  --note-on-card: var(--note-rose-on-card);
+}
+[data-note-color="corail"] {
+  --note: var(--note-corail);
+  --note-card: var(--note-corail-card);
+  --note-card-selected: var(--note-corail-card-selected);
+  --note-on-card: var(--note-corail-on-card);
+}
+[data-note-color="orange"] {
+  --note: var(--note-orange);
+  --note-card: var(--note-orange-card);
+  --note-card-selected: var(--note-orange-card-selected);
+  --note-on-card: var(--note-orange-on-card);
+}
+[data-note-color="citron"] {
+  --note: var(--note-citron);
+  --note-card: var(--note-citron-card);
+  --note-card-selected: var(--note-citron-card-selected);
+  --note-on-card: var(--note-citron-on-card);
+}
+[data-note-color="pomme"] {
+  --note: var(--note-pomme);
+  --note-card: var(--note-pomme-card);
+  --note-card-selected: var(--note-pomme-card-selected);
+  --note-on-card: var(--note-pomme-on-card);
+}
+[data-note-color="turquoise"] {
+  --note: var(--note-turquoise);
+  --note-card: var(--note-turquoise-card);
+  --note-card-selected: var(--note-turquoise-card-selected);
+  --note-on-card: var(--note-turquoise-on-card);
+}
+[data-note-color="bleu"] {
+  --note: var(--note-bleu);
+  --note-card: var(--note-bleu-card);
+  --note-card-selected: var(--note-bleu-card-selected);
+  --note-on-card: var(--note-bleu-on-card);
+}

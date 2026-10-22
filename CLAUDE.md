@@ -31,17 +31,17 @@ Rapide, épurée, native sur **Linux, Windows et Android**, synchronisée avec u
   - Éditeur riche : TipTap v3 (extensions MIT uniquement), stockage en **Markdown (GFM)**.
   - Notes code : CodeMirror 6.
 - **Serveur** : API **Laravel 13** (`server/`), Sanctum (tokens), MySQL. Un seul utilisateur.
-- **Cibles** : Linux (.deb, AppImage), Windows (.msi / NSIS), Android (.apk). iOS hors périmètre.
+- **Cibles** : Linux (.deb uniquement, décidé), Windows (.msi / NSIS), Android (.apk). iOS hors périmètre.
 
 ## Structure du dépôt
 
 ```
-Note-App/
+meche/
 ├── CLAUDE.md
 ├── README.md
 ├── docs/
 ├── app/                    # client Tauri 2
-│   ├── src/                # frontend Vue 3 + TS
+│   ├── src/                # frontend Vue 3 + TS (styles/tokens.css = toutes les couleurs)
 │   ├── src-tauri/          # cœur Rust (commandes, SQLite, synchro, autodestruction)
 │   └── package.json
 ├── server/                 # API Laravel 13
@@ -75,6 +75,7 @@ npm run tauri build               # build desktop de la plateforme courante
 npm run tauri android build -- --apk
 cargo test --manifest-path src-tauri/Cargo.toml
 npm run test                      # Vitest
+npm run typecheck                 # vue-tsc
 
 # Serveur (depuis server/)
 composer install

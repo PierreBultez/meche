@@ -1,0 +1,50 @@
+# Mèche — the repository is PUBLIC: nothing personal or secret may be committed.
+
+# Personal data: real Standard Notes backups (see docs/07)
+import-samples/
+
+# Environment files and secrets (CI receives them through GitHub Actions secrets)
+.env
+.env.*
+!.env.example
+*.secret
+secrets/
+
+# Signing keys: Android keystore, Tauri updater keys, certificates
+*.jks
+*.keystore
+keystore.properties
+*.key
+*.pem
+*.p12
+*.pfx
+
+# Local SQLite databases (the real notes.db lives in the app data directory)
+*.db
+*.db-wal
+*.db-shm
+*.sqlite
+*.sqlite3
+
+# Dependencies and build output
+node_modules/
+dist/
+dist-ssr/
+target/
+coverage/
+*.tsbuildinfo
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+
+# Editors and OS
+.idea/
+.vscode/*
+!.vscode/extensions.json
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db

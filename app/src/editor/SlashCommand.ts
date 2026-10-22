@@ -4,7 +4,7 @@ import { Extension } from "@tiptap/core";
 import Suggestion, { type SuggestionProps } from "@tiptap/suggestion";
 import { VueRenderer } from "@tiptap/vue-3";
 import SlashMenu from "../components/editor/SlashMenu.vue";
-import { type SlashCommand, filterSlashCommands } from "./slash-commands";
+import { type SlashCommand, filterSlashCommands, slashAllowed } from "./slash-commands";
 
 type MenuProps = SuggestionProps<SlashCommand, SlashCommand>;
 
@@ -58,6 +58,7 @@ export const SlashCommandExtension = Extension.create({
         editor: this.editor,
         char: "/",
         startOfLine: true,
+        allow: slashAllowed,
         items: ({ query }) => filterSlashCommands(query),
         command: ({ editor, range, props }) => props.run(editor, range),
         render: renderMenu,

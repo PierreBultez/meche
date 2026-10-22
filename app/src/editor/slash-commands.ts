@@ -13,6 +13,7 @@ import {
   TextQuote,
 } from "lucide-vue-next";
 import type { Component } from "vue";
+import type { EditorState } from "@tiptap/pm/state";
 
 export interface SlashCommand {
   label: string;
@@ -106,4 +107,15 @@ export function filterSlashCommands(query: string): SlashCommand[] {
   return SLASH_COMMANDS.filter(({ label, keywords }) =>
     [label, ...label.split(" "), ...keywords].some((word) => simplify(word).startsWith(wanted)),
   );
+}
+
+/**
+ * The menu opens at the start of a line only (docs/05): the start of a paragraph, or right after
+ * a line break. Suggestion's own startOfLine only looks at the text node before "/", which also
+ * starts right after a bold word or a link. Never in a code block.
+ */
+export function slashAllowed({ state, range }: { state: EditorState; range: Range }): boolean {
+  const $from = state.doc.resolve(range.from);
+  if ($from.parent.type.spec.code) return false;
+  return $from.parentOffset === 0 || $from.nodeBefore?.type.name === "hardBreak";
 }

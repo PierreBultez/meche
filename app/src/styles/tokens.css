@@ -21,53 +21,62 @@
   --text: #1c1433;
   --text-muted: #6b6489;
   --brand: #7b2ff7;
-  --brand-2: #ff4fa3;
+  --brand-2: #f04097;
   --on-brand: #ffffff;
-  --danger: #de3035;
-  --fuse: #b38c65;
-  --spark: #e87500;
+  --danger: #d11f2a;
+  --fuse: #a8815b;
+  --spark: #da6800;
   --selection: #7b2ff733;
 
-  /* Note colors: accent / card background / text on card.
-     In Fugace a selected card keeps its background and gets an accent border. */
+  /* Note colors: accent / card background / text on card (title, icons, selected ring) /
+     secondary text on card (preview, date). A selected card keeps its background in Fugace;
+     its 2 px ring uses the "on card" color. */
   --note-violet: #7b2ff7;
   --note-violet-card: #f1e8ff;
   --note-violet-card-selected: var(--note-violet-card);
+  --note-violet-card-muted: var(--note-violet-on-card);
   --note-violet-on-card: #3a0f80;
 
   --note-rose: #ff4fa3;
   --note-rose-card: #ffe6f2;
   --note-rose-card-selected: var(--note-rose-card);
+  --note-rose-card-muted: var(--note-rose-on-card);
   --note-rose-on-card: #85154d;
 
   --note-corail: #ff5a5f;
   --note-corail-card: #ffe8e6;
   --note-corail-card-selected: var(--note-corail-card);
+  --note-corail-card-muted: var(--note-corail-on-card);
   --note-corail-on-card: #8a1c1f;
 
   --note-orange: #e87500;
   --note-orange-card: #ffeedc;
   --note-orange-card-selected: var(--note-orange-card);
+  --note-orange-card-muted: var(--note-orange-on-card);
   --note-orange-on-card: #7a3a00;
 
   --note-citron: #c38800;
   --note-citron-card: #fff6d6;
   --note-citron-card-selected: var(--note-citron-card);
+  --note-citron-card-muted: var(--note-citron-on-card);
   --note-citron-on-card: #6b4e00;
 
   --note-pomme: #21ab36;
   --note-pomme-card: #e5f8e1;
   --note-pomme-card-selected: var(--note-pomme-card);
+  --note-pomme-card-muted: var(--note-pomme-on-card);
   --note-pomme-on-card: #1f5e1f;
 
   --note-turquoise: #00a88f;
   --note-turquoise-card: #ddfbf5;
   --note-turquoise-card-selected: var(--note-turquoise-card);
+  --note-turquoise-card-muted: var(--note-turquoise-on-card);
   --note-turquoise-on-card: #04584b;
 
   --note-bleu: #2f80ff;
   --note-bleu-card: #e4eeff;
   --note-bleu-card-selected: var(--note-bleu-card);
+  --note-bleu-card-muted: var(--note-bleu-on-card);
   --note-bleu-on-card: #0e3c8a;
 
   /* Code highlighting, shared by CodeMirror and lowlight */
@@ -92,56 +101,64 @@
   --surface-2: #2e2575;
   --border: #3a3180;
   --text: #f8f8f2;
-  --text-muted: #b9b2f0;
+  --text-muted: #c1baf8;
   --brand: #ff6b1a;
   --brand-2: #ffc93c;
   --on-brand: #1a1446;
-  --danger: #ff5370;
+  --danger: #ff647f;
   --fuse: #8c7a5b;
   --spark: #ffc93c;
   --selection: #ae81ff4d;
 
   /* Note colors: Monokai neon / card = surface-2 tinted with 12 % neon (20 % when selected) /
-     title on card. Violet, rose, corail and orange use a lighter neon for card titles so they
-     stay readable (WCAG 4.5:1); elsewhere the original neon is used. */
+     secondary text on card / title on card. Violet, rose, corail and orange use a lighter neon
+     for card titles so they stay readable (WCAG 4.5:1); elsewhere the original neon is used. */
   --note-violet: #ae81ff;
   --note-violet-card: color-mix(in srgb, var(--note-violet) 12%, var(--surface-2));
   --note-violet-card-selected: color-mix(in srgb, var(--note-violet) 20%, var(--surface-2));
+  --note-violet-card-muted: var(--text-muted);
   --note-violet-on-card: #cda1ff;
 
   --note-rose: #f92672;
   --note-rose-card: color-mix(in srgb, var(--note-rose) 12%, var(--surface-2));
   --note-rose-card-selected: color-mix(in srgb, var(--note-rose) 20%, var(--surface-2));
+  --note-rose-card-muted: var(--text-muted);
   --note-rose-on-card: #ff7bb2;
 
   --note-corail: #ff6b6b;
   --note-corail-card: color-mix(in srgb, var(--note-corail) 12%, var(--surface-2));
   --note-corail-card-selected: color-mix(in srgb, var(--note-corail) 20%, var(--surface-2));
+  --note-corail-card-muted: var(--text-muted);
   --note-corail-on-card: #ff918e;
 
   --note-orange: #fd971f;
   --note-orange-card: color-mix(in srgb, var(--note-orange) 12%, var(--surface-2));
   --note-orange-card-selected: color-mix(in srgb, var(--note-orange) 20%, var(--surface-2));
+  --note-orange-card-muted: var(--text-muted);
   --note-orange-on-card: #ff9d2a;
 
   --note-citron: #e6db74;
   --note-citron-card: color-mix(in srgb, var(--note-citron) 12%, var(--surface-2));
   --note-citron-card-selected: color-mix(in srgb, var(--note-citron) 20%, var(--surface-2));
+  --note-citron-card-muted: var(--text-muted);
   --note-citron-on-card: var(--note-citron);
 
   --note-pomme: #a6e22e;
   --note-pomme-card: color-mix(in srgb, var(--note-pomme) 12%, var(--surface-2));
   --note-pomme-card-selected: color-mix(in srgb, var(--note-pomme) 20%, var(--surface-2));
+  --note-pomme-card-muted: var(--text-muted);
   --note-pomme-on-card: var(--note-pomme);
 
   --note-turquoise: #4fe3c1;
   --note-turquoise-card: color-mix(in srgb, var(--note-turquoise) 12%, var(--surface-2));
   --note-turquoise-card-selected: color-mix(in srgb, var(--note-turquoise) 20%, var(--surface-2));
+  --note-turquoise-card-muted: var(--text-muted);
   --note-turquoise-on-card: var(--note-turquoise);
 
   --note-bleu: #66d9ef;
   --note-bleu-card: color-mix(in srgb, var(--note-bleu) 12%, var(--surface-2));
   --note-bleu-card-selected: color-mix(in srgb, var(--note-bleu) 20%, var(--surface-2));
+  --note-bleu-card-muted: var(--text-muted);
   --note-bleu-on-card: var(--note-bleu);
 
   /* Code highlighting (Monokai-like) */
@@ -158,54 +175,63 @@
 
 /*
  * A note's color: put `data-note-color="violet"` (or any of the 8 names) on an element,
- * then use --note, --note-card, --note-card-selected and --note-on-card inside it
- * (Tailwind: text-note, bg-note-card, bg-note-card-selected, text-note-on-card, border-note).
+ * then use --note, --note-card, --note-card-selected, --note-on-card and --note-card-muted inside it
+ * (Tailwind: text-note, bg-note-card, bg-note-card-selected, text-note-on-card, ring-note-on-card,
+ * text-note-card-muted).
  */
 [data-note-color="violet"] {
   --note: var(--note-violet);
   --note-card: var(--note-violet-card);
   --note-card-selected: var(--note-violet-card-selected);
   --note-on-card: var(--note-violet-on-card);
+  --note-card-muted: var(--note-violet-card-muted);
 }
 [data-note-color="rose"] {
   --note: var(--note-rose);
   --note-card: var(--note-rose-card);
   --note-card-selected: var(--note-rose-card-selected);
   --note-on-card: var(--note-rose-on-card);
+  --note-card-muted: var(--note-rose-card-muted);
 }
 [data-note-color="corail"] {
   --note: var(--note-corail);
   --note-card: var(--note-corail-card);
   --note-card-selected: var(--note-corail-card-selected);
   --note-on-card: var(--note-corail-on-card);
+  --note-card-muted: var(--note-corail-card-muted);
 }
 [data-note-color="orange"] {
   --note: var(--note-orange);
   --note-card: var(--note-orange-card);
   --note-card-selected: var(--note-orange-card-selected);
   --note-on-card: var(--note-orange-on-card);
+  --note-card-muted: var(--note-orange-card-muted);
 }
 [data-note-color="citron"] {
   --note: var(--note-citron);
   --note-card: var(--note-citron-card);
   --note-card-selected: var(--note-citron-card-selected);
   --note-on-card: var(--note-citron-on-card);
+  --note-card-muted: var(--note-citron-card-muted);
 }
 [data-note-color="pomme"] {
   --note: var(--note-pomme);
   --note-card: var(--note-pomme-card);
   --note-card-selected: var(--note-pomme-card-selected);
   --note-on-card: var(--note-pomme-on-card);
+  --note-card-muted: var(--note-pomme-card-muted);
 }
 [data-note-color="turquoise"] {
   --note: var(--note-turquoise);
   --note-card: var(--note-turquoise-card);
   --note-card-selected: var(--note-turquoise-card-selected);
   --note-on-card: var(--note-turquoise-on-card);
+  --note-card-muted: var(--note-turquoise-card-muted);
 }
 [data-note-color="bleu"] {
   --note: var(--note-bleu);
   --note-card: var(--note-bleu-card);
   --note-card-selected: var(--note-bleu-card-selected);
   --note-on-card: var(--note-bleu-on-card);
+  --note-card-muted: var(--note-bleu-card-muted);
 }

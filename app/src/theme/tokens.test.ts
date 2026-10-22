@@ -18,33 +18,45 @@ interface Pair {
 const BACKGROUNDS = ["bg", "surface", "surface-2"];
 const CODE_TOKENS = ["text", "keyword", "string", "function", "number", "type", "variable", "comment"];
 
-// Every pair whose usage is defined in docs/11 and docs/08, except the pairs listed under
-// « À trancher » in docs/11: they fail today and wait for a design decision (phases 1 and 2).
+// Every color/background pair used by the interface (docs/08 and docs/11), in both themes.
 const PAIRS: Pair[] = [
+  // Interface colors must work on every interface background (pages, panels, menus, the
+  // fuse badge, which sits on a small --bg pill).
   ...BACKGROUNDS.flatMap((bg) => [
     { fg: "text", bg, min: MIN_TEXT, usage: "main text" },
-    { fg: "text-muted", bg, min: MIN_TEXT, usage: "previews and dates" },
+    { fg: "text-muted", bg, min: MIN_TEXT, usage: "previews, dates, badge text" },
+    { fg: "danger", bg, min: MIN_TEXT, usage: "errors, delete actions, badge under 1 h" },
     { fg: "brand", bg, min: MIN_LARGE, usage: "+ button, active items, focus ring" },
+    { fg: "brand-2", bg, min: MIN_LARGE, usage: "secondary accent" },
+    { fg: "fuse", bg, min: MIN_LARGE, usage: "fuse cord" },
+    { fg: "spark", bg, min: MIN_LARGE, usage: "fuse spark" },
   ]),
   { fg: "on-brand", bg: "brand", min: MIN_TEXT, usage: "text on a brand button" },
-  { fg: "danger", bg: "bg", min: MIN_TEXT, usage: "errors" },
-  { fg: "fuse", bg: "bg", min: MIN_LARGE, usage: "long fuse cord under the note header" },
-  { fg: "spark", bg: "bg", min: MIN_LARGE, usage: "spark of the long fuse" },
   ...CODE_TOKENS.map((token) => ({
     fg: `code-${token}`,
     bg: "code-bg",
     min: MIN_TEXT,
     usage: `code: ${token}`,
   })),
+  ...NOTE_COLORS.flatMap((color) =>
+    [`note-${color}-card`, `note-${color}-card-selected`].flatMap((card) => [
+      { fg: `note-${color}-on-card`, bg: card, min: MIN_TEXT, usage: "card title and icons" },
+      { fg: `note-${color}-card-muted`, bg: card, min: MIN_TEXT, usage: "card preview and date" },
+    ]),
+  ),
   ...NOTE_COLORS.flatMap((color) => [
-    { fg: `note-${color}-on-card`, bg: `note-${color}-card`, min: MIN_TEXT, usage: "card title" },
     {
       fg: `note-${color}-on-card`,
-      bg: `note-${color}-card-selected`,
-      min: MIN_TEXT,
-      usage: "selected card title",
+      bg: "surface",
+      min: MIN_LARGE,
+      usage: "selected card ring, against the list column",
     },
-    { fg: `note-${color}`, bg: "bg", min: MIN_LARGE, usage: "editor title (26 px), checkboxes" },
+    {
+      fg: `note-${color}`,
+      bg: "bg",
+      min: MIN_LARGE,
+      usage: "editor title (26 px), bullets, checkbox fill and its --bg check mark",
+    },
   ]),
 ];
 
@@ -66,7 +78,7 @@ describe("tokens.css structure", () => {
 
   it("defines every note color in both themes", () => {
     for (const color of NOTE_COLORS) {
-      for (const suffix of ["", "-card", "-card-selected", "-on-card"]) {
+      for (const suffix of ["", "-card", "-card-selected", "-on-card", "-card-muted"]) {
         expect(light).toHaveProperty(`note-${color}${suffix}`);
         expect(darkOnly).toHaveProperty(`note-${color}${suffix}`);
       }

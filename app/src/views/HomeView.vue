@@ -34,10 +34,10 @@ const labels: Record<(typeof NOTE_COLORS)[number], string> = {
             :key="color"
             :data-note-color="color"
             class="rounded-card p-3"
-            :class="index === 0 ? 'bg-note-card-selected ring-2 ring-note' : 'bg-note-card'"
+            :class="index === 0 ? 'bg-note-card-selected ring-2 ring-note-on-card' : 'bg-note-card'"
           >
             <p class="font-semibold text-note-on-card">{{ labels[color] }}</p>
-            <p class="text-sm text-note-on-card">
+            <p class="text-sm text-note-card-muted">
               {{ index === 0 ? "Note sélectionnée" : "Aperçu de la note…" }}
             </p>
           </li>

@@ -26,6 +26,7 @@
   --color-note-card: var(--note-card);
   --color-note-card-selected: var(--note-card-selected);
   --color-note-on-card: var(--note-on-card);
+  --color-note-card-muted: var(--note-card-muted);
 
   --color-code-bg: var(--code-bg);
   --color-code-text: var(--code-text);

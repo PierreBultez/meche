@@ -54,14 +54,20 @@ export function rankByQuery<T>(
   text: (item: T) => string,
 ): { strong: T[]; weak: T[] } {
   if (query.trim() === "") return { strong: [...items], weak: [] };
-  const scored = items
-    .map((item) => ({ item, score: fuzzyScore(query, text(item)) }))
-    .filter((entry): entry is { item: T; score: number } => entry.score !== null)
-    .sort((a, b) => b.score - a.score);
-  const strong: T[] = [];
-  const weak: T[] = [];
-  for (const { item } of scored) {
-    (matchesWordStarts(query, text(item)) ? strong : weak).push(item);
-  }
-  return { strong, weak };
+  // Word starts do not depend on the order of the words (« sombre thème »), the fuzzy score
+  // does: it only sorts, and only fuzzy matches can be weak.
+  const scored = items.map((item) => ({
+    item,
+    score: fuzzyScore(query, text(item)),
+    strong: matchesWordStarts(query, text(item)),
+  }));
+  const byScore = (a: { score: number | null }, b: { score: number | null }) =>
+    (b.score ?? 0) - (a.score ?? 0);
+  return {
+    strong: scored.filter((entry) => entry.strong).sort(byScore).map((entry) => entry.item),
+    weak: scored
+      .filter((entry) => !entry.strong && entry.score !== null)
+      .sort(byScore)
+      .map((entry) => entry.item),
+  };
 }

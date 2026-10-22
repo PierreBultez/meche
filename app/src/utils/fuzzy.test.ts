@@ -48,6 +48,11 @@ describe("rankByQuery", () => {
     expect(rank("note")).toEqual({ strong: ["Nouvelle note", "Nouvelle note code"], weak: [] });
   });
 
+  it("does not depend on the order of the words", () => {
+    expect(rank("code nouv").strong).toEqual(["Nouvelle note code"]);
+    expect(rank("concentration mode").strong).toEqual(["Mode concentration"]);
+  });
+
   it("keeps fuzzy matches apart and drops the rest", () => {
     expect(rank("nvnote")).toEqual({ strong: [], weak: ["Nouvelle note", "Nouvelle note code"] });
     expect(rank("zzz")).toEqual({ strong: [], weak: [] });

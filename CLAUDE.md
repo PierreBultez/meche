@@ -77,7 +77,7 @@ cargo test --manifest-path src-tauri/Cargo.toml
 npm run test                      # Vitest
 npm run typecheck                 # vue-tsc
 
-# Serveur (depuis server/)
+# Serveur (depuis server/, à partir de la phase 3 : avant, server/ ne contient qu'un README)
 composer install
 php artisan migrate
 php artisan notes:create-user     # crée l'unique utilisateur

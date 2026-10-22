@@ -6,6 +6,7 @@
 mod commands;
 mod db;
 mod error;
+mod time;
 
 use std::sync::{Mutex, MutexGuard};
 use std::time::Duration;
@@ -69,6 +70,14 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             commands::settings::get_settings,
             commands::settings::set_settings,
+            commands::notes::list_notes,
+            commands::notes::get_note,
+            commands::notes::create_note,
+            commands::notes::update_note,
+            commands::notes::trash_note,
+            commands::notes::restore_note,
+            commands::notes::delete_note_forever,
+            commands::notes::empty_trash,
         ])
         .run(tauri::generate_context!())
         .expect("error while running Mèche");

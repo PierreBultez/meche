@@ -77,8 +77,11 @@
 
 @layer components {
   /* A note card in the list (docs/11): its colors come from data-note-color. */
+  /* Drawn through Tailwind's inset shadow so that the ring of a selected card (ring-2) is
+     added to the stripe instead of replacing it (docs/11). */
   .note-card {
-    box-shadow: inset var(--note-stripe) 0 0 0 var(--note);
+    --tw-inset-shadow: inset var(--note-stripe) 0 0 0 var(--note);
+    box-shadow: var(--tw-inset-shadow);
   }
 
   /* An entry of a menu (note menu, command palette). */

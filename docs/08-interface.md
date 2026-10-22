@@ -107,3 +107,8 @@ Précisions (phase 1) :
 | Taille de l'installeur desktop | < 15 Mo |
 
 Moyens : CodeMirror et ses langages chargés à la demande ; TipTap chargé dès la première note ouverte ; liste virtualisée au-delà de 200 éléments ; `list_notes` ne renvoie que les résumés, jamais le contenu complet.
+
+Mise en œuvre (phase 1) :
+- La liste est virtualisée dès le départ : seules les cartes visibles sont dans la page, et toutes les cartes ont la même hauteur (mesurée sur la première). Mesuré avec 1 000 notes : sans cela, ouvrir une note prenait 1 à 2 s, car toute la liste était redessinée.
+- Une carte est un simple lien, pas un `RouterLink` : chacun était recalculé à chaque changement de note.
+- Une note ouverte au clavier (`Ctrl+↑` / `Ctrl+↓`, palette, `Entrée` sur une carte) reçoit le focus dans son texte : on peut taper aussitôt. Un clic de souris sur une carte laisse le focus sur la carte.

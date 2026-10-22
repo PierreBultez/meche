@@ -123,6 +123,8 @@ LIMIT 50;
 ```
 La requête utilisateur est transformée en requête FTS en préfixe : chaque mot échappé entre guillemets suivi de `*` (`"cour"* "lidl"*`). Ne jamais injecter la saisie brute (les caractères spéciaux FTS provoquent des erreurs). Les mots sans lettre ni chiffre sont ignorés.
 
+Depuis la migration 002 (`002_search_decoded_text.sql`), l'index ne lit plus la table `notes` directement mais la vue `notes_search`. Dans cette vue, les entités HTML que l'éditeur écrit dans les notes riches (`&amp;`, `&lt;`, `&gt;`, `&nbsp;`, `&#32;`, `&#9;`) sont décodées. Avant, taper « amp » ou « gt » trouvait toutes les notes contenant un `&` ou un `>`. Les déclencheurs appliquent exactement le même décodage que la vue, sinon FTS5 ne peut ni retirer une ancienne entrée, ni placer les surlignages d'un extrait. Les notes code sont indexées telles quelles.
+
 L'extrait est pris dans la colonne qui correspond le mieux (`-1` : titre ou contenu). Les correspondances y sont entourées de U+E000 / U+E001 (et non de `<mark>`, voir `02-architecture.md`), puis Rust retire la syntaxe Markdown de l'extrait pour n'en garder qu'une ligne de texte.
 
 ## Serveur — MySQL (migration Laravel)

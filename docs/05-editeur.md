@@ -39,8 +39,12 @@ Pas de souligné (n'existe pas en Markdown), pas de couleurs, pas d'images en V1
 
 **Choix faits en phase 1** (`app/src/editor/extensions.ts`) :
 - `@tiptap/markdown` (MIT, s'appuie sur `marked`) couvre tous les éléments du tableau : il est retenu. Indentation des listes : 2 espaces.
-- Un paragraphe dont le texte commence comme un bloc Markdown (`1. `, `- `, `# `, `> `, ```` ``` ````, `---`) est échappé à l'écriture (`1\. `, `\- `…). Sans cela, du texte collé serait relu comme une liste ou un titre et la structure de la note changerait à la réouverture.
-- Les tableaux sont écrits sans les lignes vides que l'extension ajoute autour.
+- Chaque éditeur a son propre analyseur `marked`. Avec l'analyseur partagé par défaut, `@tiptap/markdown` y ajoutait ses règles à chaque note ouverte : elles s'empilaient (600 après 200 notes) et l'ouverture ralentissait au fil de la journée.
+- Une ligne de paragraphe qui commence comme un bloc Markdown (`1. `, `- ` ou `-` seul, `+`, `# `, `> `, ```` ``` ````, `---`, `--` ou `=` après un retour à la ligne) est échappée à l'écriture (`1\. `, `\- `…). Une ligne qui commence par des espaces ou une tabulation voit son premier caractère écrit `&#32;` ou `&#9;` : relue, elle aurait perdu son indentation, ou serait devenue un bloc de code à partir de 4 espaces. Sans ces échappements, du texte collé serait relu comme une liste ou un titre et la structure de la note changerait à la réouverture.
+- Les tableaux sont écrits sans les lignes vides que l'extension ajoute autour. Une cellule ne contient que des paragraphes (écrits sur une ligne, séparés par `<br>`) : GFM ne sait pas stocker une liste, un titre ou un bloc de code dans une cellule.
+- Un élément vide d'une liste numérotée (`2. `) est relu comme un élément vide (l'analyseur d'origine le rendait invalide et il disparaissait).
+- Les adresses web et e-mail écrites en texte restent du texte : pas de liens automatiques à la relecture (GFM « autolinks »). Un vrai lien est toujours écrit `[texte](adresse)`, et un lien retiré ne revient plus. Une adresse qui contient une espace ou une parenthèse est écrite `[texte](<adresse>)`.
+- Un bloc de code est clôturé par plus d'accents graves que la plus longue suite qu'il contient (même règle que la conversion en Rust).
 - TipTap garde toujours un paragraphe vide en fin de document (pour pouvoir cliquer sous un tableau ou un bloc de code) : les lignes vides finales sont retirées à la sauvegarde. Sans cela, un simple clic dans une note la marquait comme modifiée.
 - Un bloc de code sans langage reste du texte brut (`plaintext`) : pas de détection automatique, qui colorait du texte au hasard.
 - Le Markdown écrit par l'éditeur est la forme canonique. Une note écrite autrement (`*` pour les puces, `__gras__`) n'est réécrite qu'à sa première vraie modification, jamais à la simple ouverture : l'éditeur ne sauvegarde que sur une modification réelle.
@@ -50,7 +54,12 @@ Pas de souligné (n'existe pas en Markdown), pas de couleurs, pas d'images en V1
 - À chaque modification : anti-rebond de **400 ms**, puis sérialisation en Markdown.
 - N'appeler `update_note` que si le Markdown a réellement changé.
 - Sauvegarde forcée immédiate en quittant la note, en fermant la fenêtre, en passant l'application en arrière-plan (Android).
-- Mise en œuvre (`app/src/composables/useAutosave.ts`) : le contenu n'est lu dans l'éditeur qu'au moment d'enregistrer, jamais à chaque frappe. Les écritures partent dans l'ordre. Une écriture qui échoue affiche un message, le texte reste dans l'éditeur et l'écriture est retentée à la sauvegarde suivante. Toutes les sauvegardes en attente sont aussi forcées avant de changer de note, de mettre à la corbeille, de convertir une note et de créer une note.
+- Mise en œuvre (`app/src/composables/useAutosave.ts`) :
+  - le contenu n'est lu dans l'éditeur qu'au moment d'enregistrer, jamais à chaque frappe, et seulement après une vraie modification ;
+  - la référence est le Markdown que l'éditeur écrit lui-même juste après avoir chargé la note : une note dans un autre style Markdown n'est pas réécrite tant qu'on ne la modifie pas ;
+  - les écritures partent dans l'ordre ;
+  - quitter la note (autre note, réglages, nouvelle note, conversion, corbeille) attend la fin de la sauvegarde. Si elle échoue (note de plus de 2 Mo…), un message le dit et la note reste ouverte avec le texte tapé, jusqu'à ce que la sauvegarde réussisse ;
+  - la fermeture de la fenêtre est refusée une fois dans ce cas ; fermer à nouveau quitte quand même.
 - Le titre est un champ séparé, au-dessus de l'éditeur (une ligne, gros caractères). `Entrée` dans le titre place le curseur dans l'éditeur.
 
 ### Ergonomie

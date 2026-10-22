@@ -1,5 +1,3 @@
 <template>
-  <main>
-    <h1>mèche</h1>
-  </main>
+  <RouterView />
 </template>

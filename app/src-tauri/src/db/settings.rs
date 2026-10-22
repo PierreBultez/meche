@@ -7,6 +7,13 @@ use serde::{Deserialize, Serialize};
 use crate::error::Result;
 
 const THEME_KEY: &str = "theme";
+const LIST_WIDTH_KEY: &str = "list_width";
+const CODE_LINE_WRAP_KEY: &str = "code_line_wrap";
+
+/// Width of the note list column in pixels (docs/08: 280 px, resizable).
+pub const DEFAULT_LIST_WIDTH: u32 = 280;
+pub const MIN_LIST_WIDTH: u32 = 220;
+pub const MAX_LIST_WIDTH: u32 = 520;
 
 /// Color theme chosen by the user. Stored as "system", "light" or "dark".
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
@@ -23,6 +30,9 @@ pub enum Theme {
 #[serde(rename_all = "camelCase")]
 pub struct Settings {
     pub theme: Theme,
+    pub list_width: u32,
+    /// Wrap long lines in code notes (off by default, docs/05).
+    pub code_line_wrap: bool,
 }
 
 /// Partial update sent by the frontend: only the fields present are changed.
@@ -31,12 +41,18 @@ pub struct Settings {
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct SettingsPatch {
     pub theme: Option<Theme>,
+    pub list_width: Option<u32>,
+    pub code_line_wrap: Option<bool>,
 }
 
 /// Reads all settings, with the default value for each missing one.
 pub fn load(conn: &Connection) -> Result<Settings> {
     Ok(Settings {
         theme: read(conn, THEME_KEY)?.unwrap_or_default(),
+        list_width: read(conn, LIST_WIDTH_KEY)?
+            .unwrap_or(DEFAULT_LIST_WIDTH)
+            .clamp(MIN_LIST_WIDTH, MAX_LIST_WIDTH),
+        code_line_wrap: read(conn, CODE_LINE_WRAP_KEY)?.unwrap_or(false),
     })
 }
 
@@ -46,6 +62,16 @@ pub fn apply_patch(conn: &mut Connection, patch: SettingsPatch) -> Result<Settin
     let tx = conn.transaction()?;
     if let Some(theme) = patch.theme {
         write(&tx, THEME_KEY, &theme)?;
+    }
+    if let Some(width) = patch.list_width {
+        write(
+            &tx,
+            LIST_WIDTH_KEY,
+            &width.clamp(MIN_LIST_WIDTH, MAX_LIST_WIDTH),
+        )?;
+    }
+    if let Some(wrap) = patch.code_line_wrap {
+        write(&tx, CODE_LINE_WRAP_KEY, &wrap)?;
     }
     tx.commit()?;
     load(conn)
@@ -92,6 +118,7 @@ mod tests {
         let mut conn = open_in_memory().unwrap();
         let patch = SettingsPatch {
             theme: Some(Theme::Dark),
+            ..SettingsPatch::default()
         };
         assert_eq!(apply_patch(&mut conn, patch).unwrap().theme, Theme::Dark);
         assert_eq!(load(&conn).unwrap().theme, Theme::Dark);
@@ -112,6 +139,7 @@ mod tests {
         let mut conn = open_in_memory().unwrap();
         let light = SettingsPatch {
             theme: Some(Theme::Light),
+            ..SettingsPatch::default()
         };
         apply_patch(&mut conn, light).unwrap();
         let settings = apply_patch(&mut conn, SettingsPatch::default()).unwrap();
@@ -131,15 +159,57 @@ mod tests {
 
     #[test]
     fn uses_the_json_shape_expected_by_the_frontend() {
-        let settings = Settings { theme: Theme::Dark };
+        let settings = Settings {
+            theme: Theme::Dark,
+            list_width: 300,
+            code_line_wrap: true,
+        };
         assert_eq!(
             serde_json::to_value(&settings).unwrap(),
-            serde_json::json!({ "theme": "dark" })
+            serde_json::json!({ "theme": "dark", "listWidth": 300, "codeLineWrap": true })
         );
 
         let patch: SettingsPatch = serde_json::from_str(r#"{ "theme": "light" }"#).unwrap();
         assert_eq!(patch.theme, Some(Theme::Light));
         let typo = serde_json::from_str::<SettingsPatch>(r#"{ "theem": "light" }"#);
         assert!(typo.is_err());
+    }
+
+    #[test]
+    fn list_width_and_code_wrapping_have_defaults_and_persist() {
+        let mut conn = open_in_memory().unwrap();
+        let defaults = load(&conn).unwrap();
+        assert_eq!(defaults.list_width, DEFAULT_LIST_WIDTH);
+        assert!(!defaults.code_line_wrap);
+
+        let patch = SettingsPatch {
+            list_width: Some(333),
+            code_line_wrap: Some(true),
+            ..SettingsPatch::default()
+        };
+        let saved = apply_patch(&mut conn, patch).unwrap();
+        assert_eq!((saved.list_width, saved.code_line_wrap), (333, true));
+        assert_eq!(saved.theme, Theme::System);
+    }
+
+    #[test]
+    fn list_width_stays_within_bounds() {
+        let mut conn = open_in_memory().unwrap();
+        let too_wide = SettingsPatch {
+            list_width: Some(5_000),
+            ..SettingsPatch::default()
+        };
+        assert_eq!(
+            apply_patch(&mut conn, too_wide).unwrap().list_width,
+            MAX_LIST_WIDTH
+        );
+        let too_narrow = SettingsPatch {
+            list_width: Some(10),
+            ..SettingsPatch::default()
+        };
+        assert_eq!(
+            apply_patch(&mut conn, too_narrow).unwrap().list_width,
+            MIN_LIST_WIDTH
+        );
     }
 }

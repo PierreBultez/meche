@@ -58,14 +58,14 @@ describe("settings store", () => {
 
   it("applies the system theme as soon as it is created", () => {
     mockSystemTheme(true);
-    mockRustCore({ theme: "system" });
+    mockRustCore({ theme: "system", listWidth: 280, codeLineWrap: false });
     useSettingsStore();
     expect(currentTheme()).toBe("dark");
   });
 
   it("applies the saved theme once loaded", async () => {
     mockSystemTheme(true);
-    mockRustCore({ theme: "light" });
+    mockRustCore({ theme: "light", listWidth: 280, codeLineWrap: false });
     const store = useSettingsStore();
     await store.load();
     await nextTick();
@@ -75,7 +75,7 @@ describe("settings store", () => {
 
   it("switches at once and saves the new theme in Rust", async () => {
     mockSystemTheme(false);
-    const calls = mockRustCore({ theme: "system" });
+    const calls = mockRustCore({ theme: "system", listWidth: 280, codeLineWrap: false });
     const store = useSettingsStore();
     const saving = store.setTheme("dark");
     await nextTick();
@@ -86,7 +86,7 @@ describe("settings store", () => {
 
   it("rolls back when saving fails", async () => {
     mockSystemTheme(false);
-    mockRustCore({ theme: "light" }, { failWrites: true });
+    mockRustCore({ theme: "light", listWidth: 280, codeLineWrap: false }, { failWrites: true });
     const store = useSettingsStore();
     await store.load();
     await expect(store.setTheme("dark")).rejects.toThrow();
@@ -97,7 +97,7 @@ describe("settings store", () => {
 
   it("follows system changes only in system mode", async () => {
     const system = mockSystemTheme(false);
-    mockRustCore({ theme: "system" });
+    mockRustCore({ theme: "system", listWidth: 280, codeLineWrap: false });
     const store = useSettingsStore();
     system.switchTo(true);
     await nextTick();
@@ -108,5 +108,22 @@ describe("settings store", () => {
     system.switchTo(true);
     await nextTick();
     expect(currentTheme()).toBe("light");
+  });
+
+  it("loads and saves the list width and code wrapping", async () => {
+    mockSystemTheme(false);
+    const calls = mockRustCore({ theme: "system", listWidth: 320, codeLineWrap: true });
+    const store = useSettingsStore();
+    await store.load();
+    expect(store.listWidth).toBe(320);
+    expect(store.codeLineWrap).toBe(true);
+
+    await store.setListWidth(300);
+    await store.setCodeLineWrap(false);
+    expect(calls).toContainEqual({ cmd: "set_settings", payload: { patch: { listWidth: 300 } } });
+    expect(calls).toContainEqual({
+      cmd: "set_settings",
+      payload: { patch: { codeLineWrap: false } },
+    });
   });
 });

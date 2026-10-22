@@ -409,12 +409,18 @@ fn inline_markdown_to_text(text: &str, entities: Entities) -> String {
 }
 
 /// True when the "[" at `start` opens a link: its closing "]" is followed by "(".
+/// An escaped "\]" in the link text does not close it.
 /// `&[char]` is a borrowed slice: the function reads the characters without copying them.
 fn opens_link(chars: &[char], start: usize) -> bool {
-    match chars[start..].iter().position(|&c| c == ']') {
-        Some(offset) => chars.get(start + offset + 1) == Some(&'('),
-        None => false,
+    let mut i = start + 1;
+    while i < chars.len() {
+        match chars[i] {
+            '\\' => i += 2,
+            ']' => return chars.get(i + 1) == Some(&'('),
+            _ => i += 1,
+        }
     }
+    false
 }
 
 /// Converts the content of a note to another kind (docs/05, "Conversion entre types"):
@@ -971,6 +977,17 @@ mod tests {
         );
         assert_eq!(title, "indenté");
         assert_eq!(preview, "&lt; reste &lt;");
+    }
+
+    #[test]
+    fn list_texts_read_links_whose_text_has_brackets() {
+        let (title, preview) = list_texts(
+            "",
+            "[a\\]b](https://x.y)\n[\\[a\\]](https://x.y)",
+            NoteKind::Rich,
+        );
+        assert_eq!(title, "a]b");
+        assert_eq!(preview, "[a]");
     }
 
     #[test]

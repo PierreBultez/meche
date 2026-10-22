@@ -1,5 +1,6 @@
 //! Full-text search with SQLite FTS5 (docs/03, "Requêtes de recherche").
 
+use rusqlite::functions::FunctionFlags;
 use rusqlite::{Connection, params};
 use serde::Serialize;
 
@@ -27,6 +28,131 @@ pub struct SearchResult {
     pub color: NoteColor,
     pub pinned: bool,
     pub updated_at: i64,
+}
+
+/// Registers the SQL functions the schema needs: the view and the triggers of migration 002
+/// call `rich_search_text`. SQLite forgets them when a connection closes, so this runs on every
+/// connection, before the migrations.
+pub fn register_functions(conn: &Connection) -> Result<()> {
+    // The function never changes anything and always gives the same result for the same text:
+    // DETERMINISTIC and INNOCUOUS let SQLite use it in a view and in triggers.
+    let flags = FunctionFlags::SQLITE_UTF8
+        | FunctionFlags::SQLITE_DETERMINISTIC
+        | FunctionFlags::SQLITE_INNOCUOUS;
+    // `|context| { … }` is a closure: a small function written inline, called by SQLite with
+    // the arguments of each call.
+    conn.create_scalar_function("rich_search_text", 1, flags, |context| {
+        let content: String = context.get(0)?;
+        Ok(rich_search_text(&content))
+    })?;
+    Ok(())
+}
+
+/// The text of a rich note as the search index reads it (migration 002). The HTML entities the
+/// editor writes (`&amp;`, `&lt;`…) are decoded, except in code (fenced blocks and inline code),
+/// which the editor stores as typed. A decoded ">" is written "\>": the excerpts, which strip
+/// Markdown, must not take it for a quote marker.
+pub fn rich_search_text(markdown: &str) -> String {
+    let mut out = String::with_capacity(markdown.len());
+    // The fence of the code block we are in, if any: its character and its length.
+    let mut fence: Option<(char, usize)> = None;
+    for (index, line) in markdown.split('\n').enumerate() {
+        if index > 0 {
+            out.push('\n');
+        }
+        match fence {
+            Some((character, length)) => {
+                if closes_fence(line, character, length) {
+                    fence = None;
+                }
+                out.push_str(line);
+            }
+            None => match opening_fence(line) {
+                Some(opened) => {
+                    fence = Some(opened);
+                    out.push_str(line);
+                }
+                None => out.push_str(&decode_outside_code_spans(line)),
+            },
+        }
+    }
+    out
+}
+
+/// "```php" or "~~~": the character and the length of the fence that opens a code block.
+fn opening_fence(line: &str) -> Option<(char, usize)> {
+    let trimmed = line.trim_start();
+    let character = trimmed.chars().next().filter(|c| *c == '`' || *c == '~')?;
+    let length = trimmed.chars().take_while(|c| *c == character).count();
+    (length >= 3).then_some((character, length))
+}
+
+/// A line made only of the same fence character, at least as long as the opening one.
+fn closes_fence(line: &str, character: char, length: usize) -> bool {
+    let trimmed = line.trim();
+    trimmed.chars().count() >= length && trimmed.chars().all(|c| c == character)
+}
+
+/// Decodes the entities of a line, leaving `inline code` as it is.
+fn decode_outside_code_spans(line: &str) -> String {
+    let chars: Vec<char> = line.chars().collect();
+    let mut out = String::with_capacity(line.len());
+    let mut text = String::new();
+    let mut i = 0;
+    while i < chars.len() {
+        match chars[i] {
+            // An escaped character ("\`") is text, never the start of code.
+            '\\' if i + 1 < chars.len() => {
+                text.push(chars[i]);
+                text.push(chars[i + 1]);
+                i += 2;
+            }
+            '`' => {
+                let run = chars[i..].iter().take_while(|c| **c == '`').count();
+                let end = closing_backticks(&chars, i + run, run).unwrap_or(i + run);
+                out.push_str(&decode_entities(&text));
+                text.clear();
+                // The code span with its backticks, or the backticks alone if it never closes.
+                out.extend(&chars[i..end]);
+                i = end;
+            }
+            c => {
+                text.push(c);
+                i += 1;
+            }
+        }
+    }
+    out.push_str(&decode_entities(&text));
+    out
+}
+
+/// Where a code span opened by `run` backticks ends: just after the next run of exactly `run`
+/// backticks starting at `from` or later.
+fn closing_backticks(chars: &[char], from: usize, run: usize) -> Option<usize> {
+    let mut i = from;
+    while i < chars.len() {
+        if chars[i] == '`' {
+            let length = chars[i..].iter().take_while(|c| **c == '`').count();
+            if length == run {
+                return Some(i + length);
+            }
+            i += length;
+        } else {
+            i += 1;
+        }
+    }
+    None
+}
+
+/// The entities written by the editor, decoded; "&amp;" last, since "&amp;lt;" is the text
+/// "&lt;", not "<".
+fn decode_entities(text: &str) -> String {
+    text.replace("&nbsp;", " ")
+        .replace("&#32;", " ")
+        .replace("&#9;", "\t")
+        .replace("&lt;", "<")
+        .replace("&gt;", "\\>")
+        .replace("&amp;", "&")
 }
 
 /// Turns what the user typed into an FTS5 prefix query: `cour lidl` → `"cour"* "lidl"*`.
@@ -209,6 +335,38 @@ mod tests {
         assert_eq!(
             result.excerpt,
             format!("Renouveler le {MATCH_START}certificat{MATCH_END} avec certbot")
+        );
+    }
+
+    #[test]
+    fn search_text_decodes_entities_outside_code_only() {
+        let markdown =
+            "Pierre &amp; Marie -&gt; ok\n```html\n<td>&nbsp;</td>\n```\nCode `&amp;` et &lt;b&gt;";
+        assert_eq!(
+            rich_search_text(markdown),
+            "Pierre & Marie -\\> ok\n```html\n<td>&nbsp;</td>\n```\nCode `&amp;` et <b\\>"
+        );
+        // An unclosed code span is only backticks: the rest is still decoded.
+        assert_eq!(rich_search_text("a ` b &amp; c"), "a ` b & c");
+        // "&amp;lt;" is the text "&lt;".
+        assert_eq!(rich_search_text("&amp;lt;"), "&lt;");
+    }
+
+    #[test]
+    fn entities_in_code_are_still_found() {
+        let conn = open_in_memory().unwrap();
+        let id = note(&conn, "", "```html\n<td>&nbsp;</td>\n```");
+        assert_eq!(found(&conn, "nbsp"), [id]);
+    }
+
+    #[test]
+    fn an_escaped_quote_marker_stays_in_the_excerpt() {
+        let conn = open_in_memory().unwrap();
+        note(&conn, "", "&gt; pas une citation et -&gt; suite");
+        let result = &search(&conn, "citation").unwrap()[0];
+        assert_eq!(
+            result.excerpt,
+            format!("> pas une {MATCH_START}citation{MATCH_END} et -> suite")
         );
     }
 

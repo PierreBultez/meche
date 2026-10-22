@@ -79,9 +79,11 @@ const visibleRows = computed(() => {
     index: range.value.start + offset,
   }));
   const focused = focusedId.value === null ? -1 : rows.value.findIndex((row) => row.id === focusedId.value);
-  if (focused !== -1 && (focused < range.value.start || focused >= range.value.end)) {
-    drawn.push({ row: rows.value[focused], index: focused });
-  }
+  // Kept at its place in the page order (before or after the others): moving the element
+  // would drop the focus.
+  const kept = { row: rows.value[focused], index: focused };
+  if (focused !== -1 && focused < range.value.start) drawn.unshift(kept);
+  if (focused !== -1 && focused >= range.value.end) drawn.push(kept);
   return drawn;
 });
 
@@ -98,8 +100,11 @@ function onScroll(): void {
   scrollTop.value = listNav.value?.scrollTop ?? 0;
 }
 
+// Also when the list is shown again (Ctrl+\, focus mode): its scroll position comes back without
+// a scroll event.
 const resizeObserver = new ResizeObserver(() => {
   viewportHeight.value = listNav.value?.clientHeight ?? viewportHeight.value;
+  scrollTop.value = listNav.value?.scrollTop ?? scrollTop.value;
 });
 onMounted(() => {
   if (listNav.value) resizeObserver.observe(listNav.value);
@@ -126,8 +131,9 @@ async function showRow(index: number): Promise<void> {
   const nav = listNav.value;
   if (!nav) return;
   // Right after the list is shown again (Ctrl+\, focus mode), the observer has not reported its
-  // height yet: read it now, so that the right rows are drawn.
+  // height and scroll position yet: read them now, so that the right rows are drawn.
   viewportHeight.value = nav.clientHeight;
+  scrollTop.value = nav.scrollTop;
   const listTop = list.value?.offsetTop ?? 0;
   const target = scrollToShow(index, nav.scrollTop - listTop, nav.clientHeight - listTop, rowHeight.value);
   if (target !== null) {

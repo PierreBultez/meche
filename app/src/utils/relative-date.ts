@@ -18,9 +18,10 @@ export function shortRelativeDate(timestamp: number, now: number = Date.now()): 
   return `${years} an${years > 1 ? "s" : ""}`;
 }
 
+// Creating a formatter is slow: one is shared by every card of the list.
+const FULL_DATE = new Intl.DateTimeFormat("fr-FR", { dateStyle: "long", timeStyle: "short" });
+
 /** Full date for tooltips: « 22 octobre 2026 à 14:05 ». */
 export function fullDate(timestamp: number): string {
-  return new Intl.DateTimeFormat("fr-FR", { dateStyle: "long", timeStyle: "short" }).format(
-    timestamp,
-  );
+  return FULL_DATE.format(timestamp);
 }

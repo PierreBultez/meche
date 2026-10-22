@@ -1,15 +1,15 @@
 <script setup lang="ts">
 // Left column (docs/08): search, new note buttons, the list, filter and settings.
 import { CodeXml, Plus, Search, Settings, Trash2, X } from "lucide-vue-next";
-import { computed, nextTick, ref, watch } from "vue";
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { useRouter } from "vue-router";
 import { useNoteActions } from "../../composables/useNoteActions";
 import { useNotesStore } from "../../stores/notes";
 import { useToastsStore } from "../../stores/toasts";
 import { useUiStore } from "../../stores/ui";
-import type { ListFilter, NoteKind } from "../../types/note";
+import type { ListFilter, NoteColor, NoteKind } from "../../types/note";
+import { scrollToShow, visibleRange } from "../../utils/virtual-list";
 import ConfirmDialog from "../ui/ConfirmDialog.vue";
-import HighlightedText from "../ui/HighlightedText.vue";
 import UiSelect from "../ui/UiSelect.vue";
 import NoteCard from "./NoteCard.vue";
 
@@ -33,6 +33,112 @@ const FILTERS: Array<{ value: ListFilter; label: string }> = [
 
 const searching = computed(() => notes.results !== null);
 const selectedId = computed(() => notes.current?.id ?? null);
+
+interface Row {
+  id: string;
+  title: string;
+  preview: string;
+  highlighted: boolean;
+  color: NoteColor;
+  kind: NoteKind;
+  pinned: boolean;
+  date: number;
+}
+
+/** The cards of the list: search results while searching, otherwise the filtered notes. */
+const rows = computed<Row[]>(() =>
+  notes.results !== null
+    ? notes.results.map((result) => ({
+        ...result,
+        preview: result.excerpt,
+        highlighted: true,
+        date: result.updatedAt,
+      }))
+    : notes.summaries.map((summary) => ({
+        ...summary,
+        highlighted: false,
+        date: summary.trashedAt ?? summary.updatedAt,
+      })),
+);
+
+// ── Virtual list: only the cards in view are in the page (docs/08), so opening a note or
+// scrolling stays instant with thousands of notes. All cards have the same height. ──
+const list = ref<HTMLElement | null>(null);
+const scrollTop = ref(0);
+const viewportHeight = ref(800);
+const rowHeight = ref(74);
+const range = computed(() =>
+  visibleRange(scrollTop.value, viewportHeight.value, rowHeight.value, rows.value.length),
+);
+const visibleRows = computed(() =>
+  rows.value.slice(range.value.start, range.value.end).map((row, offset) => ({
+    row,
+    index: range.value.start + offset,
+  })),
+);
+
+function onScroll(): void {
+  scrollTop.value = listNav.value?.scrollTop ?? 0;
+}
+
+const resizeObserver = new ResizeObserver(() => {
+  viewportHeight.value = listNav.value?.clientHeight ?? viewportHeight.value;
+});
+onMounted(() => {
+  if (listNav.value) resizeObserver.observe(listNav.value);
+});
+onBeforeUnmount(() => resizeObserver.disconnect());
+
+// The height of a card follows the font size: measured on the first card drawn.
+watch(
+  visibleRows,
+  () => {
+    const height = list.value?.querySelector<HTMLElement>("li")?.offsetHeight;
+    if (height && height !== rowHeight.value) rowHeight.value = height;
+  },
+  { flush: "post" },
+);
+
+/** Scrolls the list so that row `index` is in view, then waits for it to be drawn. */
+async function showRow(index: number): Promise<void> {
+  const nav = listNav.value;
+  if (!nav) return;
+  const listTop = list.value?.offsetTop ?? 0;
+  const target = scrollToShow(index, nav.scrollTop - listTop, nav.clientHeight - listTop, rowHeight.value);
+  if (target !== null) {
+    nav.scrollTop = target + listTop;
+    scrollTop.value = nav.scrollTop;
+  }
+  await nextTick();
+}
+
+function cardAt(index: number): HTMLElement | null {
+  return list.value?.querySelector<HTMLElement>(`li[data-index="${index}"] a`) ?? null;
+}
+
+// A new list (search, filter): back to its top.
+watch([() => notes.filter, searching, () => notes.query], () => {
+  if (listNav.value) listNav.value.scrollTop = 0;
+  scrollTop.value = 0;
+});
+
+// A newly opened note is brought into view (Ctrl+↑ / Ctrl+↓, palette). A new note only
+// appears in the list after the next refresh, so it is looked for again then. The list is
+// not moved on later refreshes: the user may be scrolling it while typing.
+let toReveal: string | null = null;
+function revealSelected(): void {
+  const index = rows.value.findIndex((row) => row.id === toReveal);
+  if (index === -1) return;
+  toReveal = null;
+  void showRow(index);
+}
+watch(selectedId, (id) => {
+  toReveal = id;
+  revealSelected();
+});
+watch(rows, () => {
+  if (toReveal !== null) revealSelected();
+});
 
 /** Text of the empty state (docs/11, "Ton des textes"). */
 const emptyText = computed(() => {
@@ -87,19 +193,24 @@ watch(
   () => ui.listFocusRequest,
   async () => {
     await reveal();
-    const cards = listNav.value?.querySelectorAll<HTMLElement>("a") ?? [];
-    const selected = listNav.value?.querySelector<HTMLElement>('a[aria-current="page"]');
-    (selected ?? cards[0] ?? searchInput.value)?.focus({ focusVisible: true });
+    if (rows.value.length === 0) {
+      searchInput.value?.focus();
+      return;
+    }
+    const index = Math.max(0, rows.value.findIndex((row) => row.id === selectedId.value));
+    await showRow(index);
+    cardAt(index)?.focus({ focusVisible: true });
   },
 );
 
 /** ↑ ↓ move between the cards of the list. */
-function moveFocus(event: KeyboardEvent, step: 1 | -1): void {
-  const cards = [...(listNav.value?.querySelectorAll<HTMLElement>("a") ?? [])];
-  const index = cards.indexOf(document.activeElement as HTMLElement);
-  if (index === -1) return;
+async function moveFocus(event: KeyboardEvent, step: 1 | -1): Promise<void> {
+  const current = (document.activeElement as HTMLElement | null)?.closest("li")?.dataset.index;
+  if (current === undefined) return;
   event.preventDefault();
-  cards[Math.min(Math.max(index + step, 0), cards.length - 1)].focus({ focusVisible: true });
+  const index = Math.min(Math.max(Number(current) + step, 0), rows.value.length - 1);
+  await showRow(index);
+  cardAt(index)?.focus({ focusVisible: true });
 }
 
 function createNote(kind: NoteKind): void {
@@ -173,39 +284,38 @@ async function emptyTrash(): Promise<void> {
 
     <nav
       ref="listNav"
-      class="min-h-0 flex-1 overflow-y-auto px-3 pb-3 pt-1"
+      class="relative min-h-0 flex-1 overflow-y-auto px-3 pb-3 pt-1"
       aria-label="Notes"
+      @scroll.passive="onScroll"
       @keydown.down="moveFocus($event, 1)"
       @keydown.up="moveFocus($event, -1)"
     >
-      <ul v-if="searching && notes.results!.length > 0" class="space-y-2">
-        <li v-for="result in notes.results" :key="result.id">
+      <ul
+        v-if="rows.length > 0"
+        ref="list"
+        class="relative"
+        :style="{ height: `${rows.length * rowHeight}px` }"
+      >
+        <li
+          v-for="{ row, index } in visibleRows"
+          :key="row.id"
+          :data-index="index"
+          class="absolute inset-x-0 pb-2"
+          :style="{ top: `${index * rowHeight}px` }"
+          :aria-setsize="rows.length"
+          :aria-posinset="index + 1"
+        >
           <NoteCard
-            :id="result.id"
-            :title="result.title"
-            :color="result.color"
-            :kind="result.kind"
-            :pinned="result.pinned"
-            :date="result.updatedAt"
-            :selected="result.id === selectedId"
-          >
-            <HighlightedText :text="result.excerpt" />
-          </NoteCard>
-        </li>
-      </ul>
-      <ul v-else-if="!searching && notes.summaries.length > 0" class="space-y-2">
-        <li v-for="summary in notes.summaries" :key="summary.id">
-          <NoteCard
-            :id="summary.id"
-            :title="summary.title"
-            :color="summary.color"
-            :kind="summary.kind"
-            :pinned="summary.pinned"
-            :date="summary.trashedAt ?? summary.updatedAt"
-            :selected="summary.id === selectedId"
-          >
-            {{ summary.preview }}
-          </NoteCard>
+            :id="row.id"
+            :title="row.title"
+            :preview="row.preview"
+            :highlighted="row.highlighted"
+            :color="row.color"
+            :kind="row.kind"
+            :pinned="row.pinned"
+            :date="row.date"
+            :selected="row.id === selectedId"
+          />
         </li>
       </ul>
       <p v-else class="px-2 py-8 text-center text-sm text-muted">{{ emptyText }}</p>

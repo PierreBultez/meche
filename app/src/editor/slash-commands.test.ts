@@ -52,8 +52,14 @@ describe("slashAllowed", () => {
     expect(allowedAt([{ type: "paragraph", content: [text("x"), { type: "hardBreak" }, text("/b")] }], 3)).toBe(true);
   });
 
-  it("does not open right after a bold word or in a code block", () => {
+  it("does not open right after a bold word, in a code block or in a table cell", () => {
     expect(allowedAt([{ type: "paragraph", content: [bold("A"), text("/b")] }], 2)).toBe(false);
     expect(allowedAt([{ type: "codeBlock", content: [text("/todo")] }], 1)).toBe(false);
+    const table: JSONContent = {
+      type: "table",
+      content: [{ type: "tableRow", content: [{ type: "tableCell", content: [{ type: "paragraph", content: [text("/li")] }] }] }],
+    };
+    // doc > table(0) > row(1) > cell(2) > paragraph(3): the text starts at 4.
+    expect(allowedAt([table], 4)).toBe(false);
   });
 });

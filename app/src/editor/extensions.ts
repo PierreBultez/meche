@@ -3,7 +3,7 @@
 import type { AnyExtension, JSONContent } from "@tiptap/core";
 import CodeBlockLowlight from "@tiptap/extension-code-block-lowlight";
 import Link from "@tiptap/extension-link";
-import { OrderedList, TaskItem, TaskList } from "@tiptap/extension-list";
+import { ListItem, OrderedList, TaskItem, TaskList } from "@tiptap/extension-list";
 import Paragraph from "@tiptap/extension-paragraph";
 import {
   Table,
@@ -53,15 +53,54 @@ const TidyTable = Table.extend({
 const InlineTableCell = TableCell.extend({ content: "paragraph+" });
 const InlineTableHeader = TableHeader.extend({ content: "paragraph+" });
 
-/** Ordered list whose empty items ("2. ") are read back as empty items, like bullet lists;
- * the stock parser made them invalid, and they were dropped on the next save. */
+/** A list item always starts with a paragraph (the schema wants one): an item whose text was
+ * erased but which still has sub-items is read back with its empty paragraph. */
+function withLeadingParagraph(item: JSONContent): void {
+  if (item.type === "listItem" && item.content?.[0]?.type !== "paragraph") {
+    item.content = [{ type: "paragraph" }, ...(item.content ?? [])];
+  }
+}
+
+const SafeListItem = ListItem.extend({
+  // An emptied bullet with sub-items is written "-" alone on its line: the parser reads "- "
+  // followed by a line break as a paragraph, and the sub-items would move up a level.
+  renderMarkdown(node, helpers, context) {
+    const markdown = this.parent?.(node, helpers, context) ?? "";
+    return context?.parentType === "bulletList" && markdown.startsWith("- \n")
+      ? `-${markdown.slice(2)}`
+      : markdown;
+  },
+  parseMarkdown(token, helpers) {
+    const parsed = this.parent?.(token, helpers);
+    for (const item of Array.isArray(parsed) ? parsed : [parsed]) {
+      if (item) withLeadingParagraph(item as JSONContent);
+    }
+    return parsed as ReturnType<NonNullable<typeof this.parent>>;
+  },
+});
+
+// GFM numbers list items with 1 to 9 digits only.
+const GFM_ORDERED_ITEM = /^[ \t]*\d{1,9}[.)](?:[ \t]|$)/;
+const stockOrderedTokenizer = OrderedList.config.markdownTokenizer;
+
+/**
+ * Ordered list read the GFM way.
+ * - TipTap's own reader also takes letters and roman numerals as numbers: « M. Dupont »,
+ *   « Cf. le document » or « a) option » became list items and lost their first word.
+ *   Only digits open a list here.
+ * - An item whose text is empty ("2. ", possibly with sub-items) is read back with its empty
+ *   paragraph: the stock parser made it invalid, and it was dropped on the next save.
+ */
 const SafeOrderedList = OrderedList.extend({
+  markdownTokenizer: stockOrderedTokenizer && {
+    ...stockOrderedTokenizer,
+    tokenize: (src, tokens, lexer) =>
+      GFM_ORDERED_ITEM.test(src) ? stockOrderedTokenizer.tokenize(src, tokens, lexer) : undefined,
+  },
   parseMarkdown(token, helpers) {
     const parsed = this.parent?.(token, helpers);
     for (const list of Array.isArray(parsed) ? parsed : [parsed]) {
-      for (const item of (list as JSONContent | undefined)?.content ?? []) {
-        if (item.type === "listItem" && !item.content?.length) item.content = [{ type: "paragraph" }];
-      }
+      for (const item of (list as JSONContent | undefined)?.content ?? []) withLeadingParagraph(item);
     }
     return parsed as ReturnType<NonNullable<typeof this.parent>>;
   },
@@ -100,7 +139,8 @@ function createParser(): typeof marked {
 /** Paragraph whose text never turns into a list, heading or quote when read back. */
 const SafeParagraph = Paragraph.extend({
   renderMarkdown(node, helpers, context) {
-    return escapeBlockStarts(this.parent?.(node, helpers, context) ?? "");
+    // The table renderer passes the table as parent of the paragraphs of its cells.
+    return escapeBlockStarts(this.parent?.(node, helpers, context) ?? "", context?.parentType === "table");
   },
 });
 
@@ -116,8 +156,10 @@ export function createRichExtensions(options: RichExtensionOptions = {}): AnyExt
       // Replaced by the versions below, which read and write Markdown more safely.
       link: false,
       orderedList: false,
+      listItem: false,
     }),
     SafeParagraph,
+    SafeListItem,
     SafeOrderedList,
     SafeLink.configure({ openOnClick: false, autolink: true, linkOnPaste: true }),
     TaskList,

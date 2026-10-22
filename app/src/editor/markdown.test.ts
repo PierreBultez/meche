@@ -120,6 +120,47 @@ describe("what the editor writes reads back the same (phase 1 review)", () => {
       "an empty last ordered item",
       [{ type: "orderedList", content: [item(paragraph(text("Lait"))), item(paragraph())] }],
     ],
+    ["« M. » at the start", [paragraph(text("M. Dupont viendra"))]],
+    ["« Cf. » at the start", [paragraph(text("Cf. le document"))]],
+    ["« a) » at the start", [paragraph(text("a) option"))]],
+    ["a roman numeral", [paragraph(text("IV. Chapitre"))]],
+    ["a long number", [paragraph(text("0612345678. Appeler"))]],
+    [
+      "« M. » right after a numbered list",
+      [{ type: "orderedList", content: [item(paragraph(text("Lait")))] }, paragraph(text("M. Dupont"))],
+    ],
+    [
+      "an emptied numbered item with sub-items",
+      [
+        {
+          type: "orderedList",
+          content: [
+            item(paragraph(text("Avant"))),
+            item(paragraph(), { type: "orderedList", content: [item(paragraph(text("Lait")))] }),
+            item(paragraph(text("Après"))),
+          ],
+        },
+      ],
+    ],
+    [
+      "an emptied bullet with sub-items",
+      [
+        {
+          type: "bulletList",
+          content: [
+            item(paragraph(text("Lait"))),
+            item(paragraph(), { type: "bulletList", content: [item(paragraph(text("sous")))] }),
+            item(paragraph(text("Pain"))),
+          ],
+        },
+      ],
+    ],
+    ["two line breaks in a row", [paragraph(text("a"), hardBreak, hardBreak, text("b"))]],
+    ["three line breaks in a row", [paragraph(text("a"), hardBreak, hardBreak, hardBreak, text("b"))]],
+    [
+      "two line breaks in a quote",
+      [{ type: "blockquote", content: [paragraph(text("a"), hardBreak, hardBreak, text("b"))] }],
+    ],
     [
       "list markers in a table cell",
       [
@@ -138,6 +179,27 @@ describe("what the editor writes reads back the same (phase 1 review)", () => {
     const reopened = editorFor(saved);
     expect(reopened.getJSON()).toEqual(editorFor(typed).getJSON());
     expect(reopened.getMarkdown()).toBe(saved);
+  });
+
+  it("keeps the Markdown of a cell with several paragraphs", () => {
+    // Read back as one paragraph with line breaks: the same Markdown, saved unchanged.
+    const saved = editorFor({
+      type: "doc",
+      content: [
+        {
+          type: "table",
+          content: [
+            { type: "tableRow", content: [cell("tableHeader", "h")] },
+            {
+              type: "tableRow",
+              content: [{ type: "tableCell", content: [paragraph(text("a")), paragraph(), paragraph(text("b"))] }],
+            },
+          ],
+        },
+      ],
+    }).getMarkdown();
+    expect(saved).toContain("a<br><br>b");
+    expect(roundTrip(saved)).toBe(saved);
   });
 
   it("only allows paragraphs in table cells (GFM keeps a cell on one line)", () => {

@@ -112,10 +112,15 @@ export function filterSlashCommands(query: string): SlashCommand[] {
 /**
  * The menu opens at the start of a line only (docs/05): the start of a paragraph, or right after
  * a line break. Suggestion's own startOfLine only looks at the text node before "/", which also
- * starts right after a bold word or a link. Never in a code block.
+ * starts right after a bold word or a link. Never in a code block nor in a table cell.
  */
 export function slashAllowed({ state, range }: { state: EditorState; range: Range }): boolean {
   const $from = state.doc.resolve(range.from);
   if ($from.parent.type.spec.code) return false;
+  // A table cell only holds paragraphs: none of the block commands would work there.
+  for (let depth = $from.depth; depth > 0; depth--) {
+    const name = $from.node(depth).type.name;
+    if (name === "tableCell" || name === "tableHeader") return false;
+  }
   return $from.parentOffset === 0 || $from.nodeBefore?.type.name === "hardBreak";
 }

@@ -29,6 +29,7 @@ Conventions :
 Champs **locaux uniquement** (client) :
 | Champ | Description |
 |---|---|
+| `seq` | Clé entière locale (`INTEGER PRIMARY KEY`) vers laquelle pointe l'index de recherche FTS5. Jamais synchronisée |
 | `server_rev` | Dernière révision serveur connue (0 = jamais synchronisée) |
 | `dirty` | 1 = modification locale pas encore envoyée |
 
@@ -45,7 +46,8 @@ Fichier : répertoire de données de l'application (`app_data_dir()` de Tauri) �
 ```sql
 -- Migration 001
 CREATE TABLE notes (
-  id                     TEXT PRIMARY KEY,
+  seq                    INTEGER PRIMARY KEY,   -- clé locale stable, utilisée par notes_fts
+  id                     TEXT    NOT NULL UNIQUE,
   title                  TEXT    NOT NULL DEFAULT '',
   content                TEXT    NOT NULL DEFAULT '',
   kind                   TEXT    NOT NULL DEFAULT 'rich' CHECK (kind IN ('rich','code')),
@@ -73,19 +75,19 @@ CREATE INDEX idx_notes_dirty   ON notes (dirty) WHERE dirty = 1;
 -- Recherche plein texte (table externe synchronisée par triggers)
 CREATE VIRTUAL TABLE notes_fts USING fts5(
   title, content,
-  content='notes', content_rowid='rowid',
+  content='notes', content_rowid='seq',
   tokenize='unicode61 remove_diacritics 2'
 );
 
 CREATE TRIGGER notes_ai AFTER INSERT ON notes BEGIN
-  INSERT INTO notes_fts(rowid, title, content) VALUES (new.rowid, new.title, new.content);
+  INSERT INTO notes_fts(rowid, title, content) VALUES (new.seq, new.title, new.content);
 END;
 CREATE TRIGGER notes_ad AFTER DELETE ON notes BEGIN
-  INSERT INTO notes_fts(notes_fts, rowid, title, content) VALUES ('delete', old.rowid, old.title, old.content);
+  INSERT INTO notes_fts(notes_fts, rowid, title, content) VALUES ('delete', old.seq, old.title, old.content);
 END;
 CREATE TRIGGER notes_au AFTER UPDATE OF title, content ON notes BEGIN
-  INSERT INTO notes_fts(notes_fts, rowid, title, content) VALUES ('delete', old.rowid, old.title, old.content);
-  INSERT INTO notes_fts(rowid, title, content) VALUES (new.rowid, new.title, new.content);
+  INSERT INTO notes_fts(notes_fts, rowid, title, content) VALUES ('delete', old.seq, old.title, old.content);
+  INSERT INTO notes_fts(rowid, title, content) VALUES (new.seq, new.title, new.content);
 END;
 
 -- Réglages et état de synchro (clé / valeur JSON)
@@ -104,11 +106,15 @@ CREATE TABLE import_triage (
 );
 ```
 
+Pourquoi `seq` (décidé en phase 0) : l'index FTS5 « à contenu externe » retrouve ses lignes par un identifiant entier. Avec une clé primaire `TEXT`, cet identifiant serait le `rowid` implicite de SQLite, que la documentation ne garantit pas stable (un `VACUUM` peut le renuméroter). Une colonne `INTEGER PRIMARY KEY` explicite, elle, ne change jamais. L'identifiant de la note reste `id` (UUID), unique et synchronisé ; `seq` n'existe que dans la base locale.
+
+Le schéma exact est dans `app/src-tauri/src/db/sql/001_initial.sql` (migration 001, à ne plus modifier une fois publiée : toute évolution passe par une nouvelle migration).
+
 Requêtes de recherche :
 ```sql
 SELECT n.id, n.title, snippet(notes_fts, 1, '<mark>', '</mark>', '…', 12) AS excerpt
 FROM notes_fts
-JOIN notes n ON n.rowid = notes_fts.rowid
+JOIN notes n ON n.seq = notes_fts.rowid
 WHERE notes_fts MATCH :query AND n.deleted = 0 AND n.trashed_at IS NULL
 ORDER BY bm25(notes_fts, 5.0, 1.0)
 LIMIT 50;

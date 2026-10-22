@@ -19,7 +19,7 @@ Bascule : réglage **Clair / Sombre / Système**, et raccourci dans la palette `
 
 ## Jetons de couleur de l'interface
 
-Définis comme variables CSS (Tailwind 4 `@theme` + surcharge `[data-theme="dark"]`).
+Définis comme variables CSS (Tailwind 4 `@theme` + surcharge `[data-theme="dark"]`), dans `app/src/styles/tokens.css`.
 
 | Jeton | Fugace (clair) | Feu d'artifice (sombre) | Usage |
 |---|---|---|---|
@@ -32,27 +32,27 @@ Définis comme variables CSS (Tailwind 4 `@theme` + surcharge `[data-theme="dark
 | `--brand` | `#7B2FF7` | `#FF6B1A` | Bouton +, éléments actifs, focus |
 | `--brand-2` | `#FF4FA3` | `#FFC93C` | Accent secondaire (étincelle) |
 | `--on-brand` | `#FFFFFF` | `#1A1446` | Texte sur `--brand` |
-| `--danger` | `#E5383B` | `#FF5370` | Suppression, erreurs |
-| `--fuse` | `#C9A27A` | `#8C7A5B` | Mèche non consumée (cordon) |
-| `--spark` | `#FF8A1F` | `#FFC93C` | Étincelle, mèche allumée |
+| `--danger` | `#DE3035` | `#FF5370` | Suppression, erreurs |
+| `--fuse` | `#B38C65` | `#8C7A5B` | Mèche non consumée (cordon) |
+| `--spark` | `#E87500` | `#FFC93C` | Étincelle, mèche allumée |
 | `--selection` | `#7B2FF733` | `#AE81FF4D` | Sélection de texte |
 
 ## Couleur par note
 
 Chaque note a **sa propre couleur**, pour qu'on la repère d'un coup d'œil. Huit couleurs, stockées par **nom** (pas par code hexadécimal), pour que chaque thème applique sa propre variante.
 
-| Nom (`color`) | Fugace : accent | Fugace : fond de carte | Fugace : texte sur fond | Feu d'artifice : néon |
-|---|---|---|---|---|
-| `violet` | `#7B2FF7` | `#F1E8FF` | `#3A0F80` | `#AE81FF` |
-| `rose` | `#FF4FA3` | `#FFE6F2` | `#85154D` | `#F92672` |
-| `corail` | `#FF5A5F` | `#FFE8E6` | `#8A1C1F` | `#FF6B6B` |
-| `orange` | `#FF8A1F` | `#FFEEDC` | `#7A3A00` | `#FD971F` |
-| `citron` | `#F5B800` | `#FFF6D6` | `#6B4E00` | `#E6DB74` |
-| `pomme` | `#3DBE4A` | `#E5F8E1` | `#1F5E1F` | `#A6E22E` |
-| `turquoise` | `#00C2A8` | `#DDFBF5` | `#04584B` | `#4FE3C1` |
-| `bleu` | `#2F80FF` | `#E4EEFF` | `#0E3C8A` | `#66D9EF` |
+| Nom (`color`) | Fugace : accent | Fugace : fond de carte | Fugace : texte sur fond | Feu d'artifice : néon | Feu d'artifice : titre sur carte |
+|---|---|---|---|---|---|
+| `violet` | `#7B2FF7` | `#F1E8FF` | `#3A0F80` | `#AE81FF` | `#CDA1FF` |
+| `rose` | `#FF4FA3` | `#FFE6F2` | `#85154D` | `#F92672` | `#FF7BB2` |
+| `corail` | `#FF5A5F` | `#FFE8E6` | `#8A1C1F` | `#FF6B6B` | `#FF918E` |
+| `orange` | `#E87500` | `#FFEEDC` | `#7A3A00` | `#FD971F` | `#FF9D2A` |
+| `citron` | `#C38800` | `#FFF6D6` | `#6B4E00` | `#E6DB74` | = néon |
+| `pomme` | `#21AB36` | `#E5F8E1` | `#1F5E1F` | `#A6E22E` | = néon |
+| `turquoise` | `#00A88F` | `#DDFBF5` | `#04584B` | `#4FE3C1` | = néon |
+| `bleu` | `#2F80FF` | `#E4EEFF` | `#0E3C8A` | `#66D9EF` | = néon |
 
-Les néons du thème sombre reprennent volontairement la palette Monokai (`#F92672`, `#FD971F`, `#E6DB74`, `#A6E22E`, `#66D9EF`, `#AE81FF`).
+Les néons du thème sombre reprennent volontairement la palette Monokai (`#F92672`, `#FD971F`, `#E6DB74`, `#A6E22E`, `#66D9EF`, `#AE81FF`). Sur une carte teintée, quatre néons manquaient de contraste pour le titre : la colonne « titre sur carte » en donne une version plus claire, utilisée uniquement à cet endroit (le liseré et l'éditeur gardent le néon d'origine).
 
 **Attribution** :
 - À la création, couleur choisie automatiquement : suivre un ordre mélangé des 8 couleurs, en évitant les couleurs des 2 notes les plus récentes.
@@ -62,12 +62,19 @@ Les néons du thème sombre reprennent volontairement la palette Monokai (`#F926
 **Où la couleur apparaît** :
 | Élément | Fugace | Feu d'artifice |
 |---|---|---|
-| Carte dans la liste | Fond = « fond de carte », titre et aperçu = « texte sur fond » | Fond `--surface-2` mélangé à 12 % de néon (`color-mix`), liseré gauche de 3 px en néon, titre en néon |
+| Carte dans la liste | Fond = « fond de carte », titre et aperçu = « texte sur fond » | Fond `--surface-2` mélangé à 12 % de néon (`color-mix`), liseré gauche de 3 px en néon, titre en « titre sur carte » |
 | Note sélectionnée | Bordure 2 px en accent | Fond mélangé à 20 % + liseré 3 px |
 | Éditeur | Titre de la note en accent, cases cochées remplies avec l'accent, puces et marqueurs de titres en accent | Idem avec le néon |
 | Fond de l'éditeur | Reste `--bg` (blanc) : la lecture reste reposante | Reste `--bg` (indigo) |
 
 **Contraste** : Claude Code doit vérifier par un petit test automatisé (ratio WCAG) que chaque paire texte/fond atteint **4,5:1** (texte courant) ou **3:1** (gros titres, icônes). Ajuster d'un cran si une paire échoue, sans changer l'esprit des couleurs.
+
+- Le test est `app/src/theme/tokens.test.ts` : il lit `tokens.css` et vérifie les deux thèmes.
+- Phase 0 (validé par Pierre) : en Fugace, `--danger`, `--fuse`, `--spark`, les accents orange, citron, pomme et turquoise et cinq couleurs de code ont été légèrement assombris (teinte conservée) ; en Feu d'artifice, la colonne « titre sur carte » a été ajoutée. Les valeurs de ce document sont les valeurs ajustées.
+- **À trancher avant la phase concernée** (paires dont l'usage n'est pas encore défini, elles échouent avec les couleurs actuelles) :
+  - `--danger` sur `--surface` / `--surface-2` (menus, panneaux) : 4,24 et 3,91 en Fugace, 4,86 et 4,11 en sombre (phase 1) ;
+  - le badge mèche posé sur une carte : `--fuse` et `--spark` (3:1) et le texte `--danger` (4,5:1) échouent sur presque toutes les cartes (phase 2) ;
+  - l'aperçu d'une carte sombre sélectionnée en `--text-muted` (4,15 à 4,34 pour citron, pomme, turquoise, bleu) : utiliser `--text` ou la couleur du titre (phase 1).
 
 ## La mèche (élément signature)
 
@@ -94,13 +101,13 @@ Un thème par mode, **partagé** entre CodeMirror (notes code) et lowlight (bloc
 |---|---|---|
 | Fond du bloc | `#F7F5FC` | `#120E33` |
 | Texte | `#1C1433` | `#F8F8F2` |
-| Mot-clé, opérateur | `#D6246E` | `#F92672` |
-| Chaîne | `#A07800` | `#E6DB74` |
-| Fonction, méthode | `#3A8F00` | `#A6E22E` |
+| Mot-clé, opérateur | `#D4216D` | `#F92672` |
+| Chaîne | `#916900` | `#E6DB74` |
+| Fonction, méthode | `#2B8100` | `#A6E22E` |
 | Nombre, constante, booléen | `#7B2FF7` | `#AE81FF` |
 | Type, classe | `#0077B6` | `#66D9EF` |
-| Variable, paramètre | `#D9640A` | `#FD971F` |
-| Commentaire | `#8C85A8` | `#8A82C4` |
+| Variable, paramètre | `#BF4C00` | `#FD971F` |
+| Commentaire | `#736C8E` | `#8A82C4` |
 
 ## Typographie
 

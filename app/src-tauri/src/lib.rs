@@ -56,6 +56,8 @@ fn show_window_if_frontend_fails(app: &tauri::App) {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        // Opens links in the system browser (Ctrl+click in a note, docs/05).
+        .plugin(tauri_plugin_opener::init())
         .setup(|app| {
             // Private data folder of the app, e.g. ~/.local/share/fr.pierrebultez.meche on Linux.
             let data_dir = app.path().app_data_dir()?;

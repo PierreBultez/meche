@@ -1,5 +1,6 @@
 @import "tailwindcss";
 @import "./tokens.css";
+@import "./editor.css";
 
 /*
  * Tailwind utilities generated from the Mèche tokens (bg-surface, text-muted, border-note…).

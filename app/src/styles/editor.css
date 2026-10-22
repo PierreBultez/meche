@@ -1,0 +1,264 @@
+/*
+ * Rich note editor (docs/05, docs/08, docs/11). Colors only come from tokens.css:
+ * the note's color (--note) for its accents, the code theme for code.
+ */
+@layer components {
+  .rich-editor {
+    max-width: 72ch;
+    margin: 0 auto;
+    font-size: 16px;
+    line-height: 1.6;
+    color: var(--text);
+    outline: none;
+    padding-bottom: 30vh; /* room to write at the bottom of a long note */
+  }
+
+  .rich-editor > * + * {
+    margin-top: 0.75em;
+  }
+
+  .rich-editor h1,
+  .rich-editor h2,
+  .rich-editor h3 {
+    font-weight: 600;
+    line-height: 1.3;
+    margin-top: 1.4em;
+  }
+  .rich-editor h1 {
+    font-size: 1.6em;
+  }
+  .rich-editor h2 {
+    font-size: 1.35em;
+  }
+  .rich-editor h3 {
+    font-size: 1.15em;
+  }
+
+  .rich-editor a {
+    color: var(--brand);
+    text-decoration: underline;
+    text-underline-offset: 2px;
+    cursor: pointer;
+  }
+
+  .rich-editor ul,
+  .rich-editor ol {
+    padding-left: 1.5em;
+  }
+  .rich-editor ul {
+    list-style: disc;
+  }
+  .rich-editor ol {
+    list-style: decimal;
+  }
+  .rich-editor li::marker {
+    color: var(--note);
+  }
+  .rich-editor li > p + * {
+    margin-top: 0.25em;
+  }
+
+  /* Checklists: boxes filled with the note's color when checked (docs/11). */
+  .rich-editor ul[data-type="taskList"] {
+    list-style: none;
+    padding-left: 0.25em;
+  }
+  .rich-editor ul[data-type="taskList"] ul[data-type="taskList"] {
+    padding-left: 1.6em;
+  }
+  .rich-editor li[data-type="taskItem"] {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.55em;
+  }
+  .rich-editor li[data-type="taskItem"] > label {
+    flex: none;
+    margin-top: 0.22em;
+    user-select: none;
+  }
+  .rich-editor li[data-type="taskItem"] > div {
+    flex: 1;
+    min-width: 0;
+  }
+  .rich-editor li[data-type="taskItem"][data-checked="true"] > div > p {
+    color: var(--text-muted);
+  }
+  .rich-editor input[type="checkbox"] {
+    appearance: none;
+    display: grid;
+    place-content: center;
+    width: 1.1em;
+    height: 1.1em;
+    margin: 0;
+    border: 2px solid var(--note);
+    border-radius: 5px;
+    background: transparent;
+    cursor: pointer;
+  }
+  .rich-editor input[type="checkbox"]:checked {
+    background: var(--note);
+  }
+  .rich-editor input[type="checkbox"]:checked::after {
+    content: "";
+    width: 0.32em;
+    height: 0.6em;
+    margin-top: -0.12em;
+    border: solid var(--bg);
+    border-width: 0 2.5px 2.5px 0;
+    transform: rotate(45deg);
+  }
+
+  .rich-editor blockquote {
+    border-left: 3px solid var(--note);
+    padding-left: 1em;
+    color: var(--text-muted);
+  }
+
+  .rich-editor hr {
+    border: none;
+    border-top: 2px solid var(--border);
+    margin: 1.5em 0;
+  }
+
+  .rich-editor code {
+    font-family: var(--font-mono);
+    font-size: 0.9em;
+    background: var(--surface-2);
+    border-radius: 6px;
+    padding: 0.1em 0.35em;
+  }
+
+  .rich-editor table {
+    border-collapse: collapse;
+    width: 100%;
+    table-layout: fixed;
+  }
+  .rich-editor th,
+  .rich-editor td {
+    border: 1px solid var(--border);
+    padding: 0.35em 0.6em;
+    vertical-align: top;
+  }
+  .rich-editor th {
+    background: var(--surface);
+    font-weight: 600;
+    text-align: left;
+  }
+  .rich-editor .selectedCell {
+    background: var(--selection);
+  }
+
+  .rich-editor p.is-editor-empty:first-child::before {
+    content: attr(data-placeholder);
+    color: var(--text-muted);
+    float: left;
+    height: 0;
+    pointer-events: none;
+  }
+
+  /* Code blocks (shared code theme, docs/11) */
+  .code-block {
+    position: relative;
+  }
+  .code-block pre {
+    background: var(--code-bg);
+    color: var(--code-text);
+    font-family: var(--font-mono);
+    font-size: 14px;
+    line-height: 1.55;
+    border-radius: var(--radius-button);
+    padding: 2.2em 1em 1em;
+    overflow-x: auto;
+    tab-size: 4;
+  }
+  .code-block pre code {
+    background: none;
+    padding: 0;
+    font-size: inherit;
+  }
+  .code-block-toolbar {
+    position: absolute;
+    top: 0.4em;
+    right: 0.5em;
+    display: flex;
+    align-items: center;
+    gap: 0.25em;
+  }
+  .code-block-language,
+  .code-block-copy {
+    font-family: var(--font-sans);
+    font-size: 12px;
+    color: var(--code-comment);
+    background: transparent;
+    border-radius: 6px;
+    padding: 0.15em 0.35em;
+    cursor: pointer;
+  }
+  .code-block-language:hover,
+  .code-block-copy:hover {
+    color: var(--code-text);
+  }
+
+  /* Selection menu */
+  .bubble-button {
+    display: grid;
+    place-items: center;
+    width: 30px;
+    height: 30px;
+    border-radius: 8px;
+    color: var(--text);
+  }
+  .bubble-button:hover {
+    background: var(--surface);
+  }
+  .bubble-button[aria-pressed="true"] {
+    background: var(--brand);
+    color: var(--on-brand);
+  }
+
+  /* Syntax highlighting: highlight.js classes → code theme tokens */
+  .hljs-keyword,
+  .hljs-selector-tag,
+  .hljs-operator,
+  .hljs-built_in,
+  .hljs-name {
+    color: var(--code-keyword);
+  }
+  .hljs-string,
+  .hljs-regexp,
+  .hljs-char.escape_ {
+    color: var(--code-string);
+  }
+  .hljs-title.function_,
+  .hljs-title,
+  .hljs-section,
+  .hljs-selector-id,
+  .hljs-selector-class {
+    color: var(--code-function);
+  }
+  .hljs-number,
+  .hljs-literal,
+  .hljs-symbol,
+  .hljs-bullet {
+    color: var(--code-number);
+  }
+  .hljs-type,
+  .hljs-title.class_,
+  .hljs-class {
+    color: var(--code-type);
+  }
+  .hljs-variable,
+  .hljs-template-variable,
+  .hljs-params,
+  .hljs-attr,
+  .hljs-attribute,
+  .hljs-property {
+    color: var(--code-variable);
+  }
+  .hljs-comment,
+  .hljs-quote,
+  .hljs-meta {
+    color: var(--code-comment);
+    font-style: italic;
+  }
+}

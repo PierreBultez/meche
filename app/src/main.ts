@@ -4,18 +4,17 @@ import { createPinia } from "pinia";
 import App from "./App.vue";
 import { router } from "./router";
 import { useSettingsStore } from "./stores/settings";
+import { syncWindowBackground } from "./theme/apply";
 import "./styles/main.css";
 
 const app = createApp(App).use(createPinia()).use(router);
 
-/** Paints the native window with the theme's background, then shows it (it starts hidden). */
+/** Shows the window (it starts hidden), after making sure its native background matches the theme. */
 async function showWindow(): Promise<void> {
-  const appWindow = getCurrentWindow();
-  const background = getComputedStyle(document.documentElement).getPropertyValue("--bg").trim();
-  await appWindow
-    .setBackgroundColor(background)
-    .catch((error: unknown) => console.error("Could not set the window background", error));
-  await appWindow.show();
+  await syncWindowBackground().catch((error: unknown) =>
+    console.error("Could not set the window background", error),
+  );
+  await getCurrentWindow().show();
 }
 
 // The window starts hidden (tauri.conf.json) so it never flashes in the wrong theme.

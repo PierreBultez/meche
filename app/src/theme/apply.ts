@@ -1,3 +1,5 @@
+import { isTauri } from "@tauri-apps/api/core";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import type { ThemePreference } from "../types/settings";
 
 /** The theme actually displayed: "system" resolves to one of these two. */
@@ -24,4 +26,19 @@ export function watchSystemTheme(listener: (theme: ResolvedTheme) => void): () =
 /** Switches the whole UI instantly: tokens.css reacts to `data-theme` on <html>. */
 export function applyTheme(theme: ResolvedTheme, root: HTMLElement = document.documentElement): void {
   root.dataset.theme = theme;
+}
+
+/**
+ * Paints the native window with the current --bg. The page normally hides it, but it shows at
+ * startup and in the strips uncovered while resizing, so it must follow the theme.
+ * Does nothing outside the Tauri app (Vitest, plain browser).
+ */
+export async function syncWindowBackground(
+  root: HTMLElement = document.documentElement,
+): Promise<void> {
+  const background = getComputedStyle(root).getPropertyValue("--bg").trim();
+  if (!isTauri() || background === "") {
+    return;
+  }
+  await getCurrentWindow().setBackgroundColor(background);
 }

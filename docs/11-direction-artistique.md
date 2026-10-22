@@ -74,7 +74,8 @@ Les néons du thème sombre reprennent volontairement la palette Monokai (`#F926
 - **À trancher avant la phase concernée** (paires dont l'usage n'est pas encore défini, elles échouent avec les couleurs actuelles) :
   - `--danger` sur `--surface` / `--surface-2` (menus, panneaux) : 4,24 et 3,91 en Fugace, 4,86 et 4,11 en sombre (phase 1) ;
   - le badge mèche posé sur une carte : `--fuse` et `--spark` (3:1) et le texte `--danger` (4,5:1) échouent sur presque toutes les cartes (phase 2) ;
-  - l'aperçu d'une carte sombre sélectionnée en `--text-muted` (4,15 à 4,34 pour citron, pomme, turquoise, bleu) : utiliser `--text` ou la couleur du titre (phase 1).
+  - l'aperçu d'une carte sombre sélectionnée en `--text-muted` (4,15 à 4,34 pour citron, pomme, turquoise, bleu) : utiliser `--text` ou la couleur du titre (phase 1) ;
+  - l'indicateur de carte sélectionnée (3:1 attendu pour un élément d'interface) : en Fugace, la bordure 2 px en accent n'atteint que 2,59 à 2,84 sur la carte et sur `--surface` pour rose, corail, orange, citron, pomme et turquoise ; en Feu d'artifice, seul le fond change (12 % → 20 %, contraste de 1,08 à 1,22 entre les deux états). Pistes : bordure dans la couleur « texte sur fond », ou fond sélectionné plus marqué (phase 1).
 
 ## La mèche (élément signature)
 

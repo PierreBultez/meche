@@ -13,7 +13,8 @@ sudo apt install libwebkit2gtk-4.1-dev build-essential curl wget file \
 
 # Rust
 curl --proto '=https' --tlsv1.2 https://sh.rustup.rs -sSf | sh
-rustup default stable
+. "$HOME/.cargo/env"          # ou ouvrir un nouveau terminal
+rustc --version && cargo --version
 
 # Node.js LTS (déjà présent chez Pierre normalement)
 node -v && npm -v
@@ -40,7 +41,7 @@ Versions minimales (vérifiées en phase 0) :
 npm create tauri-app@latest app   # Vue + TypeScript, npm
 cd app && npm run tauri dev
 ```
-Puis `composer create-project laravel/laravel server` (Laravel 13) et `php artisan install:api` (Sanctum).
+Le serveur Laravel est créé en **phase 3** (en phase 0, `server/` ne contient qu'un README). `composer create-project` refuse un dossier non vide : créer le projet dans un dossier temporaire puis déplacer son contenu dans `server/` (ou supprimer d'abord `server/README.md`), avec Laravel 13, puis `php artisan install:api` (Sanctum).
 
 Nom affiché : **Mèche**. Identifiant d'application : `fr.pierrebultez.meche` (**ne plus le changer** une fois l'application Android installée : il identifie l'application et ses données). Nom du binaire / paquet : `meche`.
 

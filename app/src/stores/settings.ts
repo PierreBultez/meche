@@ -1,7 +1,13 @@
 import { defineStore } from "pinia";
 import { computed, ref, watch } from "vue";
 import { getSettings, setSettings } from "../api/settings";
-import { applyTheme, readSystemTheme, resolveTheme, watchSystemTheme } from "../theme/apply";
+import {
+  applyTheme,
+  readSystemTheme,
+  resolveTheme,
+  syncWindowBackground,
+  watchSystemTheme,
+} from "../theme/apply";
 import type { ThemePreference } from "../types/settings";
 
 export const useSettingsStore = defineStore("settings", () => {
@@ -10,7 +16,16 @@ export const useSettingsStore = defineStore("settings", () => {
   const resolvedTheme = computed(() => resolveTheme(theme.value, systemTheme.value));
 
   // Applied as soon as the store exists (before the first render), then on every change.
-  watch(resolvedTheme, (value) => applyTheme(value), { immediate: true });
+  watch(
+    resolvedTheme,
+    (value) => {
+      applyTheme(value);
+      syncWindowBackground().catch((error: unknown) =>
+        console.error("Could not set the window background", error),
+      );
+    },
+    { immediate: true },
+  );
   watchSystemTheme((value) => {
     systemTheme.value = value;
   });

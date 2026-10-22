@@ -18,10 +18,9 @@ pub const DB_FILE_NAME: &str = "notes.db";
 /// `data_dir: &Path` is a borrowed path: the caller keeps ownership, we only read it.
 pub fn open_in_dir(data_dir: &Path) -> Result<Connection> {
     std::fs::create_dir_all(data_dir)?;
-    // `mut` because the migrations below need exclusive (`&mut`) access to the connection.
+    // `mut` because the migrations need exclusive (`&mut`) access to the connection.
     let mut conn = Connection::open(data_dir.join(DB_FILE_NAME))?;
-    configure(&conn)?;
-    migrations::run(&mut conn)?;
+    prepare(&mut conn)?;
     Ok(conn)
 }
 
@@ -29,17 +28,16 @@ pub fn open_in_dir(data_dir: &Path) -> Result<Connection> {
 #[cfg(test)]
 pub fn open_in_memory() -> Result<Connection> {
     let mut conn = Connection::open_in_memory()?;
-    configure(&conn)?;
-    migrations::run(&mut conn)?;
+    prepare(&mut conn)?;
     Ok(conn)
 }
 
-/// Connection settings that SQLite does not store in the file: applied at every opening.
-fn configure(conn: &Connection) -> Result<()> {
-    // WAL journal: faster writes, and reads never wait for a write in progress.
-    // foreign_keys: SQLite ignores REFERENCES … ON DELETE CASCADE unless this is ON.
-    conn.execute_batch("PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON;")?;
-    Ok(())
+/// Applied at every opening: journal mode, then migrations (which also turn foreign keys on).
+fn prepare(conn: &mut Connection) -> Result<()> {
+    // WAL journal: faster writes, and SQLite readers do not wait for a writer.
+    // This mode is saved in the file, so setting it again at each opening is harmless.
+    conn.execute_batch("PRAGMA journal_mode = WAL;")?;
+    migrations::run(conn, &migrations::MIGRATIONS)
 }
 
 #[cfg(test)]

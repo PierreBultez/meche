@@ -25,3 +25,7 @@ cargo test --manifest-path src-tauri/Cargo.toml    # tests du cœur Rust
 
 La base locale est créée au premier lancement dans le dossier de données de l'application
 (`~/.local/share/fr.pierrebultez.meche/notes.db` sous Linux).
+
+## Licence
+
+[MIT](LICENSE).

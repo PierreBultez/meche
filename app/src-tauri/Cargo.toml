@@ -3,6 +3,7 @@ name = "meche"
 version = "0.1.0"
 description = "Mèche — fast, colorful personal notes with self-destructing notes"
 authors = ["Pierre Bultez"]
+license = "MIT"
 edition = "2024"
 rust-version = "1.95"
 

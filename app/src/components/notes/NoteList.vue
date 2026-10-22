@@ -226,7 +226,8 @@ async function emptyTrash(): Promise<void> {
   try {
     const count = await notes.clearTrash();
     toasts.show(count > 1 ? `${count} notes supprimées définitivement.` : "Note supprimée définitivement.");
-    await router.push("/notes");
+    // Only the open note that was in the trash is gone: a note open elsewhere stays open.
+    if (notes.current === null) await router.push("/notes");
   } catch (error) {
     toasts.error("Impossible de vider la corbeille.", error);
   }

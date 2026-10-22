@@ -98,7 +98,7 @@ export function useNoteActions() {
 
   /** Opens a note from the keyboard (shortcut, palette): typing goes on in its text. */
   async function open(id: string): Promise<void> {
-    ui.editorFocusPending = true;
+    ui.editorFocusPending = id;
     await router.push(noteRoute(id));
   }
 

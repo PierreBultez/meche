@@ -124,7 +124,8 @@ function cancelLink(): void {
 
 defineExpose({
   getMarkdown: (): string => (editor.value ? serializeMarkdown(editor.value) : props.content),
-  focus: (position: "start" | "end" = "start") => editor.value?.commands.focus(position),
+  // null keeps the caret where it is (a fresh editor has it at the start).
+  focus: (position: "start" | "end" | null = "start") => editor.value?.commands.focus(position),
 });
 </script>
 

@@ -30,7 +30,7 @@ const ui = useUiStore();
 
 function open(event: MouseEvent): void {
   // Entrée on a focused card (no mouse: detail is 0) carries on in the note's text.
-  if (event.detail === 0) ui.editorFocusPending = true;
+  if (event.detail === 0) ui.editorFocusPending = props.id;
   void router.push(noteRoute(props.id));
 }
 </script>
@@ -56,7 +56,8 @@ function open(event: MouseEvent): void {
         aria-label="Note code"
       />
     </span>
-    <span class="mt-0.5 flex items-baseline gap-2 text-sm text-note-card-muted">
+    <!-- Fixed height: a card without preview must be as tall as the others (virtual list). -->
+    <span class="mt-0.5 flex h-5 items-baseline gap-2 text-sm text-note-card-muted">
       <span class="min-w-0 flex-1 truncate">
         <HighlightedText v-if="highlighted" :text="preview" />
         <template v-else>{{ preview }}</template>

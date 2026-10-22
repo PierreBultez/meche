@@ -70,12 +70,29 @@ const rowHeight = ref(74);
 const range = computed(() =>
   visibleRange(scrollTop.value, viewportHeight.value, rowHeight.value, rows.value.length),
 );
-const visibleRows = computed(() =>
-  rows.value.slice(range.value.start, range.value.end).map((row, offset) => ({
+/** The card that has the keyboard focus stays drawn even when the list scrolls away from it:
+ * removing it would drop the focus. */
+const focusedId = ref<string | null>(null);
+const visibleRows = computed(() => {
+  const drawn = rows.value.slice(range.value.start, range.value.end).map((row, offset) => ({
     row,
     index: range.value.start + offset,
-  })),
-);
+  }));
+  const focused = focusedId.value === null ? -1 : rows.value.findIndex((row) => row.id === focusedId.value);
+  if (focused !== -1 && (focused < range.value.start || focused >= range.value.end)) {
+    drawn.push({ row: rows.value[focused], index: focused });
+  }
+  return drawn;
+});
+
+function onFocusIn(event: FocusEvent): void {
+  const index = (event.target as HTMLElement).closest("li")?.dataset.index;
+  focusedId.value = index === undefined ? null : (rows.value[Number(index)]?.id ?? null);
+}
+
+function onFocusOut(event: FocusEvent): void {
+  if (!listNav.value?.contains(event.relatedTarget as Node | null)) focusedId.value = null;
+}
 
 function onScroll(): void {
   scrollTop.value = listNav.value?.scrollTop ?? 0;
@@ -89,12 +106,17 @@ onMounted(() => {
 });
 onBeforeUnmount(() => resizeObserver.disconnect());
 
-// The height of a card follows the font size: measured on the first card drawn.
+// The height of a card follows the font size, so it is measured. Every card has the same
+// height (NoteCard fixes the height of its lines); the tallest one drawn is taken anyway, so
+// that cards can never overlap.
 watch(
   visibleRows,
   () => {
-    const height = list.value?.querySelector<HTMLElement>("li")?.offsetHeight;
-    if (height && height !== rowHeight.value) rowHeight.value = height;
+    const heights = [...(list.value?.querySelectorAll<HTMLElement>(":scope > li") ?? [])].map(
+      (row) => row.offsetHeight,
+    );
+    const height = Math.max(0, ...heights);
+    if (height > 0 && height !== rowHeight.value) rowHeight.value = height;
   },
   { flush: "post" },
 );
@@ -103,6 +125,9 @@ watch(
 async function showRow(index: number): Promise<void> {
   const nav = listNav.value;
   if (!nav) return;
+  // Right after the list is shown again (Ctrl+\, focus mode), the observer has not reported its
+  // height yet: read it now, so that the right rows are drawn.
+  viewportHeight.value = nav.clientHeight;
   const listTop = list.value?.offsetTop ?? 0;
   const target = scrollToShow(index, nav.scrollTop - listTop, nav.clientHeight - listTop, rowHeight.value);
   if (target !== null) {
@@ -288,6 +313,8 @@ async function emptyTrash(): Promise<void> {
       class="relative min-h-0 flex-1 overflow-y-auto px-3 pb-3 pt-1"
       aria-label="Notes"
       @scroll.passive="onScroll"
+      @focusin="onFocusIn"
+      @focusout="onFocusOut"
       @keydown.down="moveFocus($event, 1)"
       @keydown.up="moveFocus($event, -1)"
     >

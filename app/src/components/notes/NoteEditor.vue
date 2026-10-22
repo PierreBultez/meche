@@ -69,8 +69,9 @@ async function flush(): Promise<void> {
   await Promise.all([titleSave.flush(), contentSave.flush()]);
 }
 
-function focusEditor(): void {
-  if (props.note.kind === "rich") rich.value?.focus("start");
+/** Focuses the text: at its start, or (null) where the caret already is. */
+function focusEditor(position: "start" | null = "start"): void {
+  if (props.note.kind === "rich") rich.value?.focus(position);
   else code.value?.focus();
 }
 
@@ -97,9 +98,12 @@ const editorReady = ref(false);
 function focusTextIfWanted(): void {
   const active = document.activeElement;
   const lost = active === null || active === document.body;
-  if (!ui.editorFocusPending && !lost) return;
-  ui.editorFocusPending = false;
-  if (!inTrash.value) focusEditor();
+  // The request names its note: the note being left never takes it.
+  const asked = ui.editorFocusPending === id;
+  if (!asked && !lost) return;
+  if (asked) ui.editorFocusPending = null;
+  // A note in the trash is read-only: the focus stays where it is (its card).
+  if (!inTrash.value) focusEditor(null);
 }
 function onEditorReady(): void {
   editorReady.value = true;
@@ -109,8 +113,8 @@ function onEditorReady(): void {
 // The same note asked again (Entrée on its card): no new editor, focus it now.
 watch(
   () => ui.editorFocusPending,
-  (pending) => {
-    if (pending && editorReady.value) focusTextIfWanted();
+  (target) => {
+    if (target === id && editorReady.value) focusTextIfWanted();
   },
 );
 

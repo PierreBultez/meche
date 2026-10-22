@@ -22,8 +22,11 @@ export const useToastsStore = defineStore("toasts", () => {
 
   function show(message: string, options: Omit<Toast, "id" | "message"> = { tone: "info" }): number {
     const id = nextId++;
-    // The same message again replaces the previous one instead of piling up.
-    const others = toasts.value.filter((toast) => toast.message !== message);
+    // The same message again replaces the previous one instead of piling up, unless one of them
+    // has a button: two « Note mise à la corbeille. » each undo a different note.
+    const others = toasts.value.filter(
+      (toast) => toast.message !== message || toast.action !== undefined || options.action !== undefined,
+    );
     toasts.value = [...others.slice(-2), { id, message, ...options }];
     setTimeout(() => dismiss(id), DURATION_MS);
     return id;

@@ -17,6 +17,13 @@ describe("toasts", () => {
     expect(toasts.toasts).toEqual([]);
   });
 
+  it("keeps every message that has a button", () => {
+    const toasts = useToastsStore();
+    toasts.show("Note mise à la corbeille.", { tone: "info", action: { label: "Annuler", run: () => undefined } });
+    toasts.show("Note mise à la corbeille.", { tone: "info", action: { label: "Annuler", run: () => undefined } });
+    expect(toasts.toasts).toHaveLength(2);
+  });
+
   it("replaces a message shown again instead of piling it up", () => {
     const toasts = useToastsStore();
     toasts.show("Enregistrement impossible.");

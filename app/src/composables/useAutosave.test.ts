@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { defineComponent, h } from "vue";
 import { mount } from "@vue/test-utils";
-import { createAutosave, flushAllAutosaves, useAutosave } from "./useAutosave";
+import { createAutosave, flushAllAutosaves, saveFailureSeries, useAutosave } from "./useAutosave";
 
 describe("autosave", () => {
   let value: string;
@@ -142,6 +142,60 @@ describe("autosave", () => {
     autosave.touch();
     await autosave.flush();
     expect(written).toEqual(["a", "b"]);
+    autosave.dispose();
+  });
+
+  it("stops refusing once the text is back to what is stored", async () => {
+    let fail = true;
+    const autosave = createAutosave({
+      initial: "stored",
+      read: () => value,
+      write: async (next) => {
+        if (fail) throw new Error("too big");
+        written.push(next);
+      },
+    });
+    value = "a 3 MB paste";
+    autosave.touch();
+    await expect(autosave.flush()).rejects.toThrow("too big");
+    // Ctrl+Z: the editor shows the stored text again.
+    value = "stored";
+    autosave.touch();
+    await autosave.flush();
+    await flushAllAutosaves();
+    expect(written).toEqual([]);
+    // A text that really is too big is still refused.
+    value = "another 3 MB paste";
+    autosave.touch();
+    await expect(autosave.flush()).rejects.toThrow("too big");
+    fail = false;
+    await autosave.flush();
+    expect(written).toEqual(["another 3 MB paste"]);
+    autosave.dispose();
+  });
+
+  it("counts each series of failed saves once", async () => {
+    let fail = true;
+    const autosave = createAutosave({
+      initial: "",
+      read: () => value,
+      write: async () => {
+        if (fail) throw new Error("nope");
+      },
+    });
+    const before = saveFailureSeries();
+    value = "a";
+    autosave.touch();
+    await expect(autosave.flush()).rejects.toThrow();
+    await expect(autosave.flush()).rejects.toThrow();
+    expect(saveFailureSeries()).toBe(before + 1);
+    fail = false;
+    await autosave.flush();
+    fail = true;
+    value = "b";
+    autosave.touch();
+    await expect(autosave.flush()).rejects.toThrow();
+    expect(saveFailureSeries()).toBe(before + 2);
     autosave.dispose();
   });
 

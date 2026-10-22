@@ -32,6 +32,14 @@ const alive = new Set<Autosave>();
 /** Last writes of notes that were just closed, still on their way to Rust. */
 const closing = new Set<Promise<void>>();
 
+/** Counts the series of failed saves: a new series starts when a save fails after a success. */
+let failureSeries = 0;
+
+/** The current series of failed saves (the window refuses to close once per series). */
+export function saveFailureSeries(): number {
+  return failureSeries;
+}
+
 /** Saves everything typed. Rejects if something could not be saved (it is still on screen). */
 export async function flushAllAutosaves(): Promise<void> {
   const results = await Promise.allSettled([
@@ -45,7 +53,10 @@ export async function flushAllAutosaves(): Promise<void> {
 /** Debounced save that only writes real changes. */
 export function createAutosave(options: AutosaveOptions): Autosave & { dispose: () => void } {
   const delay = options.delay ?? 400;
+  /** The last value sent to Rust (or known to be stored). */
   let lastWritten = options.initial;
+  /** The last value known to be stored. */
+  let lastSaved = options.initial;
   /** Something was typed since the value was last read. */
   let changed = false;
   /** The error of the last write, until a later write succeeds. */
@@ -61,25 +72,31 @@ export function createAutosave(options: AutosaveOptions): Autosave & { dispose: 
     if (changed) {
       changed = false;
       const value = options.read();
-      if (value !== lastWritten) {
-        const previous = lastWritten;
+      if (value === lastSaved && value === lastWritten) {
+        // Back to what is stored (Ctrl+Z after a refused paste): nothing is left unsaved.
+        failure = null;
+      } else if (value !== lastWritten) {
         lastWritten = value;
         // Writes are chained so that they reach Rust in order.
         writing = writing
           .then(() => options.write(value))
           .then(
             () => {
+              lastSaved = value;
               failure = null;
             },
             (error: unknown) => {
               // Not saved: the next flush tries again.
               if (lastWritten === value) {
-                lastWritten = previous;
+                lastWritten = lastSaved;
                 changed = true;
               }
-              // Said once: the following attempts fail the same way, and whoever flushes
-              // (leaving the note, closing the window) is told by the rejection.
-              if (failure === null) options.onError?.(error);
+              // Said once per series: the following attempts fail the same way, and whoever
+              // flushes (leaving the note, closing the window) is told by the rejection.
+              if (failure === null) {
+                failureSeries++;
+                options.onError?.(error);
+              }
               failure = error;
             },
           );
@@ -99,7 +116,9 @@ export function createAutosave(options: AutosaveOptions): Autosave & { dispose: 
   }
 
   function rebase(value: string): void {
-    if (!changed) lastWritten = value;
+    if (changed) return;
+    lastWritten = value;
+    lastSaved = value;
   }
 
   const autosave = { touch, flush, rebase };

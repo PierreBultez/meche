@@ -7,6 +7,7 @@ import-samples/
 .env
 .env.*
 !.env.example
+*.local
 *.secret
 secrets/
 

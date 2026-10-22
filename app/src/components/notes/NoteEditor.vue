@@ -2,7 +2,7 @@
 // An open note (docs/05, docs/08): header, then the rich or code editor. Mounted again
 // (`:key`) whenever the note or its kind changes, so editors read the content only once.
 import { Pin, PinOff, RotateCcw, Trash2 } from "lucide-vue-next";
-import { computed, defineAsyncComponent, nextTick, onMounted, ref } from "vue";
+import { computed, defineAsyncComponent, nextTick, onMounted, ref, watch } from "vue";
 import { useRouter } from "vue-router";
 import { useAutosave } from "../../composables/useAutosave";
 import { useNoteActions } from "../../composables/useNoteActions";
@@ -90,6 +90,29 @@ const languageOptions = CODE_LANGUAGES.map(({ id: value, label }) => ({ value, l
 async function setLanguage(codeLanguage: string): Promise<void> {
   await patch({ codeLanguage }, "Impossible de changer le langage.");
 }
+
+// The text gets the focus when the note was opened from the keyboard, or when the focus was
+// lost with the previous note's editor (palette, conversion): typing then goes somewhere.
+const editorReady = ref(false);
+function focusTextIfWanted(): void {
+  const active = document.activeElement;
+  const lost = active === null || active === document.body;
+  if (!ui.editorFocusPending && !lost) return;
+  ui.editorFocusPending = false;
+  if (!inTrash.value) focusEditor();
+}
+function onEditorReady(): void {
+  editorReady.value = true;
+  // After the current render, once the editor's template ref is set.
+  void nextTick(focusTextIfWanted);
+}
+// The same note asked again (Entrée on its card): no new editor, focus it now.
+watch(
+  () => ui.editorFocusPending,
+  (pending) => {
+    if (pending && editorReady.value) focusTextIfWanted();
+  },
+);
 
 // A brand new note: start typing its title right away.
 onMounted(() => {
@@ -233,7 +256,12 @@ defineExpose({
         :editable="!inTrash"
         @changed="contentSave.touch()"
         @escape="ui.escapeFromNote()"
-        @ready="contentSave.rebase"
+        @ready="
+          (markdown: string) => {
+            contentSave.rebase(markdown);
+            onEditorReady();
+          }
+        "
       />
       <CodeEditor
         v-else
@@ -243,6 +271,7 @@ defineExpose({
         :wrap="settings.codeLineWrap"
         :editable="!inTrash"
         @changed="contentSave.touch()"
+        @ready="onEditorReady"
       />
     </div>
 

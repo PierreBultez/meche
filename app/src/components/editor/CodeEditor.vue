@@ -13,7 +13,7 @@ const props = defineProps<{
   wrap: boolean;
   editable: boolean;
 }>();
-const emit = defineEmits<{ changed: [] }>();
+const emit = defineEmits<{ changed: []; ready: [] }>();
 
 const host = ref<HTMLElement | null>(null);
 let view: EditorView | null = null;
@@ -55,6 +55,7 @@ onMounted(() => {
     }),
   });
   void applyLanguage(props.language);
+  emit("ready");
 });
 
 onBeforeUnmount(() => {

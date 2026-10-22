@@ -5,6 +5,7 @@
 // so a card is only redrawn when its own note changes.
 import { CodeXml, Pin } from "lucide-vue-next";
 import { useRouter } from "vue-router";
+import { useUiStore } from "../../stores/ui";
 import { noteRoute } from "../../composables/useNoteActions";
 import type { NoteColor, NoteKind } from "../../types/note";
 import { fullDate, shortRelativeDate } from "../../utils/relative-date";
@@ -25,8 +26,11 @@ const props = defineProps<{
 }>();
 
 const router = useRouter();
+const ui = useUiStore();
 
-function open(): void {
+function open(event: MouseEvent): void {
+  // Entrée on a focused card (no mouse: detail is 0) carries on in the note's text.
+  if (event.detail === 0) ui.editorFocusPending = true;
   void router.push(noteRoute(props.id));
 }
 </script>

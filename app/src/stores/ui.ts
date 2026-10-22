@@ -12,6 +12,8 @@ export const useUiStore = defineStore("ui", () => {
   const searchFocusRequest = ref(0);
   /** Incremented to ask the list to focus the open note's card (Échap from the editor). */
   const listFocusRequest = ref(0);
+  /** Set when a note is opened from the keyboard: its text gets the focus once it is ready. */
+  const editorFocusPending = ref(false);
 
   /** Échap in the open note (docs/08): leaves the focus mode, otherwise back to the list. */
   function escapeFromNote(): void {
@@ -25,6 +27,7 @@ export const useUiStore = defineStore("ui", () => {
     paletteOpen,
     searchFocusRequest,
     listFocusRequest,
+    editorFocusPending,
     escapeFromNote,
   };
 });

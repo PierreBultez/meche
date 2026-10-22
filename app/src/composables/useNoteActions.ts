@@ -2,6 +2,7 @@
 import { useRouter } from "vue-router";
 import { useNotesStore } from "../stores/notes";
 import { useToastsStore } from "../stores/toasts";
+import { useUiStore } from "../stores/ui";
 import type { Note, NoteColor, NoteKind } from "../types/note";
 import { flushAllAutosaves } from "./useAutosave";
 
@@ -12,6 +13,7 @@ export function noteRoute(id: string): string {
 export function useNoteActions() {
   const notes = useNotesStore();
   const toasts = useToastsStore();
+  const ui = useUiStore();
   const router = useRouter();
 
   /**
@@ -94,7 +96,9 @@ export function useNoteActions() {
     }
   }
 
+  /** Opens a note from the keyboard (shortcut, palette): typing goes on in its text. */
   async function open(id: string): Promise<void> {
+    ui.editorFocusPending = true;
     await router.push(noteRoute(id));
   }
 

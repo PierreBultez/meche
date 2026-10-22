@@ -20,6 +20,7 @@ const emit = defineEmits<{
 
 const open = ref(false);
 const root = ref<HTMLElement | null>(null);
+const trigger = ref<HTMLButtonElement | null>(null);
 
 function closeOnOutsideClick(event: MouseEvent): void {
   if (open.value && !root.value?.contains(event.target as Node)) open.value = false;
@@ -27,8 +28,21 @@ function closeOnOutsideClick(event: MouseEvent): void {
 document.addEventListener("mousedown", closeOnOutsideClick);
 onBeforeUnmount(() => document.removeEventListener("mousedown", closeOnOutsideClick));
 
-function run(action: () => void): void {
+/** Closes the menu and gives the focus back to « ⋯ », where it came from. */
+function close(): void {
   open.value = false;
+  trigger.value?.focus();
+}
+
+// Échap closes an open menu; when it is closed, Échap goes on to the window (back to the list).
+function onEscape(event: KeyboardEvent): void {
+  if (!open.value) return;
+  event.stopPropagation();
+  close();
+}
+
+function run(action: () => void): void {
+  close();
   action();
 }
 
@@ -36,8 +50,9 @@ defineExpose({ toggle: () => (open.value = !open.value) });
 </script>
 
 <template>
-  <div ref="root" class="relative" @keydown.escape.stop="open = false">
+  <div ref="root" class="relative" @keydown.escape="onEscape">
     <button
+      ref="trigger"
       type="button"
       class="rounded-button p-2 text-muted hover:bg-surface-2 hover:text-text"
       aria-label="Plus d'actions"

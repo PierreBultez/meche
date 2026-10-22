@@ -3,7 +3,7 @@
 use rusqlite::{Connection, params};
 use serde::Serialize;
 
-use super::notes::{NoteColor, NoteKind, list_texts, markdown_line_to_text};
+use super::notes::{Entities, NoteColor, NoteKind, list_texts, markdown_line_to_text};
 use crate::error::Result;
 
 /// Marks the start and end of each match in excerpts. They are "private use" Unicode
@@ -89,7 +89,11 @@ pub fn search(conn: &Connection, input: &str) -> Result<Vec<SearchResult>> {
 /// collapsed for code notes. The match markers are kept.
 fn excerpt_text(snippet: &str, kind: NoteKind) -> String {
     let lines: Vec<String> = match kind {
-        NoteKind::Rich => snippet.lines().filter_map(markdown_line_to_text).collect(),
+        // The index reads rich notes with their HTML entities already decoded (migration 002).
+        NoteKind::Rich => snippet
+            .lines()
+            .filter_map(|line| markdown_line_to_text(line, Entities::Decoded))
+            .collect(),
         NoteKind::Code => snippet.lines().map(str::to_string).collect(),
     };
     lines
@@ -205,6 +209,19 @@ mod tests {
         assert_eq!(
             result.excerpt,
             format!("Renouveler le {MATCH_START}certificat{MATCH_END} avec certbot")
+        );
+    }
+
+    #[test]
+    fn entity_names_are_neither_found_nor_shown() {
+        let conn = open_in_memory().unwrap();
+        note(&conn, "", "Pierre &amp; Marie, a -&gt; b");
+        assert!(found(&conn, "amp").is_empty());
+        assert!(found(&conn, "gt").is_empty());
+        let result = &search(&conn, "mari").unwrap()[0];
+        assert_eq!(
+            result.excerpt,
+            format!("Pierre & {MATCH_START}Marie{MATCH_END}, a -> b")
         );
     }
 

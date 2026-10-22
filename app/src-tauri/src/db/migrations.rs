@@ -13,8 +13,10 @@ use crate::error::Result;
 /// `include_str!` copies the SQL file into the binary at compile time: nothing is read from
 /// disk at runtime. `'static` means the borrowed SQL text lives as long as the program,
 /// which is true since it is part of the binary.
-const MIGRATION_LIST: &[M<'static>] =
-    &[M::up(include_str!("sql/001_initial.sql")).foreign_key_check()];
+const MIGRATION_LIST: &[M<'static>] = &[
+    M::up(include_str!("sql/001_initial.sql")).foreign_key_check(),
+    M::up(include_str!("sql/002_search_decoded_text.sql")).foreign_key_check(),
+];
 
 pub const MIGRATIONS: Migrations<'static> = Migrations::from_slice(MIGRATION_LIST);
 

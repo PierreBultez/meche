@@ -278,7 +278,7 @@ pub fn list_texts(title: &str, content_start: &str, kind: NoteKind) -> (String, 
     let mut lines = content_start
         .lines()
         .filter_map(|line| match kind {
-            NoteKind::Rich => markdown_line_to_text(line),
+            NoteKind::Rich => markdown_line_to_text(line, Entities::Encoded),
             NoteKind::Code => Some(line.trim().to_string()),
         })
         .filter(|line| !line.is_empty());
@@ -306,10 +306,19 @@ fn truncate_chars(text: &str, max: usize) -> String {
     format!("{}…", kept.trim_end())
 }
 
+/// Whether a text still holds the HTML entities the editor writes (`&amp;`, `&lt;`…).
+/// Notes do; search excerpts do not, since the search index reads the notes decoded
+/// (migration 002).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Entities {
+    Encoded,
+    Decoded,
+}
+
 /// Plain text of one Markdown line, or `None` for lines that carry no text (code fences,
 /// separators, table borders, empty paragraphs). `pub(crate)`: visible to the rest of this
 /// crate (the search module), but not part of any public API.
-pub(crate) fn markdown_line_to_text(line: &str) -> Option<String> {
+pub(crate) fn markdown_line_to_text(line: &str, entities: Entities) -> Option<String> {
     let trimmed = line.trim();
     let only_symbols = !trimmed.is_empty()
         && trimmed
@@ -329,6 +338,10 @@ pub(crate) fn markdown_line_to_text(line: &str) -> Option<String> {
                 rest = stripped;
             }
         }
+        // An empty task item ("- [ ] " once trimmed) is only its box.
+        if matches!(rest, "[ ]" | "[x]" | "[X]") {
+            rest = "";
+        }
         let hashes = rest.chars().take_while(|&c| c == '#').count();
         if (1..=6).contains(&hashes) && rest[hashes..].starts_with(' ') {
             rest = &rest[hashes + 1..];
@@ -346,19 +359,22 @@ pub(crate) fn markdown_line_to_text(line: &str) -> Option<String> {
         return None;
     }
 
-    let text = inline_markdown_to_text(&rest.replace('|', " "));
+    let text = inline_markdown_to_text(&rest.replace('|', " "), entities);
     let text = text.split_whitespace().collect::<Vec<_>>().join(" ");
     Some(text)
 }
 
-/// Removes inline Markdown: emphasis markers, code ticks, link targets, escapes and the
-/// HTML entities written by the editor.
-fn inline_markdown_to_text(text: &str) -> String {
-    let text = text
-        .replace("&lt;", "<")
-        .replace("&gt;", ">")
-        .replace("&nbsp;", " ")
-        .replace("&amp;", "&");
+/// Removes inline Markdown: emphasis markers, code ticks, link targets, escapes and, when
+/// still there, the HTML entities written by the editor.
+fn inline_markdown_to_text(text: &str, entities: Entities) -> String {
+    let text = match entities {
+        Entities::Encoded => text
+            .replace("&lt;", "<")
+            .replace("&gt;", ">")
+            .replace("&nbsp;", " ")
+            .replace("&amp;", "&"),
+        Entities::Decoded => text.to_string(),
+    };
     let chars: Vec<char> = text.chars().collect();
     let mut out = String::with_capacity(text.len());
     let mut i = 0;
@@ -378,7 +394,8 @@ fn inline_markdown_to_text(text: &str) -> String {
                     None => i += 1,
                 }
             }
-            '[' => i += 1,
+            // "[" opening a link "[text](url)" is dropped; any other "[" is text ("tab[0]").
+            '[' if opens_link(&chars, i) => i += 1,
             _ => {
                 out.push(c);
                 i += 1;
@@ -386,6 +403,15 @@ fn inline_markdown_to_text(text: &str) -> String {
         }
     }
     out
+}
+
+/// True when the "[" at `start` opens a link: its closing "]" is followed by "(".
+/// `&[char]` is a borrowed slice: the function reads the characters without copying them.
+fn opens_link(chars: &[char], start: usize) -> bool {
+    match chars[start..].iter().position(|&c| c == ']') {
+        Some(offset) => chars.get(start + offset + 1) == Some(&'('),
+        None => false,
+    }
 }
 
 /// Converts the content of a note to another kind (docs/05, "Conversion entre types"):
@@ -931,6 +957,14 @@ mod tests {
         let (title, preview) = list_texts("", content, NoteKind::Rich);
         assert_eq!(title, "Mémo serveur");
         assert_eq!(preview, "Penser à certbot et Apache sudo certbot a b 1 2");
+    }
+
+    #[test]
+    fn list_texts_skip_empty_task_items_and_keep_plain_brackets() {
+        let content = "- [ ] \n- [ ] Lait\n- [x] \ntab[0] et [lien](https://x.y)";
+        let (title, preview) = list_texts("", content, NoteKind::Rich);
+        assert_eq!(title, "Lait");
+        assert_eq!(preview, "tab[0] et lien");
     }
 
     #[test]

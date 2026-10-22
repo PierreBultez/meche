@@ -18,7 +18,8 @@ interface Pair {
 const BACKGROUNDS = ["bg", "surface", "surface-2"];
 const CODE_TOKENS = ["text", "keyword", "string", "function", "number", "type", "variable", "comment"];
 
-// Every text/background pair whose usage is defined in docs/11 and docs/08.
+// Every pair whose usage is defined in docs/11 and docs/08, except the pairs listed under
+// « À trancher » in docs/11: they fail today and wait for a design decision (phases 1 and 2).
 const PAIRS: Pair[] = [
   ...BACKGROUNDS.flatMap((bg) => [
     { fg: "text", bg, min: MIN_TEXT, usage: "main text" },
@@ -53,8 +54,8 @@ const THEMES: Record<ThemeName, TokenMap> = { light, dark };
 describe.each(Object.entries(THEMES))("%s theme contrast", (_theme, tokens) => {
   it.each(PAIRS)("--$fg on --$bg ≥ $min:1 ($usage)", ({ fg, bg, min }) => {
     const ratio = contrastRatio(resolveColor(tokens, fg), resolveColor(tokens, bg));
-    // Rounded in the message so a failure reads like "3.41 is not ≥ 4.5".
-    expect(Number(ratio.toFixed(2)), `contrast of --${fg} on --${bg}`).toBeGreaterThanOrEqual(min);
+    // WCAG thresholds are strict: 4.499 does not pass 4.5. Only the message is rounded.
+    expect(ratio, `contrast of --${fg} on --${bg} = ${ratio.toFixed(2)}:1`).toBeGreaterThanOrEqual(min);
   });
 });
 

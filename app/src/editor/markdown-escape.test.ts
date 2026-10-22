@@ -12,6 +12,13 @@ describe("escapeBlockStarts", () => {
     ["```js", "\\```js"],
     ["---", "\\---"],
     ["===", "\\==="],
+    ["--", "\\--"],
+    ["=", "\\="],
+    ["-", "\\-"],
+    ["+", "\\+"],
+    ["    indenté", "&#32;   indenté"],
+    ["\tindenté", "&#9;indenté"],
+    ["  - indentée", "&#32; \\- indentée"],
   ])("escapes %j", (input, expected) => {
     expect(escapeBlockStarts(input)).toBe(expected);
   });

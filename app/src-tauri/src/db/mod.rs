@@ -157,7 +157,12 @@ mod tests {
     #[test]
     fn search_reads_rich_notes_without_html_entities() {
         let conn = open_in_memory().unwrap();
-        insert_note(&conn, "a", "Couple", "Pierre &amp; Marie, 1 &lt; 2 &gt; 0");
+        insert_note(
+            &conn,
+            "a",
+            "Couple",
+            "Pierre &amp; Marie, 1 &lt; 2 &gt; 0\n&#32;   x",
+        );
         conn.execute(
             "INSERT INTO notes (id, kind, content, created_at, updated_at)
              VALUES ('b', 'code', 'echo \"&amp;\"', 0, 0)",
@@ -168,6 +173,7 @@ mod tests {
         // Only the code note really contains the word "amp".
         assert_eq!(search(&conn, "amp*"), ["b"]);
         assert!(search(&conn, "gt").is_empty());
+        assert!(search(&conn, "32").is_empty());
 
         // Converting the code note to rich decodes it in the index too.
         conn.execute("UPDATE notes SET kind = 'rich' WHERE id = 'b'", [])

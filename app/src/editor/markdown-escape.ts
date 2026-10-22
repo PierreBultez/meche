@@ -6,8 +6,8 @@
  * changing the note's structure on the next opening. Escaping the marker keeps it plain text.
  */
 const BLOCK_STARTS: Array<[RegExp, string]> = [
-  // "- item", "+ item" (a "*" is already escaped by the inline rules)
-  [/^(\s*)([-+])(\s)/, "$1\\$2$3"],
+  // "- item", "+ item", or a lone "-" (a "*" is already escaped by the inline rules)
+  [/^(\s*)([-+])(\s|$)/, "$1\\$2$3"],
   // "1. item", "1) item"
   [/^(\s*)(\d{1,9})([.)])(\s|$)/, "$1$2\\$3$4"],
   // "# heading"
@@ -16,8 +16,12 @@ const BLOCK_STARTS: Array<[RegExp, string]> = [
   [/^(\s*)>/, "$1\\>"],
   // "```" or "~~~" code fences
   [/^(\s*)(`{3,}|~{3,})/, "$1\\$2"],
-  // "---", "===" (thematic break, setext heading underline)
-  [/^(\s*)([-=])(\2{2,}\s*)$/, "$1\\$2$3"],
+  // "---", "--", "=" (thematic break, setext heading underline after a line break)
+  [/^(\s*)([-=])(\2*\s*)$/, "$1\\$2$3"],
+  // Leading spaces or tabs: read back, they would be dropped, or make an indented code block
+  // from 4 on. The first one is written as an entity, so the line no longer starts with one.
+  [/^ /, "&#32;"],
+  [/^\t/, "&#9;"],
 ];
 
 export function escapeBlockStarts(markdown: string): string {

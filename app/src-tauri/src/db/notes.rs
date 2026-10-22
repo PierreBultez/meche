@@ -368,10 +368,13 @@ pub(crate) fn markdown_line_to_text(line: &str, entities: Entities) -> Option<St
 /// still there, the HTML entities written by the editor.
 fn inline_markdown_to_text(text: &str, entities: Entities) -> String {
     let text = match entities {
+        // "&amp;" last: "&amp;lt;" is the text "&lt;", not "<".
         Entities::Encoded => text
+            .replace("&nbsp;", " ")
+            .replace("&#32;", " ")
+            .replace("&#9;", "\t")
             .replace("&lt;", "<")
             .replace("&gt;", ">")
-            .replace("&nbsp;", " ")
             .replace("&amp;", "&"),
         Entities::Decoded => text.to_string(),
     };
@@ -957,6 +960,17 @@ mod tests {
         let (title, preview) = list_texts("", content, NoteKind::Rich);
         assert_eq!(title, "Mémo serveur");
         assert_eq!(preview, "Penser à certbot et Apache sudo certbot a b 1 2");
+    }
+
+    #[test]
+    fn list_texts_decode_the_entities_of_the_editor() {
+        let (title, preview) = list_texts(
+            "",
+            "&#32;  indenté\n&amp;lt; reste &amp;lt;",
+            NoteKind::Rich,
+        );
+        assert_eq!(title, "indenté");
+        assert_eq!(preview, "&lt; reste &lt;");
     }
 
     #[test]

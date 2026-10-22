@@ -110,7 +110,7 @@ defineExpose({ editor });
         class="absolute inset-y-0 left-0 w-px bg-border group-hover:w-0.5 group-hover:bg-brand group-focus-visible:w-0.5 group-focus-visible:bg-brand"
       />
     </div>
-    <main class="h-full min-w-0 flex-1">
+    <main class="h-full min-w-0 flex-1" data-note-pane>
       <NoteEditor
         v-if="notes.current"
         :key="`${notes.current.id}:${notes.current.kind}`"

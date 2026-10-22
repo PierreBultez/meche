@@ -11,3 +11,15 @@ export const NOTE_COLORS = [
 ] as const;
 
 export type NoteColor = (typeof NOTE_COLORS)[number];
+
+/** Names shown in the interface. */
+export const NOTE_COLOR_LABELS: Record<NoteColor, string> = {
+  violet: "Violet",
+  rose: "Rose",
+  corail: "Corail",
+  orange: "Orange",
+  citron: "Citron",
+  pomme: "Pomme",
+  turquoise: "Turquoise",
+  bleu: "Bleu",
+};

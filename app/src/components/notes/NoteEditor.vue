@@ -79,7 +79,7 @@ async function patch(change: Parameters<typeof notes.save>[1], failure: string):
 }
 
 const togglePin = () => actions.togglePin(props.note);
-const setColor = (color: NoteColor) => patch({ color }, "Impossible de changer la couleur.");
+const setColor = (color: NoteColor) => actions.setColor(props.note, color);
 
 const languageOptions = CODE_LANGUAGES.map(({ id: value, label }) => ({ value, label }));
 
@@ -94,14 +94,7 @@ onMounted(() => {
   }
 });
 
-async function convert(): Promise<void> {
-  // Save first: Rust converts the stored content.
-  await flush();
-  await patch(
-    { kind: props.note.kind === "rich" ? "code" : "rich" },
-    "Impossible de convertir la note.",
-  );
-}
+const convert = () => actions.convert(props.note);
 
 async function copyMarkdown(): Promise<void> {
   await flush();
@@ -226,13 +219,17 @@ defineExpose({
       </button>
     </div>
 
-    <div class="min-h-0 flex-1 overflow-y-auto" :class="note.kind === 'rich' ? 'px-6' : ''">
+    <div
+      class="min-h-0 flex-1 overflow-y-auto"
+      :class="note.kind === 'rich' ? ['px-6', ui.focusMode ? 'pt-10' : ''] : ''"
+    >
       <RichEditor
         v-if="note.kind === 'rich'"
         ref="rich"
         :content="note.content"
         :editable="!inTrash"
         @changed="contentSave.touch()"
+        @escape="ui.escapeFromNote()"
       />
       <CodeEditor
         v-else

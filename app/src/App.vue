@@ -2,8 +2,12 @@
 import { isTauri } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { onMounted } from "vue";
+import CommandPalette from "./components/CommandPalette.vue";
 import ToastStack from "./components/ui/ToastStack.vue";
 import { flushAllAutosaves } from "./composables/useAutosave";
+import { useGlobalShortcuts } from "./composables/useGlobalShortcuts";
+
+useGlobalShortcuts();
 
 onMounted(() => {
   if (!isTauri()) return;
@@ -21,5 +25,6 @@ onMounted(() => {
 
 <template>
   <RouterView />
+  <CommandPalette />
   <ToastStack />
 </template>

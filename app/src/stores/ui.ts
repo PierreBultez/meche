@@ -10,6 +10,21 @@ export const useUiStore = defineStore("ui", () => {
   const paletteOpen = ref(false);
   /** Incremented to ask the list to focus its search box (Ctrl+F). */
   const searchFocusRequest = ref(0);
+  /** Incremented to ask the list to focus the open note's card (Échap from the editor). */
+  const listFocusRequest = ref(0);
 
-  return { listHidden, focusMode, paletteOpen, searchFocusRequest };
+  /** Échap in the open note (docs/08): leaves the focus mode, otherwise back to the list. */
+  function escapeFromNote(): void {
+    if (focusMode.value) focusMode.value = false;
+    else listFocusRequest.value++;
+  }
+
+  return {
+    listHidden,
+    focusMode,
+    paletteOpen,
+    searchFocusRequest,
+    listFocusRequest,
+    escapeFromNote,
+  };
 });

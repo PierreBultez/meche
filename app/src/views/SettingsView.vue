@@ -4,10 +4,13 @@ import { getVersion } from "@tauri-apps/api/app";
 import { ArrowLeft } from "lucide-vue-next";
 import { onMounted, ref } from "vue";
 import ThemeSwitcher from "../components/ThemeSwitcher.vue";
+import { noteRoute } from "../composables/useNoteActions";
+import { useNotesStore } from "../stores/notes";
 import { useSettingsStore } from "../stores/settings";
 import { useToastsStore } from "../stores/toasts";
 
 const settings = useSettingsStore();
+const notes = useNotesStore();
 const toasts = useToastsStore();
 const version = ref("");
 
@@ -28,7 +31,7 @@ function toggleWrap(event: Event): void {
     <div class="mx-auto max-w-2xl space-y-8 px-6 py-8">
       <header class="flex items-center gap-3">
         <RouterLink
-          to="/notes"
+          :to="notes.current ? noteRoute(notes.current.id) : '/notes'"
           class="rounded-button p-2 text-muted hover:bg-surface-2 hover:text-text"
           aria-label="Retour aux notes"
           title="Retour aux notes (Échap)"
@@ -67,7 +70,7 @@ function toggleWrap(event: Event): void {
             <span v-if="version" class="text-muted"> · version {{ version }}</span>
           </p>
           <p class="mt-1 text-sm text-muted">
-            Notes personnelles, rapides et colorées. Allumez la mèche d'une note jetable : elle
+            Notes personnelles, rapides et colorées. Allume la mèche d'une note jetable : elle
             explose toute seule.
           </p>
         </div>

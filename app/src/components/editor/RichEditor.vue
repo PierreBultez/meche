@@ -1,7 +1,7 @@
 <script setup lang="ts">
 // Editor of rich notes (docs/05): TipTap, saved as Markdown by the parent through getMarkdown().
 import { openUrl } from "@tauri-apps/plugin-opener";
-import type { Editor } from "@tiptap/core";
+import { type Editor, Extension } from "@tiptap/core";
 import { EditorContent, VueNodeViewRenderer, useEditor } from "@tiptap/vue-3";
 import { BubbleMenu } from "@tiptap/vue-3/menus";
 import { Bold, Code, Italic, Link, Strikethrough, Unlink } from "lucide-vue-next";
@@ -17,7 +17,7 @@ const props = defineProps<{
   content: string;
   editable: boolean;
 }>();
-const emit = defineEmits<{ changed: [] }>();
+const emit = defineEmits<{ changed: []; escape: [] }>();
 const toasts = useToastsStore();
 
 const codeBlockWithToolbar = baseCodeBlock.extend({
@@ -35,10 +35,27 @@ function openLinkOnModifierClick(event: MouseEvent): boolean {
   return true;
 }
 
+/**
+ * Échap is always kept by ProseMirror, so the window never sees it: the parent is told instead
+ * (docs/08, back to the list). Lowest priority, so the slash menu closes itself first.
+ */
+const EscapeKey = Extension.create({
+  name: "escapeKey",
+  priority: 1,
+  addKeyboardShortcuts() {
+    return {
+      Escape: () => {
+        emit("escape");
+        return true;
+      },
+    };
+  },
+});
+
 const editor = useEditor({
   extensions: createRichExtensions({
     codeBlock: codeBlockWithToolbar,
-    extra: [SlashCommandExtension],
+    extra: [SlashCommandExtension, EscapeKey],
   }),
   content: props.content,
   contentType: "markdown",

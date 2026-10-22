@@ -2,7 +2,7 @@
 import { useRouter } from "vue-router";
 import { useNotesStore } from "../stores/notes";
 import { useToastsStore } from "../stores/toasts";
-import type { Note, NoteKind } from "../types/note";
+import type { Note, NoteColor, NoteKind } from "../types/note";
 import { flushAllAutosaves } from "./useAutosave";
 
 export function noteRoute(id: string): string {
@@ -59,9 +59,27 @@ export function useNoteActions() {
     }
   }
 
+  async function setColor(note: Note, color: NoteColor): Promise<void> {
+    try {
+      await notes.save(note.id, { color });
+    } catch (error) {
+      toasts.error("Impossible de changer la couleur.", error);
+    }
+  }
+
+  /** Rich ↔ code (docs/05). Saves the editor first: Rust converts the stored content. */
+  async function convert(note: Note): Promise<void> {
+    try {
+      await flushAllAutosaves();
+      await notes.save(note.id, { kind: note.kind === "rich" ? "code" : "rich" });
+    } catch (error) {
+      toasts.error("Impossible de convertir la note.", error);
+    }
+  }
+
   async function open(id: string): Promise<void> {
     await router.push(noteRoute(id));
   }
 
-  return { create, restore, trash, togglePin, open };
+  return { create, restore, trash, togglePin, setColor, convert, open };
 }

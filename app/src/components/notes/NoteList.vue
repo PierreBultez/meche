@@ -20,6 +20,7 @@ const router = useRouter();
 const actions = useNoteActions();
 
 const searchInput = ref<HTMLInputElement | null>(null);
+const listNav = ref<HTMLElement | null>(null);
 const query = ref(notes.query);
 const confirmingEmpty = ref(false);
 
@@ -57,19 +58,52 @@ function clearSearch(): void {
   onSearch();
 }
 
+// The search can also be cleared from elsewhere (creating a note with Ctrl+N).
+watch(
+  () => notes.query,
+  (text) => {
+    if (text !== query.value) query.value = text;
+  },
+);
+
+/** Shows the list (hidden with Ctrl+\ or by the focus mode), then focuses an element of it. */
+async function reveal(): Promise<void> {
+  ui.listHidden = false;
+  ui.focusMode = false;
+  await nextTick();
+}
+
 watch(
   () => ui.searchFocusRequest,
   async () => {
-    ui.listHidden = false;
-    ui.focusMode = false;
-    await nextTick();
+    await reveal();
     searchInput.value?.focus();
     searchInput.value?.select();
   },
 );
 
-async function createNote(kind: NoteKind): Promise<void> {
-  if (await actions.create(kind)) query.value = "";
+// Échap in the open note: back to its card (or the first one), ready for ↑ ↓ and Entrée.
+watch(
+  () => ui.listFocusRequest,
+  async () => {
+    await reveal();
+    const cards = listNav.value?.querySelectorAll<HTMLElement>("a") ?? [];
+    const selected = listNav.value?.querySelector<HTMLElement>('a[aria-current="page"]');
+    (selected ?? cards[0] ?? searchInput.value)?.focus({ focusVisible: true });
+  },
+);
+
+/** ↑ ↓ move between the cards of the list. */
+function moveFocus(event: KeyboardEvent, step: 1 | -1): void {
+  const cards = [...(listNav.value?.querySelectorAll<HTMLElement>("a") ?? [])];
+  const index = cards.indexOf(document.activeElement as HTMLElement);
+  if (index === -1) return;
+  event.preventDefault();
+  cards[Math.min(Math.max(index + step, 0), cards.length - 1)].focus({ focusVisible: true });
+}
+
+function createNote(kind: NoteKind): void {
+  void actions.create(kind);
 }
 
 async function changeFilter(value: string): Promise<void> {
@@ -90,7 +124,7 @@ async function emptyTrash(): Promise<void> {
 
 <template>
   <div class="flex h-full flex-col">
-    <div class="flex items-center gap-1.5 p-3">
+    <div class="flex items-center gap-1.5 p-3 pb-2">
       <label class="relative min-w-0 flex-1">
         <span class="sr-only">Rechercher dans les notes</span>
         <Search
@@ -137,7 +171,13 @@ async function emptyTrash(): Promise<void> {
       </button>
     </div>
 
-    <nav class="min-h-0 flex-1 overflow-y-auto px-3 pb-3" aria-label="Notes">
+    <nav
+      ref="listNav"
+      class="min-h-0 flex-1 overflow-y-auto px-3 pb-3 pt-1"
+      aria-label="Notes"
+      @keydown.down="moveFocus($event, 1)"
+      @keydown.up="moveFocus($event, -1)"
+    >
       <ul v-if="searching && notes.results!.length > 0" class="space-y-2">
         <li v-for="result in notes.results" :key="result.id">
           <NoteCard

@@ -2,7 +2,7 @@
 // « ⋯ » menu of a note (docs/08): color, conversion, copy as Markdown, line wrapping, trash.
 import { ArrowLeftRight, Copy, MoreHorizontal, Trash2, WrapText } from "lucide-vue-next";
 import { onBeforeUnmount, ref } from "vue";
-import { NOTE_COLORS } from "../../theme/note-colors";
+import { NOTE_COLORS, NOTE_COLOR_LABELS } from "../../theme/note-colors";
 import type { NoteColor, NoteKind } from "../../types/note";
 
 const props = defineProps<{
@@ -17,17 +17,6 @@ const emit = defineEmits<{
   toggleWrap: [];
   trash: [];
 }>();
-
-const COLOR_LABELS: Record<NoteColor, string> = {
-  violet: "Violet",
-  rose: "Rose",
-  corail: "Corail",
-  orange: "Orange",
-  citron: "Citron",
-  pomme: "Pomme",
-  turquoise: "Turquoise",
-  bleu: "Bleu",
-};
 
 const open = ref(false);
 const root = ref<HTMLElement | null>(null);
@@ -72,8 +61,8 @@ defineExpose({ toggle: () => (open.value = !open.value) });
           :data-note-color="choice"
           class="h-6 w-6 rounded-full bg-note"
           :class="choice === props.color ? 'ring-2 ring-text ring-offset-2 ring-offset-surface-2' : ''"
-          :aria-label="COLOR_LABELS[choice]"
-          :title="COLOR_LABELS[choice]"
+          :aria-label="NOTE_COLOR_LABELS[choice]"
+          :title="NOTE_COLOR_LABELS[choice]"
           :aria-pressed="choice === props.color"
           @click="run(() => emit('color', choice))"
         />

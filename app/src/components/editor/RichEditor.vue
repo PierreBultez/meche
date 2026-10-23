@@ -127,22 +127,34 @@ defineExpose({
   // null keeps the caret where it is (a fresh editor has it at the start).
   focus: (position: "start" | "end" | null = "start") => editor.value?.commands.focus(position),
   /**
-   * Shows another version of the note in place (docs/04: brought by the sync). The editor, its
-   * focus and its scroll stay; the caret stays at the same place, within the new text. Not
-   * undoable: Ctrl+Z never brings back the version replaced. Not reported as `changed`.
-   * Returns the editor's own Markdown for it.
+   * Shows another version of the note in place (docs/04: brought by the sync). Only the part
+   * that differs is replaced, so ProseMirror maps the caret and the selection through the
+   * change: they follow the text around it, and the focus and the scroll stay. Not undoable
+   * (Ctrl+Z never brings back the version replaced) and not reported as `changed`. Returns the
+   * editor's own Markdown for it.
    */
   replace: (markdown: string): string => {
     const current = editor.value;
-    if (!current) return markdown;
-    const { from, to } = current.state.selection;
-    current
-      .chain()
-      .setMeta("addToHistory", false)
-      .setContent(markdown, { contentType: "markdown", emitUpdate: false })
-      // Clamped by TipTap to the new document.
-      .setTextSelection({ from, to })
-      .run();
+    if (!current?.markdown) return markdown;
+    const { state, view } = current;
+    const next = current.schema.nodeFromJSON(current.markdown.parse(markdown));
+    const start = state.doc.content.findDiffStart(next.content);
+    // `null`: the same document, nothing to replace.
+    const end = start === null ? null : state.doc.content.findDiffEnd(next.content);
+    if (start !== null && end !== null) {
+      let { a: endOld, b: endNew } = end;
+      // Repeated text can make the end found before the start: move both ends after it.
+      const overlap = start - Math.min(endOld, endNew);
+      if (overlap > 0) {
+        endOld += overlap;
+        endNew += overlap;
+      }
+      const transaction = state.tr
+        .replace(start, endOld, next.slice(start, endNew))
+        .setMeta("addToHistory", false)
+        .setMeta("preventUpdate", true);
+      view.dispatch(transaction);
+    }
     return serializeMarkdown(current);
   },
 });

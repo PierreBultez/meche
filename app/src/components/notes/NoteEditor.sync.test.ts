@@ -209,6 +209,28 @@ describe("the open note changes on another device", () => {
     ]);
   });
 
+  it("the caret follows the text when the new version changes what is before it", async () => {
+    const { editor, changedElsewhere, flush } = await openNote();
+    editor.commands.focus("end");
+    await flush();
+
+    await changedElsewhere({ content: "Pain, lait" });
+    editor.commands.insertContent(" frais");
+    await flush();
+
+    expect(editor.isFocused).toBe(true);
+    expect(editor.getText()).toBe("Pain, lait frais");
+  });
+
+  it("a new version from elsewhere is not undoable", async () => {
+    const { editor, changedElsewhere, flush } = await openNote();
+    editor.commands.focus("end");
+    await changedElsewhere({ content: "Version d'ailleurs" });
+    editor.commands.undo();
+    await flush();
+    expect(editor.getText()).toBe("Version d'ailleurs");
+  });
+
   it("a new title from elsewhere leaves the text being typed alone", async () => {
     const { editor, changedElsewhere, typeInText, flush } = await openNote();
     editor.commands.focus("end");

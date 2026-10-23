@@ -14,6 +14,7 @@ export const useSettingsStore = defineStore("settings", () => {
   const theme = ref<ThemePreference>("system");
   const listWidth = ref(280);
   const codeLineWrap = ref(false);
+  const fuseDelayHours = ref(168);
   const systemTheme = ref(readSystemTheme());
   const resolvedTheme = computed(() => resolveTheme(theme.value, systemTheme.value));
 
@@ -38,6 +39,7 @@ export const useSettingsStore = defineStore("settings", () => {
     theme.value = settings.theme;
     listWidth.value = settings.listWidth;
     codeLineWrap.value = settings.codeLineWrap;
+    fuseDelayHours.value = settings.fuseDelayHours;
   }
 
   /** Applies a setting at once, then saves it; the change is undone if saving fails. */
@@ -59,15 +61,19 @@ export const useSettingsStore = defineStore("settings", () => {
   const setListWidth = (next: number) => change(listWidth, next, { listWidth: next });
   const setCodeLineWrap = (next: boolean) =>
     change(codeLineWrap, next, { codeLineWrap: next });
+  const setFuseDelayHours = (next: number) =>
+    change(fuseDelayHours, next, { fuseDelayHours: next });
 
   return {
     theme,
     resolvedTheme,
     listWidth,
     codeLineWrap,
+    fuseDelayHours,
     load,
     setTheme,
     setListWidth,
     setCodeLineWrap,
+    setFuseDelayHours,
   };
 });

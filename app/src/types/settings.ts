@@ -8,6 +8,8 @@ export interface Settings {
   listWidth: number;
   /** Wrap long lines in code notes. */
   codeLineWrap: boolean;
+  /** Delay of the fuses lit from now on, in hours (1, 24, 72, 168 or 720). */
+  fuseDelayHours: number;
 }
 
 /** Partial update: only the fields present are saved. */

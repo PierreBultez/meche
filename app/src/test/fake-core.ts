@@ -7,12 +7,14 @@ import { MATCH_END, MATCH_START } from "../types/note";
 export interface FakeCore {
   notes: Note[];
   calls: Array<{ cmd: string; args: Record<string, unknown> }>;
+  /** Delay of the fuses lit by set_ephemeral and create_note (the setting, in Rust). */
+  fuseDelayHours: number;
   /** Delays the answer of the next call of `cmd` until `release()` is called. */
   hold(cmd: string): { release: () => void };
 }
 
 export function installFakeCore(): FakeCore {
-  const core: FakeCore = { notes: [], calls: [], hold };
+  const core: FakeCore = { notes: [], calls: [], fuseDelayHours: 168, hold };
   const held = new Map<string, Promise<void>>();
   let clock = 1_000;
   let counter = 0;
@@ -22,6 +24,18 @@ export function installFakeCore(): FakeCore {
     held.set(cmd, new Promise<void>((resolve) => (release = resolve)));
     return { release: () => release() };
   }
+
+  /** Lights a fuse with the delay of the settings (fuseDelayHours, as Rust does). */
+  const lightFuse = (note: Note): void => {
+    const hours = core.fuseDelayHours;
+    Object.assign(note, {
+      ephemeralMode: "delay",
+      ephemeralDelayHours: hours,
+      ephemeralStartedAt: ++clock,
+      destroyAt: clock + hours * 3_600_000,
+      updatedAt: clock,
+    });
+  };
 
   const find = (id: string): Note => {
     const note = core.notes.find((candidate) => candidate.id === id);
@@ -51,7 +65,7 @@ export function installFakeCore(): FakeCore {
         .sort((a, b) => Number(b.pinned) - Number(a.pinned) || b.updatedAt - a.updatedAt)
         .map(summary),
     get_note: ({ id }) => ({ ...find(id as string) }),
-    create_note: ({ kind }) => {
+    create_note: ({ kind, fused }) => {
       const note: Note = {
         id: `note-${++counter}`,
         title: "",
@@ -69,12 +83,28 @@ export function installFakeCore(): FakeCore {
         createdAt: ++clock,
         updatedAt: clock,
       };
+      if (fused) lightFuse(note);
       core.notes.push(note);
       return { ...note };
     },
     update_note: ({ id, patch }) => {
       const note = find(id as string);
       Object.assign(note, patch as NotePatch, { updatedAt: ++clock });
+      return { ...note };
+    },
+    set_ephemeral: ({ id, enabled }) => {
+      const note = find(id as string);
+      if (note.trashedAt !== null) throw { kind: "invalid_input", message: "in the trash" };
+      if (enabled && note.ephemeralMode === null) lightFuse(note);
+      if (!enabled && note.ephemeralMode !== null) {
+        Object.assign(note, {
+          ephemeralMode: null,
+          ephemeralDelayHours: null,
+          ephemeralStartedAt: null,
+          destroyAt: null,
+          updatedAt: ++clock,
+        });
+      }
       return { ...note };
     },
     trash_note: ({ id }) => {
@@ -103,6 +133,7 @@ export function installFakeCore(): FakeCore {
           color: note.color,
           pinned: note.pinned,
           updatedAt: note.updatedAt,
+          destroyAt: note.destroyAt,
         }));
     },
   };

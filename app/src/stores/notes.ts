@@ -8,10 +8,19 @@ import {
   listNotes,
   restoreNote,
   searchNotes,
+  setEphemeral,
   trashNote,
   updateNote,
 } from "../api/notes";
-import type { ListFilter, Note, NoteKind, NotePatch, NoteSummary, SearchResult } from "../types/note";
+import type {
+  CommandError,
+  ListFilter,
+  Note,
+  NoteKind,
+  NotePatch,
+  NoteSummary,
+  SearchResult,
+} from "../types/note";
 
 /**
  * Notes shown in the interface. Rust owns the data: every action calls a command, then reloads
@@ -63,8 +72,9 @@ export const useNotesStore = defineStore("notes", () => {
     }
   }
 
-  async function create(kind: NoteKind): Promise<Note> {
-    const note = await createNote(kind);
+  /** `fused`: « Nouvelle note à mèche », its fuse is lit at once. */
+  async function create(kind: NoteKind, fused = false): Promise<Note> {
+    const note = await createNote(kind, fused);
     if (filter.value === "trash") {
       filter.value = "all";
     }
@@ -82,6 +92,38 @@ export const useNotesStore = defineStore("notes", () => {
     }
     await refresh();
     return note;
+  }
+
+  /** Lights or puts out the fuse of a note (docs/06). */
+  async function setFuse(id: string, enabled: boolean): Promise<Note> {
+    const note = await setEphemeral(id, enabled);
+    if (current.value?.id === id) {
+      current.value = note;
+    }
+    await refresh();
+    return note;
+  }
+
+  /**
+   * Rust changed notes on its own (a fuse burnt out, the trash was purged: `notes-changed`).
+   * Reloads the list and the open note. Returns false when the open note no longer exists.
+   */
+  async function reload(): Promise<boolean> {
+    await refresh();
+    const id = current.value?.id;
+    if (id === undefined) return true;
+    const request = ++openRequest;
+    try {
+      const note = await getNote(id);
+      if (request === openRequest) current.value = note;
+      return true;
+    } catch (error) {
+      if ((error as CommandError | undefined)?.kind !== "not_found") throw error;
+      // Another note was opened meanwhile: that one is still there.
+      if (request !== openRequest) return true;
+      current.value = null;
+      return false;
+    }
   }
 
   async function trash(id: string): Promise<void> {
@@ -155,6 +197,8 @@ export const useNotesStore = defineStore("notes", () => {
     open,
     create,
     save,
+    setFuse,
+    reload,
     trash,
     restore,
     deleteForever,

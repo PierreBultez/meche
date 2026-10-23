@@ -43,6 +43,8 @@ interface Row {
   kind: NoteKind;
   pinned: boolean;
   date: number;
+  /** A lit fuse (not shown in the trash, where the note already exploded or waits). */
+  destroyAt: number | null;
 }
 
 /** The cards of the list: search results while searching, otherwise the filtered notes. */
@@ -58,6 +60,7 @@ const rows = computed<Row[]>(() =>
         ...summary,
         highlighted: false,
         date: summary.trashedAt ?? summary.updatedAt,
+        destroyAt: summary.trashedAt === null ? summary.destroyAt : null,
       })),
 );
 
@@ -348,6 +351,7 @@ async function emptyTrash(): Promise<void> {
             :kind="row.kind"
             :pinned="row.pinned"
             :date="row.date"
+            :destroy-at="row.destroyAt"
             :selected="row.id === selectedId"
           />
         </li>

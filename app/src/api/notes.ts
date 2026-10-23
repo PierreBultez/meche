@@ -10,8 +10,14 @@ export function getNote(id: string): Promise<Note> {
   return invoke<Note>("get_note", { id });
 }
 
-export function createNote(kind: NoteKind): Promise<Note> {
-  return invoke<Note>("create_note", { kind });
+/** `fused`: the fuse of the new note is lit with the delay of the settings. */
+export function createNote(kind: NoteKind, fused = false): Promise<Note> {
+  return invoke<Note>("create_note", { kind, fused });
+}
+
+/** Lights (`enabled`) or puts out the fuse of a note, and returns it (docs/06). */
+export function setEphemeral(id: string, enabled: boolean): Promise<Note> {
+  return invoke<Note>("set_ephemeral", { id, enabled });
 }
 
 export function updateNote(id: string, patch: NotePatch): Promise<Note> {

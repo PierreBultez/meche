@@ -111,4 +111,44 @@ describe("notes store", () => {
     expect(store.neighbour(first.id, -1)).toBe(second.id);
     expect(store.neighbour(null, 1)).toBe(second.id);
   });
+
+  it("lights and puts out the fuse of the open note", async () => {
+    const store = useNotesStore();
+    const note = await store.create("rich");
+    core.fuseDelayHours = 24;
+    const lit = await store.setFuse(note.id, true);
+    expect(core.calls).toContainEqual({ cmd: "set_ephemeral", args: { id: note.id, enabled: true } });
+    expect(lit.ephemeralDelayHours).toBe(24);
+    expect(store.current?.destroyAt).toBe(lit.destroyAt);
+    expect(store.summaries[0].destroyAt).toBe(lit.destroyAt);
+    await store.setFuse(note.id, false);
+    expect(store.current?.destroyAt).toBeNull();
+  });
+
+  it("creates a note with its fuse already lit", async () => {
+    const store = useNotesStore();
+    const note = await store.create("rich", true);
+    expect(core.calls).toContainEqual({ cmd: "create_note", args: { kind: "rich", fused: true } });
+    expect(note.ephemeralMode).toBe("delay");
+    expect(store.current?.destroyAt).not.toBeNull();
+  });
+
+  it("reloads the open note when Rust says notes changed", async () => {
+    const store = useNotesStore();
+    const note = await store.create("rich");
+    // What the fuse does in Rust: the note goes to the trash on its own.
+    Object.assign(core.notes[0], { trashedAt: 5, trashReason: "self_destruct" });
+    expect(await store.reload()).toBe(true);
+    expect(store.current?.id).toBe(note.id);
+    expect(store.current?.trashReason).toBe("self_destruct");
+    expect(store.summaries).toEqual([]);
+  });
+
+  it("closes the open note when it was deleted for good", async () => {
+    const store = useNotesStore();
+    await store.create("rich");
+    core.notes = [];
+    expect(await store.reload()).toBe(false);
+    expect(store.current).toBeNull();
+  });
 });

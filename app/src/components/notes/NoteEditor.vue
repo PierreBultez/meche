@@ -15,6 +15,8 @@ import { noteAsMarkdown } from "../../utils/note-markdown";
 import type CodeEditorComponent from "../editor/CodeEditor.vue";
 import type RichEditorComponent from "../editor/RichEditor.vue";
 import { CODE_LANGUAGES, normalizeLanguage } from "../../editor/languages";
+import FuseIcon from "../fuse/FuseIcon.vue";
+import FuseTimeLeft from "../fuse/FuseTimeLeft.vue";
 import ConfirmDialog from "../ui/ConfirmDialog.vue";
 import UiSelect from "../ui/UiSelect.vue";
 import NoteMenu from "./NoteMenu.vue";
@@ -34,6 +36,8 @@ const actions = useNoteActions();
 
 const id = props.note.id;
 const inTrash = computed(() => props.note.trashedAt !== null);
+const fuseLit = computed(() => props.note.ephemeralMode !== null);
+const exploded = computed(() => props.note.trashReason === "self_destruct");
 const rich = ref<InstanceType<typeof RichEditorComponent> | null>(null);
 const code = ref<InstanceType<typeof CodeEditorComponent> | null>(null);
 const menu = ref<InstanceType<typeof NoteMenu> | null>(null);
@@ -84,6 +88,7 @@ async function patch(change: Parameters<typeof notes.save>[1], failure: string):
 }
 
 const togglePin = () => actions.togglePin(props.note);
+const toggleFuse = () => actions.toggleFuse(props.note);
 const setColor = (color: NoteColor) => actions.setColor(props.note, color);
 
 const languageOptions = CODE_LANGUAGES.map(({ id: value, label }) => ({ value, label }));
@@ -166,6 +171,7 @@ defineExpose({
   flush,
   focusTitle: () => titleInput.value?.focus(),
   togglePin,
+  toggleFuse,
   moveToTrash,
   toggleMenu: () => menu.value?.toggle(),
 });
@@ -199,6 +205,23 @@ defineExpose({
           :options="languageOptions"
           @update:model-value="setLanguage"
         />
+        <FuseTimeLeft
+          v-if="note.destroyAt !== null"
+          long
+          :destroy-at="note.destroyAt"
+          class="shrink-0 whitespace-nowrap pl-1 text-sm"
+        />
+        <button
+          type="button"
+          class="rounded-button p-2 hover:bg-surface-2"
+          :class="fuseLit ? '' : 'text-muted hover:text-text'"
+          :aria-label="fuseLit ? 'Éteindre la mèche' : 'Allumer la mèche'"
+          :title="fuseLit ? 'Éteindre la mèche (Ctrl+Maj+E)' : 'Allumer la mèche (Ctrl+Maj+E)'"
+          :aria-pressed="fuseLit"
+          @click="toggleFuse"
+        >
+          <FuseIcon :lit="fuseLit" />
+        </button>
         <button
           type="button"
           class="rounded-button p-2 hover:bg-surface-2"
@@ -230,14 +253,20 @@ defineExpose({
       class="mx-6 mb-3 flex self-center w-[calc(100%-3rem)] max-w-[72ch] flex-wrap items-center gap-2 rounded-button border border-border bg-surface px-3 py-2 text-sm"
       role="status"
     >
-      <span class="flex-1 text-text">Cette note est dans la corbeille.</span>
+      <span class="flex-1 text-text">
+        {{
+          exploded
+            ? "Sa mèche a brûlé : cette note est dans la corbeille."
+            : "Cette note est dans la corbeille."
+        }}
+      </span>
       <button
         type="button"
         class="flex items-center gap-1 rounded-[8px] px-2 py-1 font-semibold text-brand hover:bg-surface-2"
         @click="restore()"
       >
         <RotateCcw :size="15" aria-hidden="true" />
-        Restaurer
+        {{ exploded ? "Restaurer (la mèche est éteinte)" : "Restaurer" }}
       </button>
       <button
         type="button"

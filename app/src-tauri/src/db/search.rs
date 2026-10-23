@@ -28,6 +28,8 @@ pub struct SearchResult {
     pub color: NoteColor,
     pub pinned: bool,
     pub updated_at: i64,
+    /// When its fuse burns out, if it is lit (docs/06).
+    pub destroy_at: Option<i64>,
 }
 
 /// Registers the SQL functions the schema needs: the view and the triggers of migration 002
@@ -190,7 +192,7 @@ pub fn search(conn: &Connection, input: &str) -> Result<Vec<SearchResult>> {
     };
     let mut stmt = conn.prepare(
         "SELECT n.id, n.title, substr(n.content, 1, 400), n.kind, n.color, n.pinned,
-                n.updated_at, snippet(notes_fts, -1, ?2, ?3, '…', ?4)
+                n.updated_at, snippet(notes_fts, -1, ?2, ?3, '…', ?4), n.destroy_at
          FROM notes_fts JOIN notes n ON n.seq = notes_fts.rowid
          WHERE notes_fts MATCH ?1 AND n.deleted = 0 AND n.trashed_at IS NULL
          ORDER BY bm25(notes_fts, 5.0, 1.0)
@@ -213,6 +215,7 @@ pub fn search(conn: &Connection, input: &str) -> Result<Vec<SearchResult>> {
                     color: row.get(4)?,
                     pinned: row.get(5)?,
                     updated_at: row.get(6)?,
+                    destroy_at: row.get(8)?,
                 })
             },
         )?
@@ -329,6 +332,18 @@ mod tests {
         let id = note(&conn, "Courses", "lait");
         trash(&conn, &id, 1).unwrap();
         assert!(found(&conn, "lait").is_empty());
+    }
+
+    #[test]
+    fn results_tell_when_the_fuse_burns_out() {
+        let conn = open_in_memory().unwrap();
+        let plain = note(&conn, "Courses", "lait");
+        let fused = note(&conn, "Courses du samedi", "lait");
+        crate::db::notes::set_ephemeral(&conn, &fused, true, 1, 1_000).unwrap();
+        let results = search(&conn, "lait").unwrap();
+        let destroy_at = |id: &str| results.iter().find(|r| r.id == id).unwrap().destroy_at;
+        assert_eq!(destroy_at(&plain), None);
+        assert_eq!(destroy_at(&fused), Some(1_000 + 3_600_000));
     }
 
     #[test]

@@ -49,6 +49,8 @@ jobs:
       - run: composer install --no-interaction --no-progress --prefer-dist
       - run: cp .env.example .env && php artisan key:generate
       - run: vendor/bin/pint --test
+      # What the deployment runs (server/deploy/deploy.sh): caching must work.
+      - run: php artisan optimize && php artisan optimize:clear
       - run: vendor/bin/pest
         env:
           DB_CONNECTION: mariadb

@@ -7,6 +7,7 @@ export const routes: RouteRecordRaw[] = [
   // when another note is opened.
   { path: "/notes/:noteId?", name: "notes", component: NotesView },
   { path: "/settings", name: "settings", component: () => import("../views/SettingsView.vue") },
+  { path: "/welcome", name: "welcome", component: () => import("../views/WelcomeView.vue") },
 ];
 
 // Hash history (`#/…`) never asks the WebView to load another URL, so a reload

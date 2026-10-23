@@ -25,3 +25,12 @@ const FULL_DATE = new Intl.DateTimeFormat("fr-FR", { dateStyle: "long", timeStyl
 export function fullDate(timestamp: number): string {
   return FULL_DATE.format(timestamp);
 }
+
+/** « à l'instant », « il y a 12 min », « il y a 5 h », otherwise the full date (« le 22 octobre… »). */
+export function agoText(timestamp: number, now: number = Date.now()): string {
+  const elapsed = Math.max(0, now - timestamp);
+  if (elapsed < MINUTE) return "à l'instant";
+  if (elapsed < HOUR) return `il y a ${Math.floor(elapsed / MINUTE)} min`;
+  if (elapsed < DAY) return `il y a ${Math.floor(elapsed / HOUR)} h`;
+  return `le ${fullDate(timestamp)}`;
+}

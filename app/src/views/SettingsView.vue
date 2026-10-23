@@ -1,22 +1,34 @@
 <script setup lang="ts">
-// Settings (docs/08, "Écrans secondaires"): appearance, the fuse, code notes.
+// Settings (docs/08, "Écrans secondaires"): server, appearance, the fuse, code notes.
 import { getVersion } from "@tauri-apps/api/app";
 import { ArrowLeft } from "lucide-vue-next";
-import { onMounted, ref } from "vue";
+import { nextTick, onMounted, ref } from "vue";
+import { useRoute } from "vue-router";
+import DeviceList from "../components/settings/DeviceList.vue";
+import InvitationList from "../components/settings/InvitationList.vue";
+import ServerSettings from "../components/settings/ServerSettings.vue";
 import ThemeSwitcher from "../components/ThemeSwitcher.vue";
 import UiSelect from "../components/ui/UiSelect.vue";
 import { noteRoute } from "../composables/useNoteActions";
 import { useNotesStore } from "../stores/notes";
 import { useSettingsStore } from "../stores/settings";
+import { useSyncStore } from "../stores/sync";
 import { useToastsStore } from "../stores/toasts";
 import { FUSE_DELAYS } from "../utils/fuse";
 
 const settings = useSettingsStore();
 const notes = useNotesStore();
+const sync = useSyncStore();
 const toasts = useToastsStore();
+const route = useRoute();
 const version = ref("");
 
 onMounted(async () => {
+  // « Connecter un serveur » (first launch, the sync dot) opens this page at its server section.
+  if (route.hash === "#server") {
+    await nextTick();
+    document.getElementById("server")?.scrollIntoView({ block: "start" });
+  }
   version.value = await getVersion().catch(() => "");
 });
 
@@ -50,6 +62,23 @@ function toggleWrap(event: Event): void {
         </RouterLink>
         <h1 class="text-2xl font-semibold">Réglages</h1>
       </header>
+
+      <section class="space-y-3" aria-labelledby="server">
+        <h2 id="server" class="text-sm font-semibold text-muted">Serveur</h2>
+        <ServerSettings />
+      </section>
+
+      <template v-if="sync.loggedIn">
+        <section class="space-y-3" aria-labelledby="devices">
+          <h2 id="devices" class="text-sm font-semibold text-muted">Appareils connectés</h2>
+          <DeviceList />
+        </section>
+
+        <section class="space-y-3" aria-labelledby="invitations">
+          <h2 id="invitations" class="text-sm font-semibold text-muted">Inviter quelqu'un</h2>
+          <InvitationList />
+        </section>
+      </template>
 
       <section class="space-y-3" aria-labelledby="appearance">
         <h2 id="appearance" class="text-sm font-semibold text-muted">Apparence</h2>

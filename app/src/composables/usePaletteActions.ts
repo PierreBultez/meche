@@ -1,5 +1,4 @@
-// Actions of the command palette (docs/08). Those of later phases (synchronisation, Standard
-// Notes import) are added with their phase.
+// Actions of the command palette (docs/08). The Standard Notes import comes with its phase.
 import {
   ArrowLeftRight,
   CodeXml,
@@ -12,6 +11,7 @@ import {
   Pin,
   PinOff,
   Plus,
+  RefreshCw,
   RotateCcw,
   Settings,
   Sun,
@@ -22,6 +22,7 @@ import { type Component, computed, h } from "vue";
 import FuseIcon from "../components/fuse/FuseIcon.vue";
 import { useNotesStore } from "../stores/notes";
 import { useSettingsStore } from "../stores/settings";
+import { useSyncStore } from "../stores/sync";
 import { useUiStore } from "../stores/ui";
 import { NOTE_COLORS, NOTE_COLOR_LABELS } from "../theme/note-colors";
 import type { ListFilter, NoteColor } from "../types/note";
@@ -60,6 +61,7 @@ const THEMES: Array<{ value: ThemePreference; label: string; icon: Component }> 
 export function usePaletteActions() {
   const notes = useNotesStore();
   const settings = useSettingsStore();
+  const sync = useSyncStore();
   const ui = useUiStore();
   const commands = useCommands();
   const { actions } = commands;
@@ -140,6 +142,16 @@ export function usePaletteActions() {
         keywords: "corbeille",
         icon: RotateCcw,
         run: () => actions.restore(id),
+      });
+    }
+
+    if (sync.loggedIn) {
+      list.push({
+        id: "sync-now",
+        label: "Synchroniser maintenant",
+        keywords: "synchro serveur mettre à jour",
+        icon: RefreshCw,
+        run: () => commands.syncNow(),
       });
     }
 

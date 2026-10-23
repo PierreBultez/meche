@@ -51,6 +51,11 @@ export interface NotePatch {
   codeLanguage?: string;
   pinned?: boolean;
   color?: NoteColor;
+  /** The title the editor believes is stored: when the note holds another one (changed on
+   * another device), Rust keeps it and puts the new title in a conflict copy. */
+  expectedTitle?: string;
+  /** Same for the content. */
+  expectedContent?: string;
 }
 
 /** One search result: matches in `excerpt` are wrapped in MATCH_START / MATCH_END. */

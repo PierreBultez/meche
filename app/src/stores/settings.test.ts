@@ -58,14 +58,14 @@ describe("settings store", () => {
 
   it("applies the system theme as soon as it is created", () => {
     mockSystemTheme(true);
-    mockRustCore({ theme: "system", listWidth: 280, codeLineWrap: false, fuseDelayHours: 168 });
+    mockRustCore({ theme: "system", listWidth: 280, codeLineWrap: false, fuseDelayHours: 168, welcomeDone: false });
     useSettingsStore();
     expect(currentTheme()).toBe("dark");
   });
 
   it("applies the saved theme once loaded", async () => {
     mockSystemTheme(true);
-    mockRustCore({ theme: "light", listWidth: 280, codeLineWrap: false, fuseDelayHours: 168 });
+    mockRustCore({ theme: "light", listWidth: 280, codeLineWrap: false, fuseDelayHours: 168, welcomeDone: false });
     const store = useSettingsStore();
     await store.load();
     await nextTick();
@@ -75,7 +75,7 @@ describe("settings store", () => {
 
   it("switches at once and saves the new theme in Rust", async () => {
     mockSystemTheme(false);
-    const calls = mockRustCore({ theme: "system", listWidth: 280, codeLineWrap: false, fuseDelayHours: 168 });
+    const calls = mockRustCore({ theme: "system", listWidth: 280, codeLineWrap: false, fuseDelayHours: 168, welcomeDone: false });
     const store = useSettingsStore();
     const saving = store.setTheme("dark");
     await nextTick();
@@ -86,7 +86,7 @@ describe("settings store", () => {
 
   it("rolls back when saving fails", async () => {
     mockSystemTheme(false);
-    mockRustCore({ theme: "light", listWidth: 280, codeLineWrap: false, fuseDelayHours: 168 }, { failWrites: true });
+    mockRustCore({ theme: "light", listWidth: 280, codeLineWrap: false, fuseDelayHours: 168, welcomeDone: false }, { failWrites: true });
     const store = useSettingsStore();
     await store.load();
     await expect(store.setTheme("dark")).rejects.toThrow();
@@ -97,7 +97,7 @@ describe("settings store", () => {
 
   it("follows system changes only in system mode", async () => {
     const system = mockSystemTheme(false);
-    mockRustCore({ theme: "system", listWidth: 280, codeLineWrap: false, fuseDelayHours: 168 });
+    mockRustCore({ theme: "system", listWidth: 280, codeLineWrap: false, fuseDelayHours: 168, welcomeDone: false });
     const store = useSettingsStore();
     system.switchTo(true);
     await nextTick();
@@ -112,7 +112,7 @@ describe("settings store", () => {
 
   it("loads and saves the list width and code wrapping", async () => {
     mockSystemTheme(false);
-    const calls = mockRustCore({ theme: "system", listWidth: 320, codeLineWrap: true, fuseDelayHours: 168 });
+    const calls = mockRustCore({ theme: "system", listWidth: 320, codeLineWrap: true, fuseDelayHours: 168, welcomeDone: false });
     const store = useSettingsStore();
     await store.load();
     expect(store.listWidth).toBe(320);
@@ -134,6 +134,7 @@ describe("settings store", () => {
       listWidth: 280,
       codeLineWrap: false,
       fuseDelayHours: 24,
+      welcomeDone: false,
     });
     const store = useSettingsStore();
     await store.load();
@@ -141,5 +142,22 @@ describe("settings store", () => {
     await store.setFuseDelayHours(720);
     expect(store.fuseDelayHours).toBe(720);
     expect(calls).toContainEqual({ cmd: "set_settings", payload: { patch: { fuseDelayHours: 720 } } });
+  });
+
+  it("remembers that the first launch screen was answered", async () => {
+    mockSystemTheme(false);
+    const calls = mockRustCore({
+      theme: "system",
+      listWidth: 280,
+      codeLineWrap: false,
+      fuseDelayHours: 168,
+      welcomeDone: false,
+    });
+    const store = useSettingsStore();
+    await store.load();
+    expect(store.welcomeDone).toBe(false);
+    await store.setWelcomeDone();
+    expect(store.welcomeDone).toBe(true);
+    expect(calls).toContainEqual({ cmd: "set_settings", payload: { patch: { welcomeDone: true } } });
   });
 });

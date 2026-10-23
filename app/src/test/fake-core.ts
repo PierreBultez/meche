@@ -3,10 +3,17 @@
 import { mockIPC } from "@tauri-apps/api/mocks";
 import type { Note, NoteKind, NotePatch, NoteSummary, SearchResult } from "../types/note";
 import { MATCH_END, MATCH_START } from "../types/note";
+import type { Device, Invitation, SyncStatus } from "../types/sync";
 
 export interface FakeCore {
   notes: Note[];
   calls: Array<{ cmd: string; args: Record<string, unknown> }>;
+  /** State of the sync returned by the sync commands. */
+  sync: SyncStatus;
+  devices: Device[];
+  invitations: Invitation[];
+  /** Makes the next call of `cmd` fail with this error (e.g. `{ kind: "invalid_credentials" }`). */
+  fail(cmd: string, error: { kind: string; message?: string }): void;
   /** Delay of the fuses lit by set_ephemeral and create_note (the setting, in Rust). */
   fuseDelayHours: number;
   /** Delays the answer of the next call of `cmd` until `release()` is called. */
@@ -14,8 +21,33 @@ export interface FakeCore {
 }
 
 export function installFakeCore(): FakeCore {
-  const core: FakeCore = { notes: [], calls: [], fuseDelayHours: 168, hold };
+  const core: FakeCore = {
+    notes: [],
+    calls: [],
+    fuseDelayHours: 168,
+    hold,
+    fail,
+    sync: {
+      state: "idle",
+      errorKind: null,
+      message: null,
+      loggedIn: false,
+      serverUrl: null,
+      email: null,
+      deviceName: "PC de test",
+      lastSyncAt: null,
+      clockSkewMs: null,
+      conflicts: 0,
+    },
+    devices: [],
+    invitations: [],
+  };
   const held = new Map<string, Promise<void>>();
+  const failures = new Map<string, { kind: string; message?: string }>();
+
+  function fail(cmd: string, error: { kind: string; message?: string }) {
+    failures.set(cmd, error);
+  }
   let clock = 1_000;
   let counter = 0;
 
@@ -107,7 +139,22 @@ export function installFakeCore(): FakeCore {
     },
     update_note: ({ id, patch }) => {
       const note = find(id as string);
-      Object.assign(note, patch as NotePatch, { updatedAt: ++clock });
+      const { expectedTitle, expectedContent, ...change } = patch as NotePatch;
+      // Like Rust (db::notes::update): a note changed elsewhere is not overwritten, what was
+      // typed goes to a conflict copy.
+      const changedElsewhere =
+        (expectedTitle !== undefined && expectedTitle !== note.title) ||
+        (expectedContent !== undefined && expectedContent !== note.content);
+      const updated = { ...note, ...change };
+      const same = updated.title === note.title && updated.content === note.content &&
+        updated.pinned === note.pinned && updated.color === note.color &&
+        updated.kind === note.kind && updated.codeLanguage === note.codeLanguage;
+      if (same) return { ...note };
+      if (changedElsewhere) {
+        core.notes.push({ ...updated, id: `note-${++counter}`, title: `${updated.title} (conflit du 22/10 14:05)` });
+        return { ...note };
+      }
+      Object.assign(note, change, { updatedAt: ++clock });
       return { ...note };
     },
     set_ephemeral: ({ id, enabled }) => {
@@ -146,6 +193,46 @@ export function installFakeCore(): FakeCore {
       core.notes = core.notes.filter((note) => note.trashedAt === null);
       return before - core.notes.length;
     },
+    set_settings: ({ patch }) => patch,
+    get_sync_status: () => ({ ...core.sync }),
+    check_server: ({ serverUrl }) => ({ serverUrl, serverTime: clock }),
+    login: ({ serverUrl, email, deviceName }) => {
+      Object.assign(core.sync, { loggedIn: true, serverUrl, email, deviceName, errorKind: null });
+      return { ...core.sync };
+    },
+    register: ({ serverUrl, email, deviceName }) => {
+      Object.assign(core.sync, { loggedIn: true, serverUrl, email, deviceName, errorKind: null });
+      return { ...core.sync };
+    },
+    logout: () => {
+      core.sync.loggedIn = false;
+      return { ...core.sync };
+    },
+    sync_now: () => {
+      core.sync.lastSyncAt = ++clock;
+      return { ...core.sync };
+    },
+    list_devices: () => core.devices.map((device) => ({ ...device })),
+    revoke_device: ({ id }) => {
+      core.devices = core.devices.filter((device) => device.id !== id);
+    },
+    list_invitations: () => core.invitations.map((invitation) => ({ ...invitation, code: null })),
+    create_invitation: () => {
+      const invitation: Invitation = {
+        id: core.invitations.length + 1,
+        code: "7KQ2-M9XD-4TPH",
+        hint: "4TPH",
+        createdAt: clock,
+        expiresAt: clock + 7 * 86_400_000,
+        usedAt: null,
+        usedByEmail: null,
+      };
+      core.invitations.push(invitation);
+      return { ...invitation };
+    },
+    delete_invitation: ({ id }) => {
+      core.invitations = core.invitations.filter((invitation) => invitation.id !== id);
+    },
     search: ({ query }): SearchResult[] => {
       const word = String(query).trim().toLowerCase();
       return core.notes
@@ -170,6 +257,11 @@ export function installFakeCore(): FakeCore {
     if (waiting) {
       held.delete(cmd);
       await waiting;
+    }
+    const failure = failures.get(cmd);
+    if (failure) {
+      failures.delete(cmd);
+      throw { message: "", ...failure };
     }
     const handler = commands[cmd];
     if (!handler) throw new Error(`fake core: unknown command ${cmd}`);

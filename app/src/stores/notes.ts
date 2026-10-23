@@ -109,18 +109,21 @@ export const useNotesStore = defineStore("notes", () => {
    * Reloads the list and the open note. Returns false when the open note no longer exists.
    */
   async function reload(): Promise<boolean> {
+    // Not a new open request: a note opened before or during this reload keeps priority, so
+    // its answer is never dropped for the note that was open when the event came.
+    const request = openRequest;
     await refresh();
     const id = current.value?.id;
     if (id === undefined) return true;
-    const request = ++openRequest;
+    const stillWanted = () => request === openRequest && current.value?.id === id;
     try {
       const note = await getNote(id);
-      if (request === openRequest) current.value = note;
+      if (stillWanted()) current.value = note;
       return true;
     } catch (error) {
       if ((error as CommandError | undefined)?.kind !== "not_found") throw error;
       // Another note was opened meanwhile: that one is still there.
-      if (request !== openRequest) return true;
+      if (!stillWanted()) return true;
       current.value = null;
       return false;
     }

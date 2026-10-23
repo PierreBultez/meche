@@ -151,4 +151,59 @@ describe("notes store", () => {
     expect(await store.reload()).toBe(false);
     expect(store.current).toBeNull();
   });
+
+  describe("a note opened while Rust's changes are reloaded keeps priority", () => {
+    const nextTask = () => new Promise((resolve) => setTimeout(resolve, 0));
+
+    it("opened while the list is reloading", async () => {
+      const store = useNotesStore();
+      const a = await store.create("rich");
+      const b = await store.create("rich");
+      await store.open(a.id);
+      const list = core.hold("list_notes");
+      const reloading = store.reload();
+      await nextTask();
+      const getB = core.hold("get_note");
+      const opening = store.open(b.id); // what the route watch of NotesView does
+      await nextTask();
+      list.release();
+      await reloading;
+      getB.release();
+      await opening;
+      expect(store.current?.id).toBe(b.id);
+    });
+
+    it("opened before the event, answered after the reload's list", async () => {
+      const store = useNotesStore();
+      const a = await store.create("rich");
+      const b = await store.create("rich");
+      await store.open(a.id);
+      const getB = core.hold("get_note");
+      const opening = store.open(b.id);
+      await nextTask();
+      await store.reload();
+      getB.release();
+      await opening;
+      expect(store.current?.id).toBe(b.id);
+    });
+
+    it("the note open before was purged meanwhile: no redirection", async () => {
+      const store = useNotesStore();
+      const a = await store.create("rich");
+      const b = await store.create("rich");
+      await store.open(a.id);
+      const list = core.hold("list_notes");
+      const reloading = store.reload();
+      await nextTask();
+      core.notes = core.notes.filter((note) => note.id !== a.id);
+      const getB = core.hold("get_note");
+      const opening = store.open(b.id);
+      await nextTask();
+      list.release();
+      expect(await reloading).toBe(true);
+      getB.release();
+      await opening;
+      expect(store.current?.id).toBe(b.id);
+    });
+  });
 });

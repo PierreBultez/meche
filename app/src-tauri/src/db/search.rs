@@ -445,7 +445,7 @@ mod performance {
     use std::time::{Duration, Instant};
 
     use super::*;
-    use crate::db::notes::{ListFilter, NotePatch, create, list, update};
+    use crate::db::notes::{ListFilter, NotePatch, create, list, set_ephemeral, update};
 
     const WORDS: [&str; 12] = [
         "lait", "pain", "serveur", "apache", "certbot", "laravel", "école", "réunion", "facture",
@@ -456,7 +456,7 @@ mod performance {
     #[ignore]
     fn search_and_list_stay_fast_with_1000_notes() {
         let dir = tempfile::tempdir().unwrap();
-        let conn = crate::db::open_in_dir(dir.path()).unwrap();
+        let mut conn = crate::db::open_in_dir(dir.path()).unwrap();
         for i in 0..1000_usize {
             let id = create(&conn, NoteKind::Rich, i as i64).unwrap().id;
             let words: Vec<&str> = (0..300)
@@ -468,6 +468,10 @@ mod performance {
                 ..NotePatch::default()
             };
             update(&conn, &id, patch, i as i64).unwrap();
+            // One note in ten has its fuse lit (1 h, from i ms).
+            if i % 10 == 0 {
+                set_ephemeral(&conn, &id, true, 1, i as i64).unwrap();
+            }
         }
 
         for query in [
@@ -494,5 +498,21 @@ mod performance {
             "list_notes(all): {count} summaries in {:?}",
             start.elapsed()
         );
+
+        // list_notes runs the fuse maintenance first (docs/06): it must cost next to nothing
+        // when no fuse is due, which is almost always the case.
+        let start = Instant::now();
+        assert!(!crate::ephemeral::run_maintenance(&mut conn, 1_000).unwrap());
+        let idle = start.elapsed();
+        println!("fuse maintenance, nothing due: {idle:?}");
+        assert!(idle < Duration::from_millis(5), "maintenance took {idle:?}");
+        // All 100 fuses burn out at once.
+        let start = Instant::now();
+        assert!(crate::ephemeral::run_maintenance(&mut conn, 10_000_000).unwrap());
+        println!(
+            "fuse maintenance, 100 notes exploding: {:?}",
+            start.elapsed()
+        );
+        assert_eq!(list(&conn, ListFilter::Trash).unwrap().len(), 100);
     }
 }

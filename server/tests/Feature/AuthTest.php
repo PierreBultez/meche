@@ -88,6 +88,7 @@ it('refuses every protected route without a valid token', function (string $meth
     $this->withToken('1|meche_not-a-real-token')->json($method, $uri)->assertUnauthorized();
 })->with([
     ['DELETE', '/api/auth/token'],
+    ['POST', '/api/sync'],
     ['GET', '/api/devices'],
     ['DELETE', '/api/devices/1'],
     ['GET', '/api/invitations'],

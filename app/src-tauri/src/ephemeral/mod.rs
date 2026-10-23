@@ -3,6 +3,8 @@
 //! In the interface this is "la mèche": a note whose fuse is lit goes to the trash once its delay
 //! is over. The code keeps the technical word `ephemeral`.
 
+pub mod watcher;
+
 use rusqlite::{Connection, params};
 
 use crate::db::notes::{TrashReason, remove_or_tombstone};

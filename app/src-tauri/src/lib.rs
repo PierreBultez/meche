@@ -70,6 +70,9 @@ pub fn run() {
             app.manage(AppState {
                 db: Mutex::new(conn),
             });
+            // Then once a minute while the app is open. `app.handle()` is the running app; the
+            // thread gets its own copy (`clone`) because it outlives this function.
+            ephemeral::watcher::spawn(app.handle().clone());
             show_window_if_frontend_fails(app);
             Ok(())
         })

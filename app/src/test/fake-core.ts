@@ -112,6 +112,11 @@ export function installFakeCore(): FakeCore {
     },
     set_ephemeral: ({ id, enabled }) => {
       const note = find(id as string);
+      // Like Rust, a burnt fuse explodes first (ephemeral::maintenance_before_action).
+      if (note.trashedAt === null && note.destroyAt !== null && note.destroyAt <= clock) {
+        Object.assign(note, { trashedAt: note.destroyAt, trashReason: "self_destruct" });
+        return { ...note };
+      }
       if (note.trashedAt !== null) throw { kind: "invalid_input", message: "in the trash" };
       if (enabled && note.ephemeralMode === null) lightFuse(note, ++clock);
       if (!enabled && note.ephemeralMode !== null) {

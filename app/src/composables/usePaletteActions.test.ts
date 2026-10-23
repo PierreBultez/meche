@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { defineComponent, type Ref } from "vue";
 import { createMemoryHistory, createRouter } from "vue-router";
 import { useNotesStore } from "../stores/notes";
+import { useToastsStore } from "../stores/toasts";
 import { type FakeCore, installFakeCore } from "../test/fake-core";
 import { type PaletteAction, usePaletteActions } from "./usePaletteActions";
 
@@ -59,6 +60,22 @@ describe("palette actions of the fuse (docs/08)", () => {
 
     await actions.value.find((action) => action.id === "toggle-fuse")?.run();
     expect(notes.current?.ephemeralMode).toBeNull();
+  });
+
+  it("explodes a note whose fuse burnt out instead of putting it out", async () => {
+    const notes = useNotesStore();
+    const note = await notes.create("rich", true);
+    // The fuse burnt out a moment ago; the minute's maintenance has not run yet.
+    core.notes[0].destroyAt = note.createdAt;
+    const actions = await paletteActions();
+
+    await actions.value.find((action) => action.id === "toggle-fuse")?.run();
+
+    expect(notes.current?.trashedAt).toBe(note.createdAt);
+    expect(notes.current?.trashReason).toBe("self_destruct");
+    expect(useToastsStore().toasts.map((toast) => toast.message)).toEqual([
+      "Sa mèche a brûlé : cette note est dans la corbeille.",
+    ]);
   });
 
   it("offers no fuse action for a note in the trash", async () => {

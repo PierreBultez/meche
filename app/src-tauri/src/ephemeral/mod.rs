@@ -87,6 +87,38 @@ pub fn run_maintenance_or_log(conn: &mut Connection, now: i64) -> bool {
     }
 }
 
+/// What `maintenance_before_action` did.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct BeforeAction {
+    /// Notes changed: the interface must be told (`notes-changed`).
+    pub changed: bool,
+    /// The note about to be acted on has just exploded: its fuse had burnt out already.
+    pub exploded: bool,
+}
+
+/// Runs the maintenance before an action on note `id` that depends on its fuse or its trash
+/// state (putting the fuse out, moving to the trash).
+///
+/// Closes the "one minute window" of docs/06: between `destroy_at` and the next maintenance
+/// (60 s at most), a note whose fuse has burnt out still looked alive. Acting on it then could
+/// give a conflict copy if the server had already exploded it. Now the note explodes first,
+/// as it should have, and the action sees it in the trash.
+pub fn maintenance_before_action(
+    conn: &mut Connection,
+    id: &str,
+    now: i64,
+) -> Result<BeforeAction> {
+    let was_in_trash = trashed_at(conn, id)?.is_some();
+    let changed = run_maintenance_or_log(conn, now);
+    let exploded = !was_in_trash && trashed_at(conn, id)?.is_some();
+    Ok(BeforeAction { changed, exploded })
+}
+
+/// `trashed_at` of note `id` (`NotFound` when there is no such note).
+fn trashed_at(conn: &Connection, id: &str) -> Result<Option<i64>> {
+    Ok(crate::db::notes::get(conn, id)?.trashed_at)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -249,6 +281,41 @@ mod tests {
         let mut conn = open_in_memory().unwrap();
         fused_note(&conn, 0, 1);
         assert!(run_maintenance_or_log(&mut conn, HOUR_MS));
+    }
+
+    #[test]
+    fn a_burnt_fuse_explodes_before_an_action_on_its_note() {
+        let mut conn = open_in_memory().unwrap();
+        let due = fused_note(&conn, 0, 1);
+        let alive = fused_note(&conn, 0, 2);
+
+        // The other note is alive: nothing exploded for it, but `due` did.
+        let before = maintenance_before_action(&mut conn, &alive, HOUR_MS).unwrap();
+        assert_eq!(
+            before,
+            BeforeAction {
+                changed: true,
+                exploded: false
+            }
+        );
+        assert_eq!(notes::get(&conn, &due).unwrap().trashed_at, Some(HOUR_MS));
+
+        let later = fused_note(&conn, 0, 3);
+        let before = maintenance_before_action(&mut conn, &later, 3 * HOUR_MS).unwrap();
+        assert_eq!(
+            before,
+            BeforeAction {
+                changed: true,
+                exploded: true
+            }
+        );
+        // Already in the trash before: not "just exploded".
+        let again = maintenance_before_action(&mut conn, &later, 4 * HOUR_MS).unwrap();
+        assert!(!again.exploded);
+        assert!(matches!(
+            maintenance_before_action(&mut conn, "missing", 0),
+            Err(crate::error::Error::NotFound(_))
+        ));
     }
 
     #[test]

@@ -57,11 +57,32 @@ pub async fn create_note(
 }
 
 /// Lights or puts out the fuse of a note (docs/06). A fuse is lit with the delay of the settings.
+///
+/// A fuse that has burnt out can no longer be put out: the note explodes first and comes back
+/// in the trash, without an error (docs/06, "la fenêtre d'une minute").
 #[tauri::command]
-pub async fn set_ephemeral(state: State<'_, AppState>, id: String, enabled: bool) -> Result<Note> {
-    let conn = state.lock_db()?;
-    let delay_hours = settings::load(&conn)?.fuse_delay_hours;
-    notes::set_ephemeral(&conn, &id, enabled, delay_hours, now_ms())
+pub async fn set_ephemeral(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    id: String,
+    enabled: bool,
+) -> Result<Note> {
+    let now = now_ms();
+    let (note, before) = {
+        let mut conn = state.lock_db()?;
+        let before = ephemeral::maintenance_before_action(&mut conn, &id, now)?;
+        let note = if before.exploded {
+            notes::get(&conn, &id)?
+        } else {
+            let delay_hours = settings::load(&conn)?.fuse_delay_hours;
+            notes::set_ephemeral(&conn, &id, enabled, delay_hours, now)?
+        };
+        (note, before)
+    };
+    if before.changed {
+        watcher::notify_notes_changed(&app);
+    }
+    Ok(note)
 }
 
 #[tauri::command]
@@ -70,10 +91,23 @@ pub async fn update_note(state: State<'_, AppState>, id: String, patch: NotePatc
     notes::update(&conn, &id, patch, now_ms())
 }
 
+/// A note whose fuse has just burnt out explodes first: it is then in the trash already, which
+/// is what was asked (docs/06, "la fenêtre d'une minute").
 #[tauri::command]
-pub async fn trash_note(state: State<'_, AppState>, id: String) -> Result<()> {
-    let conn = state.lock_db()?;
-    notes::trash(&conn, &id, now_ms())
+pub async fn trash_note(app: AppHandle, state: State<'_, AppState>, id: String) -> Result<()> {
+    let now = now_ms();
+    let before = {
+        let mut conn = state.lock_db()?;
+        let before = ephemeral::maintenance_before_action(&mut conn, &id, now)?;
+        if !before.exploded {
+            notes::trash(&conn, &id, now)?;
+        }
+        before
+    };
+    if before.changed {
+        watcher::notify_notes_changed(&app);
+    }
+    Ok(())
 }
 
 #[tauri::command]

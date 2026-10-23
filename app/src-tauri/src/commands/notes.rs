@@ -6,6 +6,7 @@ use tauri::State;
 use crate::AppState;
 use crate::db::notes::{self, ListFilter, Note, NoteKind, NotePatch, NoteSummary};
 use crate::db::search::{self, SearchResult};
+use crate::db::settings;
 use crate::error::Result;
 use crate::time::now_ms;
 
@@ -27,10 +28,29 @@ pub async fn get_note(state: State<'_, AppState>, id: String) -> Result<Note> {
     notes::get(&conn, &id)
 }
 
+/// `fused`: « Nouvelle note à mèche », the fuse is lit with the delay of the settings.
+/// `Option`: the frontend may leave the argument out.
 #[tauri::command]
-pub async fn create_note(state: State<'_, AppState>, kind: NoteKind) -> Result<Note> {
+pub async fn create_note(
+    state: State<'_, AppState>,
+    kind: NoteKind,
+    fused: Option<bool>,
+) -> Result<Note> {
     let conn = state.lock_db()?;
-    notes::create(&conn, kind, now_ms())
+    if fused == Some(true) {
+        let delay_hours = settings::load(&conn)?.fuse_delay_hours;
+        notes::create_fused(&conn, kind, delay_hours, now_ms())
+    } else {
+        notes::create(&conn, kind, now_ms())
+    }
+}
+
+/// Lights or puts out the fuse of a note (docs/06). A fuse is lit with the delay of the settings.
+#[tauri::command]
+pub async fn set_ephemeral(state: State<'_, AppState>, id: String, enabled: bool) -> Result<Note> {
+    let conn = state.lock_db()?;
+    let delay_hours = settings::load(&conn)?.fuse_delay_hours;
+    notes::set_ephemeral(&conn, &id, enabled, delay_hours, now_ms())
 }
 
 #[tauri::command]

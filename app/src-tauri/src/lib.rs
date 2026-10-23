@@ -80,6 +80,7 @@ pub fn run() {
             commands::notes::get_note,
             commands::notes::create_note,
             commands::notes::update_note,
+            commands::notes::set_ephemeral,
             commands::notes::trash_note,
             commands::notes::restore_note,
             commands::notes::delete_note_forever,

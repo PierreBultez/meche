@@ -4,16 +4,21 @@ use rusqlite::{Connection, OptionalExtension, params};
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 
-use crate::error::Result;
+use crate::error::{Error, Result};
 
 const THEME_KEY: &str = "theme";
 const LIST_WIDTH_KEY: &str = "list_width";
 const CODE_LINE_WRAP_KEY: &str = "code_line_wrap";
+const FUSE_DELAY_KEY: &str = "fuse_delay_hours";
 
 /// Width of the note list column in pixels (docs/08: 280 px, resizable).
 pub const DEFAULT_LIST_WIDTH: u32 = 280;
 pub const MIN_LIST_WIDTH: u32 = 220;
 pub const MAX_LIST_WIDTH: u32 = 520;
+
+/// Delays offered for the fuse of a note, in hours (docs/06): 1 h, 24 h, 3, 7 and 30 days.
+pub const FUSE_DELAYS_HOURS: [i64; 5] = [1, 24, 72, 168, 720];
+pub const DEFAULT_FUSE_DELAY_HOURS: i64 = 168;
 
 /// Color theme chosen by the user. Stored as "system", "light" or "dark".
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
@@ -33,6 +38,9 @@ pub struct Settings {
     pub list_width: u32,
     /// Wrap long lines in code notes (off by default, docs/05).
     pub code_line_wrap: bool,
+    /// Delay of the fuses lit from now on (one of `FUSE_DELAYS_HOURS`). A fuse keeps the delay
+    /// it was lit with: changing this setting does not touch the notes already burning.
+    pub fuse_delay_hours: i64,
 }
 
 /// Partial update sent by the frontend: only the fields present are changed.
@@ -43,6 +51,7 @@ pub struct SettingsPatch {
     pub theme: Option<Theme>,
     pub list_width: Option<u32>,
     pub code_line_wrap: Option<bool>,
+    pub fuse_delay_hours: Option<i64>,
 }
 
 /// Reads all settings, with the default value for each missing one.
@@ -53,11 +62,21 @@ pub fn load(conn: &Connection) -> Result<Settings> {
             .unwrap_or(DEFAULT_LIST_WIDTH)
             .clamp(MIN_LIST_WIDTH, MAX_LIST_WIDTH),
         code_line_wrap: read(conn, CODE_LINE_WRAP_KEY)?.unwrap_or(false),
+        fuse_delay_hours: read(conn, FUSE_DELAY_KEY)?
+            .filter(|hours| FUSE_DELAYS_HOURS.contains(hours))
+            .unwrap_or(DEFAULT_FUSE_DELAY_HOURS),
     })
 }
 
 /// Saves the fields present in `patch` (all or nothing), then returns the updated settings.
 pub fn apply_patch(conn: &mut Connection, patch: SettingsPatch) -> Result<Settings> {
+    if let Some(hours) = patch.fuse_delay_hours
+        && !FUSE_DELAYS_HOURS.contains(&hours)
+    {
+        return Err(Error::InvalidInput(format!(
+            "{hours} h is not one of the fuse delays"
+        )));
+    }
     // A transaction needs exclusive access to the connection, hence `&mut Connection`.
     let tx = conn.transaction()?;
     if let Some(theme) = patch.theme {
@@ -72,6 +91,9 @@ pub fn apply_patch(conn: &mut Connection, patch: SettingsPatch) -> Result<Settin
     }
     if let Some(wrap) = patch.code_line_wrap {
         write(&tx, CODE_LINE_WRAP_KEY, &wrap)?;
+    }
+    if let Some(hours) = patch.fuse_delay_hours {
+        write(&tx, FUSE_DELAY_KEY, &hours)?;
     }
     tx.commit()?;
     load(conn)
@@ -163,10 +185,16 @@ mod tests {
             theme: Theme::Dark,
             list_width: 300,
             code_line_wrap: true,
+            fuse_delay_hours: 24,
         };
         assert_eq!(
             serde_json::to_value(&settings).unwrap(),
-            serde_json::json!({ "theme": "dark", "listWidth": 300, "codeLineWrap": true })
+            serde_json::json!({
+                "theme": "dark",
+                "listWidth": 300,
+                "codeLineWrap": true,
+                "fuseDelayHours": 24
+            })
         );
 
         let patch: SettingsPatch = serde_json::from_str(r#"{ "theme": "light" }"#).unwrap();
@@ -210,6 +238,56 @@ mod tests {
         assert_eq!(
             apply_patch(&mut conn, too_narrow).unwrap().list_width,
             MIN_LIST_WIDTH
+        );
+    }
+
+    #[test]
+    fn the_fuse_delay_defaults_to_seven_days_and_only_takes_the_offered_delays() {
+        let mut conn = open_in_memory().unwrap();
+        assert_eq!(load(&conn).unwrap().fuse_delay_hours, 168);
+
+        for hours in FUSE_DELAYS_HOURS {
+            let patch = SettingsPatch {
+                fuse_delay_hours: Some(hours),
+                ..SettingsPatch::default()
+            };
+            assert_eq!(
+                apply_patch(&mut conn, patch).unwrap().fuse_delay_hours,
+                hours
+            );
+        }
+        for hours in [0, -1, 2, 100_000] {
+            let patch = SettingsPatch {
+                fuse_delay_hours: Some(hours),
+                ..SettingsPatch::default()
+            };
+            assert!(matches!(
+                apply_patch(&mut conn, patch),
+                Err(Error::InvalidInput(_))
+            ));
+        }
+        // A refused patch writes nothing, not even its other fields.
+        let mixed = SettingsPatch {
+            theme: Some(Theme::Dark),
+            fuse_delay_hours: Some(5),
+            ..SettingsPatch::default()
+        };
+        assert!(apply_patch(&mut conn, mixed).is_err());
+        assert_eq!(load(&conn).unwrap().theme, Theme::System);
+        assert_eq!(load(&conn).unwrap().fuse_delay_hours, 720);
+    }
+
+    #[test]
+    fn an_unknown_stored_fuse_delay_falls_back_to_the_default() {
+        let conn = open_in_memory().unwrap();
+        conn.execute(
+            "INSERT INTO settings (key, value) VALUES ('fuse_delay_hours', '5')",
+            [],
+        )
+        .unwrap();
+        assert_eq!(
+            load(&conn).unwrap().fuse_delay_hours,
+            DEFAULT_FUSE_DELAY_HOURS
         );
     }
 }

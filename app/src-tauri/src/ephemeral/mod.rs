@@ -14,6 +14,11 @@ pub const TRASH_RETENTION_DAYS: i64 = 7;
 const HOUR_MS: i64 = 3_600_000;
 const DAY_MS: i64 = 24 * HOUR_MS;
 
+/// When a fuse lit at `started_at` with a delay of `delay_hours` burns out.
+pub fn destroy_at(started_at: i64, delay_hours: i64) -> i64 {
+    started_at + delay_hours * HOUR_MS
+}
+
 /// Moves to the trash every note whose fuse has burnt out at `now`. Returns how many.
 ///
 /// Deterministic on purpose: `trashed_at` is the moment the fuse burnt out (`destroy_at`), not
@@ -80,7 +85,7 @@ mod tests {
                 note.id,
                 delay_hours,
                 started_at,
-                started_at + delay_hours * HOUR_MS
+                destroy_at(started_at, delay_hours)
             ],
         )
         .unwrap();
@@ -89,6 +94,12 @@ mod tests {
 
     fn count(conn: &Connection, sql: &str) -> i64 {
         conn.query_row(sql, [], |row| row.get(0)).unwrap()
+    }
+
+    #[test]
+    fn destroy_at_adds_the_delay_in_hours() {
+        assert_eq!(destroy_at(1_000, 1), 3_601_000);
+        assert_eq!(destroy_at(0, 168), 7 * DAY_MS);
     }
 
     #[test]

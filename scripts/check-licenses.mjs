@@ -102,11 +102,27 @@ function npmPackages() {
     });
 }
 
-/** [{ name, license, direct }] from `cargo metadata`. */
+/**
+ * The platforms Mèche ships on (docs/01). Crates used only elsewhere (e.g. webpki-root-certs,
+ * pulled by rustls-platform-verifier for WebAssembly only) are never built into the app.
+ */
+const CARGO_TARGETS = [
+  "x86_64-unknown-linux-gnu",
+  "x86_64-pc-windows-msvc",
+  "aarch64-linux-android",
+  "armv7-linux-androideabi",
+  "i686-linux-android",
+  "x86_64-linux-android",
+];
+
+/** [{ name, license, direct }] from `cargo metadata`, for the platforms of CARGO_TARGETS. */
 function cargoPackages() {
   const output = execFileSync(
     "cargo",
-    ["metadata", "--format-version", "1", "--locked", "--manifest-path", "app/src-tauri/Cargo.toml"],
+    [
+      "metadata", "--format-version", "1", "--locked", "--manifest-path", "app/src-tauri/Cargo.toml",
+      ...CARGO_TARGETS.flatMap((target) => ["--filter-platform", target]),
+    ],
     { cwd: ROOT, encoding: "utf8", maxBuffer: 64 * 1024 * 1024 },
   );
   const metadata = JSON.parse(output);

@@ -14,6 +14,9 @@ return new class extends Migration
             $table->string('name');
             $table->string('email')->unique();
             $table->string('password');
+            // The account whose invitation code created this one (null for the first account,
+            // created with `php artisan notes:create-user`).
+            $table->foreignId('invited_by')->nullable()->constrained('users')->nullOnDelete();
             $table->timestamps();
         });
     }

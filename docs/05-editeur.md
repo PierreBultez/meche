@@ -75,11 +75,8 @@ Pas de souligné (n'existe pas en Markdown), pas de couleurs, pas d'images en V1
 - Clic sur un lien : `Ctrl+clic` (desktop) / appui long (mobile) pour l'ouvrir dans le navigateur système.
 - `Échap` dans l'éditeur ferme d'abord le menu « / », sinon quitte le mode concentration, sinon revient à la carte de la note dans la liste (`08-interface.md`).
 
-### Comptage des cases à cocher (pour l'autodestruction)
-Fait en **Rust** (`markdown/` module, avec `pulldown-cmark` et l'option task lists), à chaque `update_note` :
-- `total` = nombre d'éléments de tâche, `checked` = nombre d'éléments cochés.
-- Les `- [ ]` situés dans un bloc de code **ne comptent pas** (c'est pourquoi on utilise un vrai parseur, pas une regex).
-- Tests unitaires : listes imbriquées, cases dans du code, `[X]` majuscule, aucune case.
+### Comptage des cases à cocher (reporté)
+Il ne servait qu'au mode de mèche « quand tout est coché », retiré de la V1 en phase 2 (`06-autodestruction.md`) : pas de module `markdown/` ni de `pulldown-cmark` pour l'instant. Notes pour plus tard (vérifié en phase 2) : `pulldown-cmark` 0.13 (MIT), avec l'option task lists, compte exactement les cases que TipTap affiche sur la sortie de l'éditeur (fixtures, cases imbriquées, `[X]`, cases dans les blocs de code y compris les clôtures longues, `\[ \]`, `&#32;`, `M\.`), sauf `1. [ ] x` écrit à la main (TipTap n'en fait pas une case) : ne compter que les cases des listes à puces.
 
 ## Note code (CodeMirror 6)
 

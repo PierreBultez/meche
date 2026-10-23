@@ -19,7 +19,6 @@
 │  │  - db/       : SQLite + migrations + FTS5           │                              │
 │  │  - sync/     : client HTTP, moteur de synchro       │──── HTTPS (JSON, gzip) ─────┐│
 │  │  - ephemeral/: autodestruction, purge corbeille     │                              ││
-│  │  - markdown/ : comptage des cases à cocher          │                              ││
 │  └──────────────────────────────────────────────────────┘                              ││
 └────────────────────────────────────────────────────────────────────────────────────────┘│
                                                                                           │
@@ -79,7 +78,6 @@
 | `uuid` (feature `v7`) | Identifiants |
 | `reqwest` (features `json`, `gzip`, `rustls-tls`, sans OpenSSL) | Client HTTP de synchro |
 | `tokio` | Async (fourni par Tauri) |
-| `pulldown-cmark` | Analyse Markdown pour compter les cases à cocher (gère correctement les blocs de code) |
 | `thiserror` | Erreurs typées |
 | `tauri-plugin-opener` | Ouvrir un lien dans le navigateur du système (`Ctrl+clic`) |
 | `tauri-plugin-dialog` | Sélection du fichier d'import |
@@ -88,16 +86,15 @@
 Organisation des modules :
 ```
 src-tauri/src/
-├── main.rs / lib.rs        # setup Tauri, état partagé, tâches de fond
+├── main.rs / lib.rs        # setup Tauri, état partagé, maintenance au démarrage, fil de fond
 ├── commands/               # une fonction #[tauri::command] par action
 ├── db/                     # connexion, migrations, requêtes
 ├── sync/                   # client API, moteur push/pull, résolution de conflits
-├── ephemeral/              # calcul destroy_at, exécution de l'autodestruction
-├── markdown/               # comptage des tâches
+├── ephemeral/              # destroy_at, autodestruction, purge (mod.rs) ; fil de maintenance et événement (watcher.rs)
 └── error.rs
 ```
 
-État partagé : une connexion SQLite protégée par `Mutex` (suffisant pour un utilisateur ; SQLite en mode WAL).
+État partagé : une connexion SQLite protégée par `Mutex` (suffisant pour un utilisateur ; SQLite en mode WAL). Le fil de maintenance de la mèche (phase 2) prend le même verrou, quelques millisecondes par minute.
 
 ### Client — Frontend (`app/src`)
 | Paquet | Usage |
@@ -124,21 +121,21 @@ src-tauri/src/
 
 | Commande | Rôle |
 |---|---|
-| `list_notes(filter)` | `filter` = `all` / `pinned` / `ephemeral` / `trash`. Retourne des résumés (id, titre ou à défaut première ligne, aperçu en texte brut, kind, code_language, pinned, color, ephemeral_mode, destroy_at, trashed_at, updated_at) |
+| `list_notes(filter)` | `filter` = `all` / `pinned` / `ephemeral` / `trash`. Retourne des résumés (id, titre ou à défaut première ligne, aperçu en texte brut, kind, code_language, pinned, color, ephemeral_mode, destroy_at, trashed_at, updated_at). Exécute d'abord la maintenance de la mèche (`06-autodestruction.md`) et émet `notes-changed` si elle a modifié des notes. `ephemeral` trie par explosion la plus proche |
 | `get_note(id)` | Note complète (`not_found` si elle n'existe pas ou a été supprimée définitivement) |
-| `create_note(kind)` | `rich` ou `code`, retourne la note. La couleur est choisie par Rust (`11-direction-artistique.md`, « Attribution ») |
-| `update_note(id, patch)` | Patch partiel (title, content, kind, code_language, pinned, color), retourne la note. Changer `kind` convertit le contenu (`05-editeur.md`). Un patch qui ne change rien n'écrit rien (pas de nouvelle `updated_at`). Recalcule l'état éphémère (phase 2) |
-| `set_ephemeral(id, config)` | Active, modifie ou désactive l'autodestruction |
+| `create_note(kind, fused?)` | `rich` ou `code`, retourne la note. La couleur est choisie par Rust (`11-direction-artistique.md`, « Attribution »). `fused = true` : mèche déjà allumée, avec le délai du réglage (« Nouvelle note à mèche ») |
+| `update_note(id, patch)` | Patch partiel (title, content, kind, code_language, pinned, color), retourne la note. Changer `kind` convertit le contenu (`05-editeur.md`). Un patch qui ne change rien n'écrit rien (pas de nouvelle `updated_at`). Ne touche jamais à la mèche ni à la corbeille ; accepte une note de la corbeille (dernière sauvegarde d'une note qui vient d'exploser) |
+| `set_ephemeral(id, enabled)` | Allume la mèche (délai du réglage `fuse_delay_hours`, à partir de maintenant) ou l'éteint, puis retourne la note. Allumer une mèche déjà allumée ne change rien. Refusé (`invalid_input`) pour une note de la corbeille |
 | `trash_note(id)` / `restore_note(id)` | Corbeille |
 | `delete_note_forever(id)` / `empty_trash()` | Suppression définitive (tombstone synchronisé) |
-| `search(query)` | Recherche FTS5 (50 résultats max), avec un extrait d'une ligne où chaque correspondance est entourée des caractères U+E000 et U+E001 |
+| `search(query)` | Recherche FTS5 (50 résultats max), avec un extrait d'une ligne où chaque correspondance est entourée des caractères U+E000 et U+E001. Chaque résultat porte aussi `destroy_at` |
 | `login(server_url, email, password)` / `logout()` | Gestion du token |
 | `sync_now()` / `get_sync_status()` | Synchro manuelle et état |
 | `import_notes(notes[])` | Insertion en lot (import Standard Notes) |
 | `get_settings()` / `set_settings(patch)` | Réglages locaux |
 
 Événements émis par Rust :
-- `notes-changed` : après une synchro qui a modifié des notes ou une autodestruction → le frontend rafraîchit la liste.
+- `notes-changed` (sans charge utile) : après une autodestruction ou une purge de la corbeille (fil de maintenance toutes les 60 s, ou `list_notes`), plus tard après une synchro qui a modifié des notes → le frontend recharge la liste et la note ouverte. Une note explosée reste affichée en lecture seule ; une note purgée est fermée.
 - `sync-status` : `idle` / `syncing` / `offline` / `error` (+ message).
 
 Erreurs : une commande qui échoue renvoie `{ kind, message }`. `kind` est un code stable (`database`, `migration`, `io`, `json`, `not_found`, `invalid_input`, `database_lock`) ; le frontend affiche son propre message en français et garde `message` pour la console.

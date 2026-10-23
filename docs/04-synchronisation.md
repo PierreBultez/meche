@@ -35,10 +35,10 @@ En-têtes : `Authorization: Bearer <token>`, `Content-Type: application/json`, `
       "code_language": null,
       "pinned": false,
       "color": "corail",
-      "ephemeral_mode": "on_complete",
-      "ephemeral_delay_hours": 24,
-      "ephemeral_started_at": null,
-      "destroy_at": null,
+      "ephemeral_mode": "delay",
+      "ephemeral_delay_hours": 168,
+      "ephemeral_started_at": 1761123000000,
+      "destroy_at": 1761727800000,
       "trashed_at": null,
       "trash_reason": null,
       "deleted": false,
@@ -107,7 +107,9 @@ Pas de route d'inscription. Commande `php artisan notes:create-user` (demande em
 
 `notes:maintenance`, toutes les 10 minutes (`Schedule::command(...)->everyTenMinutes()->withoutOverlapping()`), voir `06-autodestruction.md` :
 1. Autodestruction : notes `destroy_at <= now` et `trashed_at IS NULL` → `trashed_at = destroy_at`, `trash_reason = 'self_destruct'`, nouvelle `rev`.
-2. Purge corbeille : notes `trashed_at <= now - 7 jours` → tombstone (`deleted = true`, `title = ''`, `content = ''`), nouvelle `rev`.
+2. Purge corbeille : notes `trashed_at <= now - 7 jours` → tombstone (`deleted = true`, `title = ''`, `content = ''`, les autres champs inchangés), nouvelle `rev`.
+
+Ces deux règles doivent rester **identiques** à celles du client (`app/src-tauri/src/ephemeral/mod.rs`) : mêmes bornes incluses, mêmes valeurs, pour que la synchro reconnaisse les deux exécutions comme identiques. Le client fait la même chose toutes les 60 s quand il est ouvert ; voir aussi, dans `06-autodestruction.md`, la fenêtre d'une minute qui peut produire une copie de conflit.
 3. Nettoyage des tombstones de plus de 365 jours (suppression physique). Un appareil resté hors ligne plus d'un an doit refaire une synchro complète (curseur 0).
 
 ## Performance (exigence de Pierre : « ça doit répondre vite »)

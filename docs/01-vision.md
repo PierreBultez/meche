@@ -31,7 +31,7 @@ Il accumule aussi beaucoup de **notes jetables** (listes de courses, checklists 
 | Liste des notes | Triée par date de modification, notes épinglées en haut, aperçu de la première ligne. |
 | Recherche | Plein texte, instantanée pendant la frappe, insensible aux accents. |
 | Épingler | Épingler / désépingler une note. |
-| Notes à mèche | « Allumer la mèche » sur n'importe quelle note : autodestruction après un délai ou « quand tout est coché », mèche qui se consume visuellement. Voir `06-autodestruction.md`. |
+| Notes à mèche | « Allumer la mèche » sur n'importe quelle note : elle part seule à la corbeille à la fin d'un délai (1 h, 24 h, 3 j, 7 j ou 30 j, un seul réglage, 7 j par défaut). Le temps restant s'affiche sur la carte et dans la note. Voir `06-autodestruction.md`. |
 | Corbeille | Suppression réversible, purge automatique après 7 jours. |
 | Synchro | Avec l'API Laravel sur le serveur de Pierre, hors ligne d'abord. |
 | Import | Sauvegarde Standard Notes (~100 notes) + écran de tri rapide. |
@@ -50,7 +50,8 @@ Il accumule aussi beaucoup de **notes jetables** (listes de courses, checklists 
 
 ## Idées pour plus tard (V2+)
 
-- Vraie animation d'explosion (particules) et action « Faire exploser maintenant ».
+- Mèche plus riche (retirée de la V1 en phase 2 pour rester simple) : mode « quand tout est coché », délai choisi note par note ou personnalisé, panneau de la mèche, longue mèche qui se consume dans la note, mini-mèche proportionnelle sur les cartes.
+- Animation d'explosion (particules), notification « Boum ! … Annuler » et action « Faire exploser maintenant ».
 - Historique des versions d'une note.
 - Images et pièces jointes.
 - Liens entre notes `[[...]]`.

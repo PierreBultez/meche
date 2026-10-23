@@ -21,12 +21,13 @@ Chaque phase se termine par une application qui compile, des tests verts et une 
 **Terminé quand** : Pierre peut utiliser l'application au quotidien sur son PC, hors ligne, et la trouve plus rapide que Standard Notes.
 
 ## Phase 2 — La mèche (autodestruction)
-- Module Rust `ephemeral` + comptage des cases (`pulldown-cmark`) + tests de `06-autodestruction.md`.
-- `set_ephemeral`, exécution périodique, purge de la corbeille à 7 jours.
-- Interface : bouton et icône mèche, panneau « Allumer la mèche », badge mini-mèche qui se consume, longue mèche dans la note, filtre « Mèches allumées », « Nouvelle checklist à mèche », animation d'explosion simple (V1) et notification « Boum ! … Annuler ».
-- Réglages des délais par défaut.
+Simplifiée avec Pierre au démarrage de la phase : une mèche à délai uniquement, un seul réglage, sans animation (voir `06-autodestruction.md`).
+- Module Rust `ephemeral` : autodestruction déterministe, purge de la corbeille à 7 jours, maintenance au démarrage, toutes les 60 s (fil de fond) et avant `list_notes`, événement `notes-changed`, et leurs tests.
+- `set_ephemeral(id, enabled)`, `create_note(kind, fused)`, réglage `fuse_delay_hours`.
+- Interface : bouton et icône mèche, temps restant dans l'en-tête et sur la carte, filtre « Mèches allumées » trié par explosion, « Nouvelle note à mèche », `Ctrl+Maj+E`, bandeau d'une note explosée ouverte.
+- Réglage du délai (section « Mèche »).
 
-**Terminé quand** : une liste de courses entièrement cochée part seule à la corbeille après le délai choisi, et se restaure correctement.
+**Terminé quand** : une note dont la mèche est allumée part seule à la corbeille après le délai réglé, et se restaure correctement (mèche éteinte).
 
 ## Phase 3 — Serveur et synchronisation
 - Laravel 13 : Sanctum, migrations, `notes:create-user`, `/api/auth/token`, `/api/health`, `/api/sync`, `notes:maintenance`, tests Pest.
@@ -67,7 +68,8 @@ Chaque phase se termine par une application qui compile, des tests verts et une 
 - Icône définitive de l'application (SVG source + `npm run tauri icon`).
 
 ## Après la V1
-- Vraie animation d'explosion (particules aux couleurs de la note) et action « Faire exploser maintenant ».
+- Mèche plus riche, retirée de la phase 2 : mode « quand tout est coché » (comptage des cases avec `pulldown-cmark`, voir `05-editeur.md`), délai par note ou personnalisé, panneau de la mèche, longue mèche qui se consume, mini-mèche proportionnelle.
+- Vraie animation d'explosion (particules aux couleurs de la note), notification « Boum ! … Annuler » et action « Faire exploser maintenant ».
 - Voir aussi « Idées pour plus tard » dans `01-vision.md`.
 
 ## Décisions prises
@@ -76,3 +78,4 @@ Chaque phase se termine par une application qui compile, des tests verts et une 
 - Dépôt GitHub **public**.
 - Thèmes : clair « Fugace », sombre « Feu d'artifice », couleur par note.
 - Paquet Linux : `.deb` uniquement (mise à jour : voir `09`, section 7).
+- Phase 2 simplifiée : mèche à délai uniquement, un seul réglage global (7 jours par défaut), pas d'animation.

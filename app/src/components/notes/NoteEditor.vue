@@ -70,10 +70,17 @@ const confirmingDelete = ref(false);
 const saveFailed = (error: unknown) =>
   toasts.error("Impossible d'enregistrer la note. Tes dernières modifications sont gardées ici.", error);
 
+/** A save found the note changed on another device: Rust kept what was typed in a copy. */
+let keptInCopy = false;
+
 const titleSave = useAutosave({
   initial: props.note.title,
   read: () => title.value,
-  write: (value) => notes.save(id, { title: value }),
+  write: async (value, expected) => {
+    const saved = await notes.save(id, { title: value, expectedTitle: expected });
+    if (saved.title !== value) keptInCopy = true;
+    return saved.title;
+  },
   onError: saveFailed,
 });
 
@@ -87,13 +94,44 @@ function currentContent(): string {
 const contentSave = useAutosave({
   initial: props.note.content,
   read: currentContent,
-  write: (value) => notes.save(id, { content: value }),
+  write: async (value, expected) => {
+    const saved = await notes.save(id, { content: value, expectedContent: expected });
+    if (saved.content !== value) keptInCopy = true;
+    return saved.content;
+  },
   onError: saveFailed,
 });
 
 async function flush(): Promise<void> {
   await Promise.all([titleSave.flush(), contentSave.flush()]);
 }
+
+// The note shown here changed without this editor writing it: the sync brought the version of
+// another device (docs/04). Editors read the text only when they are mounted, so the editor is
+// mounted again on the new version. What was being typed is saved first: since the note
+// changed, Rust does not write it over the new version but keeps it in a conflict copy.
+let reloading = false;
+async function reloadEditor(): Promise<void> {
+  if (reloading) return;
+  reloading = true;
+  // A failed save is already reported (saveFailed); the editor is reloaded anyway, on what
+  // is stored.
+  await flush().catch(() => undefined);
+  if (keptInCopy) {
+    toasts.show(
+      "Cette note a changé sur un autre appareil. Ce que tu venais d'écrire est gardé dans une copie « (conflit du …) ».",
+    );
+  }
+  await notes.reopen(id).catch((error: unknown) => toasts.error("Impossible de recharger la note.", error));
+}
+watch(
+  () => [props.note.title, props.note.content] as const,
+  ([noteTitle, noteContent]) => {
+    if (keptInCopy || !titleSave.knows(noteTitle) || !contentSave.knows(noteContent)) {
+      void reloadEditor();
+    }
+  },
+);
 
 /** Focuses the text: at its start, or (null) where the caret already is. */
 function focusEditor(position: "start" | null = "start"): void {

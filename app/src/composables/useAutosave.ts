@@ -3,8 +3,13 @@ import { onBeforeUnmount } from "vue";
 export interface AutosaveOptions {
   /** Reads the current value (called only when saving, never on each keystroke). */
   read: () => string;
-  /** Writes a value that differs from the last one written. */
-  write: (value: string) => Promise<unknown>;
+  /**
+   * Writes a value that differs from the last one written. `expected` is the value this
+   * autosave believes is stored: Rust refuses to overwrite another one (a version brought by
+   * the sync) and keeps the new value in a conflict copy instead (docs/04). Resolves with the
+   * value now stored, when the writer knows it.
+   */
+  write: (value: string, expected: string) => Promise<string | void>;
   /** The value already stored, so that opening a note never saves it again. */
   initial: string;
   /** Quiet time after the last change before saving (docs/05: 400 ms). */
@@ -25,6 +30,11 @@ export interface Autosave {
    * A note written in another Markdown style is then only rewritten after a real change.
    */
   rebase: (value: string) => void;
+  /**
+   * Whether `value` is one this autosave knows: the stored one, or one of its writes on the
+   * way. Any other value of the note was written by someone else (the sync).
+   */
+  knows: (value: string) => boolean;
 }
 
 /** Every autosave of an open note, so that leaving it or closing the window can flush them. */
@@ -55,8 +65,12 @@ export function createAutosave(options: AutosaveOptions): Autosave & { dispose: 
   const delay = options.delay ?? 400;
   /** The last value sent to Rust (or known to be stored). */
   let lastWritten = options.initial;
-  /** The last value known to be stored. */
+  /** The last value known to be stored, in the editor's form (see rebase). */
   let lastSaved = options.initial;
+  /** The value really stored in Rust, as Rust has it: sent as `expected` with each write. */
+  let stored = options.initial;
+  /** Values written and not acknowledged yet (in order). */
+  const inFlight: string[] = [];
   /** Something was typed since the value was last read. */
   let changed = false;
   /** The error of the last write, until a later write succeeds. */
@@ -77,15 +91,21 @@ export function createAutosave(options: AutosaveOptions): Autosave & { dispose: 
         failure = null;
       } else if (value !== lastWritten) {
         lastWritten = value;
-        // Writes are chained so that they reach Rust in order.
+        inFlight.push(value);
+        const settle = () => inFlight.splice(inFlight.indexOf(value), 1);
+        // Writes are chained so that they reach Rust in order; each one expects what the
+        // previous one stored.
         writing = writing
-          .then(() => options.write(value))
+          .then(() => options.write(value, stored))
           .then(
-            () => {
+            (result) => {
+              settle();
+              stored = typeof result === "string" ? result : value;
               lastSaved = value;
               failure = null;
             },
             (error: unknown) => {
+              settle();
               // Not saved: the next flush tries again.
               if (lastWritten === value) {
                 lastWritten = lastSaved;
@@ -121,7 +141,11 @@ export function createAutosave(options: AutosaveOptions): Autosave & { dispose: 
     lastSaved = value;
   }
 
-  const autosave = { touch, flush, rebase };
+  function knows(value: string): boolean {
+    return value === stored || inFlight.includes(value);
+  }
+
+  const autosave = { touch, flush, rebase, knows };
   alive.add(autosave);
   return {
     ...autosave,

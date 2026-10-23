@@ -231,4 +231,53 @@ describe("notes store", () => {
       expect(store.current?.id).toBe(b.id);
     });
   });
+
+  it("mounts the editor again on the stored version of the open note", async () => {
+    const store = useNotesStore();
+    const note = await store.create("rich");
+    core.notes[0].content = "Version d'un autre appareil";
+
+    expect(await store.reopen(note.id)).toBe(true);
+
+    expect(store.current?.content).toBe("Version d'un autre appareil");
+    expect(store.editorGeneration).toBe(1);
+    // Another note is open now: nothing to do.
+    expect(await store.reopen("other")).toBe(true);
+    expect(store.editorGeneration).toBe(1);
+  });
+
+  it("closes the note when it was deleted elsewhere", async () => {
+    const store = useNotesStore();
+    const note = await store.create("rich");
+    core.notes = [];
+    expect(await store.reopen(note.id)).toBe(false);
+    expect(store.current).toBeNull();
+  });
+
+  it("reads a note again when notes changed while it was being opened", async () => {
+    const store = useNotesStore();
+    const opened = await store.create("rich");
+    const other = await store.create("rich");
+    await store.open(opened.id);
+    const held = core.hold("get_note");
+    const opening = store.open(other.id);
+    await Promise.resolve();
+    // The sync changes the note being opened, after it was read.
+    core.notes.find((note) => note.id === other.id)!.content = "Synchronisée";
+    const reloading = store.reload();
+    held.release();
+    await Promise.all([opening, reloading]);
+    expect(store.current?.id).toBe(other.id);
+    expect(store.current?.content).toBe("Synchronisée");
+    const reads = core.calls.filter((call) => call.cmd === "get_note" && call.args.id === other.id);
+    expect(reads).toHaveLength(2);
+  });
+
+  it("reads a note once when nothing changed while it was being opened", async () => {
+    const store = useNotesStore();
+    const note = await store.create("rich");
+    await store.open(note.id);
+    const reads = core.calls.filter((call) => call.cmd === "get_note" && call.args.id === note.id);
+    expect(reads).toHaveLength(1);
+  });
 });

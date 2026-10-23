@@ -63,6 +63,88 @@ describe("autosave", () => {
     autosave.dispose();
   });
 
+  it("sends with each value the one it believes is stored (docs/04)", async () => {
+    const calls: Array<[string, string]> = [];
+    const autosave = createAutosave({
+      initial: "initial",
+      read: () => value,
+      write: async (next, expected) => {
+        calls.push([next, expected]);
+      },
+    });
+    value = "a";
+    autosave.touch();
+    await autosave.flush();
+    value = "ab";
+    autosave.touch();
+    await autosave.flush();
+    expect(calls).toEqual([
+      ["a", "initial"],
+      ["ab", "a"],
+    ]);
+    autosave.dispose();
+  });
+
+  it("expects the stored text, not the editor's form of it", async () => {
+    const calls: Array<[string, string]> = [];
+    const autosave = createAutosave({
+      initial: "* stored",
+      read: () => value,
+      write: async (next, expected) => {
+        calls.push([next, expected]);
+      },
+    });
+    autosave.rebase("- stored");
+    value = "- stored, edited";
+    autosave.touch();
+    await autosave.flush();
+    expect(calls).toEqual([["- stored, edited", "* stored"]]);
+    autosave.dispose();
+  });
+
+  it("expects what Rust says is stored after a write", async () => {
+    const calls: Array<[string, string]> = [];
+    const autosave = createAutosave({
+      initial: "initial",
+      read: () => value,
+      // Rust kept the version of another device (and the typed text in a copy).
+      write: async (next, expected) => {
+        calls.push([next, expected]);
+        return "their version";
+      },
+    });
+    value = "mine";
+    autosave.touch();
+    await autosave.flush();
+    value = "mine, again";
+    autosave.touch();
+    await autosave.flush();
+    expect(calls[1]).toEqual(["mine, again", "their version"]);
+    autosave.dispose();
+  });
+
+  it("knows the stored value and its writes on the way, nothing else", async () => {
+    let release!: () => void;
+    const autosave = createAutosave({
+      initial: "initial",
+      read: () => value,
+      write: () => new Promise<void>((resolve) => (release = resolve)),
+    });
+    value = "typed";
+    autosave.touch();
+    const flushed = autosave.flush();
+    await Promise.resolve();
+    expect([autosave.knows("initial"), autosave.knows("typed"), autosave.knows("other")]).toEqual([
+      true,
+      true,
+      false,
+    ]);
+    release();
+    await flushed;
+    expect([autosave.knows("typed"), autosave.knows("initial")]).toEqual([true, false]);
+    autosave.dispose();
+  });
+
   it("compares with the editor's own version of the stored text", async () => {
     const autosave = setup();
     autosave.rebase("normalized");

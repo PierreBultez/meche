@@ -17,6 +17,9 @@ use crate::time::now_ms;
 
 /// Logging out tells the server, but never waits long for it.
 pub const LOGOUT_TIMEOUT: Duration = Duration::from_secs(5);
+/// Versions remembered per note while answers are lost (see `sync_round`): the oldest ones go
+/// first. Forgetting one only risks a conflict copy, never a loss.
+const MAX_UNACKNOWLEDGED_VERSIONS: usize = 3;
 const DEVICE_NAME_MAX_CHARS: usize = 100;
 
 /// Locks the database for a few milliseconds (as `AppState::lock_db`). The guard must be dropped
@@ -34,6 +37,9 @@ pub struct Round {
     pub conflicts: usize,
     /// Another request must follow at once (more to send or to receive, a reset).
     pub again: bool,
+    /// The server moved on: its cursor advanced, or it accepted changes. A server that keeps
+    /// saying there is more without moving on is not asked again and again.
+    pub progress: bool,
     /// The server's clock, when it answered.
     pub server_time: Option<i64>,
 }
@@ -61,10 +67,15 @@ pub async fn sync_round(
     };
     // Remembered until the answer is applied. `entry(…).or_default()`: the list of this note,
     // created empty the first time.
+    let mut added = Vec::new();
     for change in &batch.changes {
         let versions = unacknowledged.entry(change.note.id.clone()).or_default();
         if versions.last() != Some(&change.note) {
             versions.push(change.note.clone());
+            if versions.len() > MAX_UNACKNOWLEDGED_VERSIONS {
+                versions.remove(0);
+            }
+            added.push(change.note.id.clone());
         }
     }
 
@@ -74,7 +85,32 @@ pub async fn sync_round(
         sync_id: config.sync_id.as_deref(),
         changes: &batch.changes,
     };
-    let response = api.sync(server_url, token, &request).await?;
+    let response = match api.sync(server_url, token, &request).await {
+        Ok(response) => response,
+        Err(error) => {
+            // The server refused the request (4xx: invalid, unauthorized, too many requests):
+            // it applied nothing, so these versions are not waiting for anything. Any other
+            // error keeps them: the request may have been applied before the answer was lost
+            // (a network error, or a 502 / 504 from Apache while PHP went on).
+            if matches!(
+                error,
+                Error::Api {
+                    status: 400..=499,
+                    ..
+                }
+            ) {
+                for id in &added {
+                    if let Some(versions) = unacknowledged.get_mut(id) {
+                        versions.pop();
+                        if versions.is_empty() {
+                            unacknowledged.remove(id);
+                        }
+                    }
+                }
+            }
+            return Err(error);
+        }
+    };
 
     // 3. The answer, in one transaction.
     let mut conn = lock(db)?;
@@ -88,6 +124,7 @@ pub async fn sync_round(
         unacknowledged.clear();
         return Ok(Round {
             again: true,
+            progress: true,
             server_time: Some(response.server_time),
             ..Round::default()
         });
@@ -106,8 +143,10 @@ pub async fn sync_round(
     Ok(Round {
         changed: outcome.changed,
         conflicts: outcome.conflict_copies,
-        // Conflict copies are new local notes: they are sent at once too.
-        again: response.has_more || batch.more || outcome.conflict_copies > 0,
+        // Conflict copies are new local notes, and a version recognised after a lost answer
+        // may leave a note to send: they go at once too.
+        again: response.has_more || batch.more || outcome.conflict_copies > 0 || outcome.resend,
+        progress: response.cursor != config.cursor || !response.applied.is_empty(),
         server_time: Some(response.server_time),
     })
 }
@@ -318,6 +357,7 @@ mod tests {
         assert_eq!(
             round,
             Round {
+                progress: true,
                 server_time: Some(1),
                 ..Round::default()
             }
@@ -428,6 +468,8 @@ mod tests {
 
         let round = run(sync_round(&db, &api, &mut unacknowledged)).unwrap();
         assert_eq!(round.conflicts, 0);
+        // The newer version goes at once, not a minute later.
+        assert!(round.again);
         assert_eq!(count_notes(&db), 1);
         assert_eq!(state(&db, &id), (5, true));
         run(sync_round(&db, &api, &mut unacknowledged)).unwrap();
@@ -436,6 +478,44 @@ mod tests {
         assert_eq!(requests[2].json()["changes"][0]["base_rev"], 5);
         assert_eq!(requests[2].json()["changes"][0]["content"], "Plus récent");
         assert_eq!(state(&db, &id), (6, false));
+    }
+
+    #[test]
+    fn a_refused_request_forgets_what_it_sent() {
+        let (db, _) = connected("s1");
+        let (base, server) = serve(vec![(
+            "422 Unprocessable Content",
+            r#"{"error":"invalid_change","message":"changes.0.color"}"#.to_string(),
+        )]);
+        point_to(&db, &base);
+        let mut unacknowledged = Unacknowledged::new();
+
+        let error = run(sync_round(&db, &Api::new(), &mut unacknowledged)).unwrap_err();
+
+        assert_eq!(error.kind(), "invalid_change");
+        // The server applied nothing: no version is waiting for an answer.
+        assert!(unacknowledged.is_empty());
+        server.join().unwrap();
+    }
+
+    #[test]
+    fn unanswered_requests_keep_a_few_versions_per_note() {
+        // `connected` points to a port where nothing listens: every request fails.
+        let (db, id) = connected("s1");
+        let api = Api::new();
+        let mut unacknowledged = Unacknowledged::new();
+        for attempt in 0..6 {
+            edit(&db, &id, &format!("Version {attempt}"));
+            assert_eq!(
+                run(sync_round(&db, &api, &mut unacknowledged))
+                    .unwrap_err()
+                    .kind(),
+                "network"
+            );
+        }
+        let versions = &unacknowledged[&id];
+        assert_eq!(versions.len(), MAX_UNACKNOWLEDGED_VERSIONS);
+        assert_eq!(versions.last().unwrap().content, "Version 5");
     }
 
     #[test]

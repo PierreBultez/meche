@@ -8,7 +8,7 @@ pub mod watcher;
 use rusqlite::{Connection, params};
 
 use crate::db::notes::{TrashReason, remove_or_tombstone};
-use crate::error::Result;
+use crate::error::{Error, Result};
 
 /// Days a note stays in the trash before it is deleted for good (docs/06).
 pub const TRASH_RETENTION_DAYS: i64 = 7;
@@ -110,7 +110,13 @@ pub fn maintenance_before_action(
 ) -> Result<BeforeAction> {
     let was_in_trash = trashed_at(conn, id)?.is_some();
     let changed = run_maintenance_or_log(conn, now);
-    let exploded = !was_in_trash && trashed_at(conn, id)?.is_some();
+    let exploded = match trashed_at(conn, id) {
+        Ok(trashed) => !was_in_trash && trashed.is_some(),
+        // Gone: it exploded and was purged by this very maintenance (its fuse burnt out more
+        // than 7 days ago). The maintenance changed notes: the caller must still say so.
+        Err(Error::NotFound(_)) => true,
+        Err(error) => return Err(error),
+    };
     Ok(BeforeAction { changed, exploded })
 }
 
@@ -316,6 +322,25 @@ mod tests {
             maintenance_before_action(&mut conn, "missing", 0),
             Err(crate::error::Error::NotFound(_))
         ));
+    }
+
+    #[test]
+    fn a_note_purged_by_the_maintenance_before_an_action_still_says_notes_changed() {
+        let mut conn = open_in_memory().unwrap();
+        // Its fuse burnt out 8 days ago: it explodes and is purged in the same run.
+        let gone = fused_note(&conn, 0, 1);
+        let now = HOUR_MS + 8 * DAY_MS;
+
+        let before = maintenance_before_action(&mut conn, &gone, now).unwrap();
+
+        assert_eq!(
+            before,
+            BeforeAction {
+                changed: true,
+                exploded: true
+            }
+        );
+        assert!(notes::get(&conn, &gone).is_err());
     }
 
     #[test]

@@ -33,7 +33,8 @@ use crate::time::now_ms;
 pub const SYNC_STATUS: &str = "sync-status";
 
 /// Requests in a row without waiting (more than one batch to send, `has_more`): a safety
-/// net against a loop; the periodic sync goes on afterwards.
+/// net against a loop. When work is left, the next sync comes 2 s later if the server moved
+/// on, else at the periodic sync.
 const MAX_ROUNDS: usize = 20;
 /// Beyond 5 minutes of difference with the server's clock, fuses burn noticeably early or late.
 const CLOCK_SKEW_WARNING_MS: i64 = 5 * 60 * 1000;
@@ -277,6 +278,7 @@ impl Engine {
         let state = app.state::<AppState>();
         let mut conflicts = 0;
         let mut left = false;
+        let mut progress = false;
         let mut result = Ok(());
         for _ in 0..MAX_ROUNDS {
             // `&mut self.unacknowledged`: the round updates the engine's list in place.
@@ -286,6 +288,7 @@ impl Engine {
                         self.check_clock(app, server_time);
                     }
                     conflicts += round.conflicts;
+                    progress |= round.progress;
                     if round.changed {
                         notify_notes_changed(app);
                     }
@@ -302,8 +305,9 @@ impl Engine {
             }
         }
         self.finish(app, result, conflicts);
-        if left {
+        if left && progress {
             // Still more to do after MAX_ROUNDS: the next sync comes in 2 s, not in a minute.
+            // Not when the server did not move on: that would ask it again and again.
             self.schedule.local_change(Instant::now());
         }
     }
@@ -374,8 +378,9 @@ impl Engine {
 
     /// Fuses rely on the clocks (docs/04): warns when this one is more than 5 minutes off.
     fn check_clock(&self, app: &AppHandle, server_time: i64) {
-        let skew = server_time - now_ms();
-        let shown = (skew.abs() > CLOCK_SKEW_WARNING_MS).then_some(skew);
+        // `saturating_…`: a strange server time gives the largest difference, never an overflow.
+        let skew = server_time.saturating_sub(now_ms());
+        let shown = (skew.saturating_abs() > CLOCK_SKEW_WARNING_MS).then_some(skew);
         if shown.is_some() {
             eprintln!("this device's clock is {} s off the server's", skew / 1000);
         }

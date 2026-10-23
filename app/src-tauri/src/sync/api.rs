@@ -6,10 +6,16 @@
 //!
 //! The client itself is built at its first use, not at startup: building it loads the system's
 //! certificates, and when that fails (no certificate found) the notes must still open, offline.
+//!
+//! Time limits: 30 s to get the answer's headers (connecting, sending, the server's work), plus
+//! time for a large request on a slow connection; then the answer is read piece by piece, and
+//! only 30 s without receiving anything stops it. A total limit would make a 4 MB sync fail
+//! forever on a slow mobile connection.
 
 use std::sync::{Arc, OnceLock};
 use std::time::Duration;
 
+use reqwest::header::CONTENT_TYPE;
 use reqwest::{RequestBuilder, Response, StatusCode};
 use serde::Serialize;
 use serde::de::DeserializeOwned;
@@ -26,12 +32,19 @@ const API_VERSION: i64 = 1;
 /// The server may ask to wait this long at most (`Retry-After`): a larger value is not trusted.
 const MAX_RETRY_AFTER_SECS: u64 = 3600;
 
+/// Time to get the answer's headers for a small request.
+const ANSWER_TIMEOUT: Duration = Duration::from_secs(30);
+/// Upload speed assumed for a large request (about 256 kbit/s): a 4 MB sync gets two more
+/// minutes to be sent.
+const SLOW_UPLOAD_BYTES_PER_SEC: u64 = 32 * 1024;
+/// While the answer is read: at most this long without receiving anything.
+const READ_TIMEOUT: Duration = Duration::from_secs(30);
+
 #[derive(Clone, Default)]
 pub struct Api {
-    /// Built once, at the first request. `OnceLock`: a value set only once, safely shared
-    /// between threads; `Arc` shares it between the clones of `Api`. The `Err` keeps why it
-    /// could not be built, reported by every request.
-    http: Arc<OnceLock<std::result::Result<reqwest::Client, String>>>,
+    /// Built at the first request that succeeds in building it. `OnceLock`: a value set only
+    /// once, safely shared between threads; `Arc` shares it between the clones of `Api`.
+    http: Arc<OnceLock<reqwest::Client>>,
 }
 
 impl Api {
@@ -39,12 +52,15 @@ impl Api {
         Api::default()
     }
 
-    /// The HTTP client, built at the first call.
+    /// The HTTP client, built at the first call. A failure is not kept: the next request tries
+    /// again (certificates installed meanwhile).
     fn http(&self) -> Result<&reqwest::Client> {
-        self.http
-            .get_or_init(build_client)
-            .as_ref()
-            .map_err(|error| Error::Network(error.clone()))
+        if let Some(client) = self.http.get() {
+            return Ok(client);
+        }
+        let client = build_client().map_err(Error::Network)?;
+        // Two requests may build one at the same time: the first one stored is kept.
+        Ok(self.http.get_or_init(|| client))
     }
 
     /// `GET /api/health`: is there a Mèche server at this address?
@@ -113,11 +129,16 @@ impl Api {
         token: &str,
         request: &SyncRequest<'_>,
     ) -> Result<SyncResponse> {
-        send(
+        // Turned into JSON here to know its size: a large batch gets more time to be sent.
+        let body = serde_json::to_vec(request)?;
+        let until_answer = answer_timeout(body.len());
+        send_within(
             self.http()?
                 .post(format!("{base}/api/sync"))
                 .bearer_auth(token)
-                .json(request),
+                .header(CONTENT_TYPE, "application/json")
+                .body(body),
+            until_answer,
         )
         .await
     }
@@ -181,9 +202,8 @@ fn build_client() -> std::result::Result<reqwest::Client, String> {
     reqwest::Client::builder()
         .user_agent(concat!("Meche/", env!("CARGO_PKG_VERSION")))
         .connect_timeout(Duration::from_secs(10))
-        // Per read, not for the whole request: a 4 MB sync on a slow mobile connection may
-        // take minutes, as long as data keeps coming.
-        .read_timeout(Duration::from_secs(30))
+        // No other limit here (see the top of this file): reqwest's `read_timeout` would also
+        // limit the whole sending of a request, not each piece of it.
         // The API never redirects. Following one could send a password or notes elsewhere,
         // even over plain http (reqwest sends the body again on a 307 / 308).
         .redirect(reqwest::redirect::Policy::none())
@@ -200,34 +220,56 @@ fn not_meche(message: String) -> Error {
     }
 }
 
-/// Sends a request and reads its JSON answer.
+/// Time to get the answer's headers for a request of `request_bytes`.
+fn answer_timeout(request_bytes: usize) -> Duration {
+    ANSWER_TIMEOUT + Duration::from_secs(request_bytes as u64 / SLOW_UPLOAD_BYTES_PER_SEC)
+}
+
+/// Sends a small request and reads its JSON answer.
 ///
 /// `async fn`: calling it gives a "future", a computation that runs when it is `.await`ed.
 /// While it waits for the network, the thread is free to run other tasks (Tauri's tokio
 /// runtime): nothing is blocked. `T: DeserializeOwned` is the type the JSON is read into.
 async fn send<T: DeserializeOwned>(request: RequestBuilder) -> Result<T> {
-    let response = checked(request).await?;
+    send_within(request, ANSWER_TIMEOUT).await
+}
+
+/// Sends a request, waits `until_answer` at most for the answer's headers, reads its JSON.
+async fn send_within<T: DeserializeOwned>(
+    request: RequestBuilder,
+    until_answer: Duration,
+) -> Result<T> {
+    let response = checked(request, until_answer).await?;
     // Read, then decoded: a connection lost while reading is a network error; only an answer
     // that is not the JSON expected says it is not a Mèche server.
-    let body = response
-        .bytes()
-        .await
-        .map_err(|error| Error::Network(error.to_string()))?;
+    let body = read_body(response).await?;
     serde_json::from_slice(&body).map_err(|error| not_meche(format!("unexpected answer: {error}")))
 }
 
 /// Sends a request whose answer has no body (204).
 async fn send_empty(request: RequestBuilder) -> Result<()> {
-    checked(request).await.map(|_| ())
+    checked(request, ANSWER_TIMEOUT).await.map(|_| ())
 }
 
 /// Sends a request; an answer that is not a success becomes an `Error`.
-async fn checked(request: RequestBuilder) -> Result<Response> {
-    let response = request
-        .header("Accept", "application/json")
-        .send()
-        .await
-        .map_err(|error| Error::Network(error.to_string()))?;
+async fn checked(request: RequestBuilder, until_answer: Duration) -> Result<Response> {
+    // `tokio::time::timeout` gives up on a future after this long (`Err(Elapsed)`); the request
+    // is then dropped, which closes its connection. `send()` ends when the headers arrive.
+    let sent = tokio::time::timeout(
+        until_answer,
+        request.header("Accept", "application/json").send(),
+    )
+    .await;
+    let response = match sent {
+        Ok(Ok(response)) => response,
+        Ok(Err(error)) => return Err(Error::Network(error.to_string())),
+        Err(_elapsed) => {
+            return Err(Error::Network(format!(
+                "no answer within {} s",
+                until_answer.as_secs()
+            )));
+        }
+    };
     let status = response.status();
     if status.is_success() {
         return Ok(response);
@@ -238,8 +280,31 @@ async fn checked(request: RequestBuilder) -> Result<Response> {
         .and_then(|value| value.to_str().ok())
         .and_then(|value| value.parse::<u64>().ok())
         .map(|seconds| seconds.clamp(1, MAX_RETRY_AFTER_SECS));
-    let body: serde_json::Value = response.json().await.unwrap_or_default();
+    let body: serde_json::Value = match read_body(response).await {
+        Ok(bytes) => serde_json::from_slice(&bytes).unwrap_or_default(),
+        Err(_) => serde_json::Value::Null,
+    };
     Err(api_error(status, &body, retry_after))
+}
+
+/// Reads the answer piece by piece: it stops only when nothing arrives for `READ_TIMEOUT`.
+/// `mut response`: reading pieces moves through the answer, which changes it.
+async fn read_body(mut response: Response) -> Result<Vec<u8>> {
+    let mut body = Vec::new();
+    loop {
+        match tokio::time::timeout(READ_TIMEOUT, response.chunk()).await {
+            Ok(Ok(Some(piece))) => body.extend_from_slice(&piece),
+            // The whole answer was read.
+            Ok(Ok(None)) => return Ok(body),
+            Ok(Err(error)) => return Err(Error::Network(error.to_string())),
+            Err(_elapsed) => {
+                return Err(Error::Network(format!(
+                    "the answer stopped coming for {} s",
+                    READ_TIMEOUT.as_secs()
+                )));
+            }
+        }
+    }
 }
 
 /// The error for an answer with this status and JSON body (`{ "error": "…", "message": "…" }`
@@ -436,6 +501,46 @@ mod tests {
         });
         let error = run(Api::new().health(&base)).unwrap_err();
         assert_eq!(error.kind(), "network");
+        server.join().unwrap();
+    }
+
+    #[test]
+    fn a_large_request_gets_more_time_to_be_sent() {
+        assert_eq!(answer_timeout(0), Duration::from_secs(30));
+        // A 4 MB batch: two more minutes, enough at about 256 kbit/s.
+        assert_eq!(
+            answer_timeout(4 * 1024 * 1024),
+            Duration::from_secs(30 + 128)
+        );
+    }
+
+    #[test]
+    fn an_answer_that_keeps_coming_slowly_is_read_whole() {
+        // The answer arrives in pieces, 0.4 s apart: no total limit stops it.
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let base = format!("http://{}", listener.local_addr().unwrap());
+        let server = std::thread::spawn(move || {
+            let (mut stream, _) = listener.accept().unwrap();
+            let mut request = [0; 4096];
+            let _ = stream.read(&mut request).unwrap();
+            let body = br#"{"ok":true,"api":1,"server_time":7}"#;
+            stream
+                .write_all(
+                    format!(
+                        "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n",
+                        body.len()
+                    )
+                    .as_bytes(),
+                )
+                .unwrap();
+            for piece in body.chunks(10) {
+                std::thread::sleep(Duration::from_millis(400));
+                stream.write_all(piece).unwrap();
+                stream.flush().unwrap();
+            }
+        });
+        let health = run(Api::new().health(&base)).unwrap();
+        assert_eq!(health.server_time, 7);
         server.join().unwrap();
     }
 

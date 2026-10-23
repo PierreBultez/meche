@@ -29,9 +29,10 @@ pub struct Batch {
 }
 
 /// Versions of notes sent to the server by requests whose answer never came back (lost
-/// connection, timeout, app closed during the request), by note id. The server may have
-/// applied them: if it later sends back one of them, it is this device's own version, not
-/// another device's (docs/04). Kept in memory only, for the time the app runs.
+/// connection, timeout), by note id. The server may have applied them: if it later sends back
+/// one of them, it is this device's own version, not another device's (docs/04). Kept in
+/// memory only, for the time the app runs: after a restart, a note changed since a lost
+/// answer gives a conflict copy (nothing is lost).
 pub type Unacknowledged = HashMap<String, Vec<SyncNote>>;
 
 /// What applying an answer did, for the interface.
@@ -42,6 +43,9 @@ pub struct Outcome {
     pub changed: bool,
     /// Conflict copies « (conflit du …) » created.
     pub conflict_copies: usize,
+    /// Notes left to be sent at once: this device's own version came back after a lost
+    /// answer, and the note changed or was deleted here since.
+    pub resend: bool,
 }
 
 /// A local note with its sync columns.
@@ -229,6 +233,12 @@ fn receive(
         Some(local) if server.rev <= local.server_rev => {}
         // Modified here too and not sent yet: a conflict (docs/04).
         Some(local) if local.dirty => resolve_conflict(conn, server, now, unacknowledged, outcome)?,
+        // Sent by this device, whose answer was lost, then deleted for good here: without
+        // this, the note would come back.
+        None if sent_here(unacknowledged, server) => {
+            insert_tombstone(conn, &server.note, server.rev)?;
+            outcome.resend = true;
+        }
         _ => {
             store(conn, server)?;
             outcome.changed = true;
@@ -249,16 +259,27 @@ fn resolve_conflict(
 ) -> Result<()> {
     let local = local(conn, &server.note.id)?;
     // The server holds a version this device sent, whose answer was lost: it is not another
-    // device's version. The local note simply goes on from that revision, still to be sent.
-    let own = unacknowledged
-        .get(&server.note.id)
-        .is_some_and(|versions| versions.iter().any(|sent| sent.same_as(&server.note)));
-    if own && local.as_ref().is_some_and(|local| local.dirty) {
-        conn.execute(
-            "UPDATE notes SET server_rev = ?2 WHERE id = ?1",
-            params![server.note.id, server.rev],
-        )?;
-        return Ok(());
+    // device's version.
+    if sent_here(unacknowledged, server) {
+        match &local {
+            // Deleted for good here since: the deletion still has to reach the server.
+            None if !server.note.deleted => {
+                insert_tombstone(conn, &server.note, server.rev)?;
+                outcome.resend = true;
+                return Ok(());
+            }
+            // Changed here since: the note goes on from that revision, still to be sent.
+            Some(local) if local.dirty && !local.note.same_as(&server.note) => {
+                conn.execute(
+                    "UPDATE notes SET server_rev = ?2 WHERE id = ?1",
+                    params![server.note.id, server.rev],
+                )?;
+                outcome.resend = true;
+                return Ok(());
+            }
+            // The same as here: stored below like any version, clean.
+            _ => {}
+        }
     }
     // `if let … && …`: a local note exists, is not a tombstone, and differs from the server's.
     if let Some(local) = local
@@ -271,6 +292,13 @@ fn resolve_conflict(
     store(conn, server)?;
     outcome.changed = true;
     Ok(())
+}
+
+/// Whether the server's version is one this device sent and whose answer was lost.
+fn sent_here(unacknowledged: &Unacknowledged, server: &ServerNote) -> bool {
+    unacknowledged
+        .get(&server.note.id)
+        .is_some_and(|versions| versions.iter().any(|sent| sent.same_as(&server.note)))
 }
 
 /// Replaces (or adds) the local note with the server's version, which is then in sync. A
@@ -591,7 +619,8 @@ mod tests {
             outcome,
             Outcome {
                 changed: true,
-                conflict_copies: 1
+                conflict_copies: 1,
+                resend: false,
             }
         );
         assert_eq!(sync_note(&conn, &id), theirs);
@@ -792,11 +821,79 @@ mod tests {
         };
         let outcome = apply_response(&mut conn, &[], &answer, 4_000, &unacknowledged).unwrap();
 
-        assert_eq!(outcome, Outcome::default());
+        // Nothing changed on screen, no copy, but the newer version goes at once.
+        assert_eq!(
+            outcome,
+            Outcome {
+                resend: true,
+                ..Outcome::default()
+            }
+        );
         assert_eq!(titles(&conn).len(), 1);
         assert_eq!(sync_note(&conn, &id).content, "Version plus récente");
         // Goes on from the revision the server has: the next push is a plain update.
         assert_eq!(state(&conn, &id), Some((5, true)));
+    }
+
+    #[test]
+    fn a_note_deleted_for_good_after_a_lost_answer_does_not_come_back() {
+        let mut conn = open_in_memory().unwrap();
+        let id = local_note(&conn, "Jamais synchronisée", 0);
+        // Sent; the server stored it at revision 5, but the answer was lost.
+        let lost = sync_note(&conn, &id);
+        let mut unacknowledged = Unacknowledged::new();
+        unacknowledged.insert(id.clone(), vec![lost.clone()]);
+        // Deleted for good since: never synced, so removed without a tombstone.
+        notes::trash(&conn, &id, 2_000).unwrap();
+        notes::delete_forever(&conn, &id, 2_001).unwrap();
+
+        // The server sends it back, as a change or as a conflict.
+        for answer in [
+            SyncResponse {
+                changes: vec![server(lost.clone(), 5)],
+                ..response()
+            },
+            SyncResponse {
+                conflicts: vec![Conflict {
+                    id: id.clone(),
+                    server: server(lost.clone(), 5),
+                }],
+                ..response()
+            },
+        ] {
+            conn.execute("DELETE FROM notes", []).unwrap();
+            let outcome = apply_response(&mut conn, &[], &answer, 3_000, &unacknowledged).unwrap();
+
+            assert!(outcome.resend && !outcome.changed);
+            // Not back: a tombstone at the server's revision, to be sent.
+            assert!(notes::get(&conn, &id).is_err());
+            assert_eq!(state(&conn, &id), Some((5, true)));
+            assert!(sync_note(&conn, &id).deleted);
+        }
+    }
+
+    #[test]
+    fn its_own_version_coming_back_unchanged_is_stored_clean() {
+        let mut conn = open_in_memory().unwrap();
+        let id = local_note(&conn, "Courses", 4);
+        let patch = NotePatch {
+            content: Some("Version envoyée".to_string()),
+            ..NotePatch::default()
+        };
+        notes::update(&conn, &id, patch, 2_000).unwrap();
+        let lost = sync_note(&conn, &id);
+        let mut unacknowledged = Unacknowledged::new();
+        unacknowledged.insert(id.clone(), vec![lost.clone()]);
+
+        // Not edited since: the server's version is the one here.
+        let answer = SyncResponse {
+            changes: vec![server(lost, 5)],
+            ..response()
+        };
+        let outcome = apply_response(&mut conn, &[], &answer, 4_000, &unacknowledged).unwrap();
+
+        assert!(!outcome.resend);
+        assert_eq!(state(&conn, &id), Some((5, false)));
     }
 
     #[test]

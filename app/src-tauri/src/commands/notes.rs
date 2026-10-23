@@ -28,13 +28,14 @@ pub async fn list_notes(
     let (summaries, changed) = {
         let mut conn = state.lock_db()?;
         let changed = ephemeral::run_maintenance_or_log(&mut conn, now_ms());
-        (notes::list(&conn, filter)?, changed)
+        // No `?` here: even if the list fails, the maintenance has changed notes.
+        (notes::list(&conn, filter), changed)
     }; // The database lock is released here, before the event.
     if changed {
         watcher::notify_notes_changed(&app);
         state.sync.local_change();
     }
-    Ok(summaries)
+    summaries
 }
 
 #[tauri::command]

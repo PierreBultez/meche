@@ -11,6 +11,7 @@ export type ShortcutAction =
   | "nextNote"
   | "toggleList"
   | "focusMode"
+  | "toggleFuse"
   | "escape";
 
 /** The action of a key press, or null. Ctrl on Linux and Windows, Cmd on macOS. */
@@ -24,6 +25,7 @@ export function shortcutFor(event: KeyboardEvent): ShortcutAction | null {
   if (event.shiftKey) {
     if (key === "n") return "newCodeNote";
     if (key === "f") return "focusMode";
+    if (key === "e") return "toggleFuse";
     return null;
   }
   switch (key) {

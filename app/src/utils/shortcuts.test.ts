@@ -16,6 +16,7 @@ describe("keyboard shortcuts (docs/08)", () => {
     ["ArrowDown", { ctrlKey: true }, "nextNote"],
     ["\\", { ctrlKey: true }, "toggleList"],
     ["F", { ctrlKey: true, shiftKey: true }, "focusMode"],
+    ["E", { ctrlKey: true, shiftKey: true }, "toggleFuse"],
     ["Escape", {}, "escape"],
     ["k", { metaKey: true }, "palette"],
   ] as const)("%s %o → %s", (key, modifiers, action) => {

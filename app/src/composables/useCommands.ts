@@ -34,6 +34,12 @@ export function useCommands() {
     if (note) await actions.togglePin(note);
   }
 
+  /** Ctrl+Maj+E: lights or puts out the fuse of the open note (docs/06). */
+  async function toggleFuse(): Promise<void> {
+    const note = editableNote();
+    if (note) await actions.toggleFuse(note);
+  }
+
   async function trash(): Promise<void> {
     const note = editableNote();
     if (note) await actions.trash(note.id);
@@ -85,6 +91,7 @@ export function useCommands() {
     editableNote,
     openNeighbour,
     togglePin,
+    toggleFuse,
     trash,
     toggleList,
     toggleFocusMode,

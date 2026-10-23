@@ -6,7 +6,13 @@ import { type ShortcutAction, shortcutFor } from "../utils/shortcuts";
 import { useCommands } from "./useCommands";
 
 /** Shortcuts that act on the open note or the list: only on the notes screen. */
-const NOTES_SCREEN_ONLY: ShortcutAction[] = ["togglePin", "trash", "previousNote", "nextNote"];
+const NOTES_SCREEN_ONLY: ShortcutAction[] = [
+  "togglePin",
+  "toggleFuse",
+  "trash",
+  "previousNote",
+  "nextNote",
+];
 /** Shortcuts that may repeat while the keys are held down. */
 const REPEATABLE: ShortcutAction[] = ["previousNote", "nextNote"];
 
@@ -34,6 +40,9 @@ export function useGlobalShortcuts(): void {
         break;
       case "togglePin":
         await commands.togglePin();
+        break;
+      case "toggleFuse":
+        await commands.toggleFuse();
         break;
       case "trash":
         await commands.trash();

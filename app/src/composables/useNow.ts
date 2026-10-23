@@ -32,10 +32,17 @@ function onVisibilityChange(): void {
   if (users > 0) startTimer();
 }
 
+// Back to the window, for instance after the computer slept (the interval does not catch up
+// the time spent asleep): up to date at once too.
+function onFocus(): void {
+  if (users > 0) tick();
+}
+
 /** The current time (ms), refreshed once a minute. Call it in a component's setup. */
 export function useNow(): Readonly<Ref<number>> {
   if (users++ === 0) {
     document.addEventListener("visibilitychange", onVisibilityChange);
+    window.addEventListener("focus", onFocus);
     startTimer();
   }
   if (getCurrentScope()) {
@@ -43,6 +50,7 @@ export function useNow(): Readonly<Ref<number>> {
       if (--users === 0) {
         stopTimer();
         document.removeEventListener("visibilitychange", onVisibilityChange);
+        window.removeEventListener("focus", onFocus);
       }
     });
   }

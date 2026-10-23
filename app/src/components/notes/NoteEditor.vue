@@ -38,6 +38,24 @@ const id = props.note.id;
 const inTrash = computed(() => props.note.trashedAt !== null);
 const fuseLit = computed(() => props.note.ephemeralMode !== null);
 const exploded = computed(() => props.note.trashReason === "self_destruct");
+/** Restoring puts the fuse out: the note exploded, or its fuse burnt out in the trash (Rust,
+ * db::notes::restore). */
+const restoresWithoutFuse = computed(
+  () =>
+    exploded.value || (props.note.destroyAt !== null && props.note.destroyAt <= Date.now()),
+);
+const restoreButton = ref<HTMLButtonElement | null>(null);
+const header = ref<HTMLElement | null>(null);
+
+// The open note exploded: its header buttons are about to disappear. If one of them has the
+// focus, it is given to « Restaurer » rather than lost. Only then: from the text, the next key
+// typed (Espace, Entrée) must not press the button. The watcher runs before the page is
+// updated, so the header is still there to be checked.
+watch(inTrash, async (trashed) => {
+  if (!trashed || !header.value?.contains(document.activeElement)) return;
+  await nextTick();
+  restoreButton.value?.focus();
+});
 const rich = ref<InstanceType<typeof RichEditorComponent> | null>(null);
 const code = ref<InstanceType<typeof CodeEditorComponent> | null>(null);
 const menu = ref<InstanceType<typeof NoteMenu> | null>(null);
@@ -181,6 +199,7 @@ defineExpose({
   <article :data-note-color="note.color" class="flex h-full min-h-0 flex-col">
     <header
       v-if="!ui.focusMode"
+      ref="header"
       class="flex w-full items-center gap-1 px-6 pb-2 pt-4"
       :class="note.kind === 'rich' ? 'mx-auto max-w-[calc(72ch+3rem)]' : ''"
     >
@@ -191,7 +210,7 @@ defineExpose({
         maxlength="500"
         placeholder="Titre"
         aria-label="Titre de la note"
-        class="min-w-0 flex-1 bg-transparent text-[26px] font-semibold text-note placeholder:text-muted"
+        class="min-w-24 flex-1 bg-transparent text-[26px] font-semibold text-note placeholder:text-muted"
         :readonly="inTrash"
         @input="titleSave.touch()"
         @keydown.enter.prevent="onTitleEnter"
@@ -209,7 +228,7 @@ defineExpose({
           v-if="note.destroyAt !== null"
           long
           :destroy-at="note.destroyAt"
-          class="shrink-0 whitespace-nowrap pl-1 text-sm"
+          class="min-w-0 truncate pl-1 text-sm"
         />
         <button
           type="button"
@@ -253,7 +272,7 @@ defineExpose({
       class="mx-6 mb-3 flex self-center w-[calc(100%-3rem)] max-w-[72ch] flex-wrap items-center gap-2 rounded-button border border-border bg-surface px-3 py-2 text-sm"
       role="status"
     >
-      <span class="flex-1 text-text">
+      <span class="min-w-56 flex-1 text-text">
         {{
           exploded
             ? "Sa mèche a brûlé : cette note est dans la corbeille."
@@ -261,12 +280,13 @@ defineExpose({
         }}
       </span>
       <button
+        ref="restoreButton"
         type="button"
         class="flex items-center gap-1 rounded-[8px] px-2 py-1 font-semibold text-brand hover:bg-surface-2"
         @click="restore()"
       >
         <RotateCcw :size="15" aria-hidden="true" />
-        {{ exploded ? "Restaurer (la mèche est éteinte)" : "Restaurer" }}
+        {{ restoresWithoutFuse ? "Restaurer (la mèche est éteinte)" : "Restaurer" }}
       </button>
       <button
         type="button"

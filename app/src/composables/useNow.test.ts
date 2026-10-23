@@ -60,4 +60,15 @@ describe("shared clock of the fuses", () => {
     first.unmount();
     second.unmount();
   });
+
+  it("catches up at once when the window gets the focus back (after a sleep)", async () => {
+    const wrapper = card(5 * HOUR);
+    expect(wrapper.text()).toContain("5 h");
+    // Asleep for 3 hours: no interval fired meanwhile.
+    vi.setSystemTime(3 * HOUR);
+    window.dispatchEvent(new Event("focus"));
+    await wrapper.vm.$nextTick();
+    expect(wrapper.text()).toContain("2 h");
+    wrapper.unmount();
+  });
 });

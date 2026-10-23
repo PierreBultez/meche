@@ -80,7 +80,8 @@ export function useNoteActions() {
     }
   }
 
-  /** Lights or puts out the fuse of a note (docs/06), and says so: nothing moves on screen. */
+  /** Lights or puts out the fuse of a note (docs/06), and says so with the delay: the icon
+   * alone is easy to miss. */
   async function toggleFuse(note: Note): Promise<void> {
     const lighting = note.ephemeralMode === null;
     try {

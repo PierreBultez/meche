@@ -2,6 +2,8 @@
 //! and how to apply the server's answer. Plain functions on a connection, without network:
 //! they are tested here with an in-memory database.
 
+use std::collections::HashMap;
+
 use rusqlite::{Connection, OptionalExtension, Row, params};
 
 use super::config;
@@ -25,6 +27,12 @@ pub struct Batch {
     /// Other notes are waiting: the limits of one request were reached.
     pub more: bool,
 }
+
+/// Versions of notes sent to the server by requests whose answer never came back (lost
+/// connection, timeout, app closed during the request), by note id. The server may have
+/// applied them: if it later sends back one of them, it is this device's own version, not
+/// another device's (docs/04). Kept in memory only, for the time the app runs.
+pub type Unacknowledged = HashMap<String, Vec<SyncNote>>;
 
 /// What applying an answer did, for the interface.
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
@@ -121,11 +129,13 @@ pub fn collect_changes(conn: &Connection, max_notes: usize, max_bytes: i64) -> R
 
 /// Applies the server's answer to the changes `sent`, in one transaction (docs/04): first what
 /// it accepted, then the conflicts, then the notes changed elsewhere; then the new cursor.
+/// `unacknowledged`: versions sent by earlier requests whose answer was lost.
 pub fn apply_response(
     conn: &mut Connection,
     sent: &[Change],
     response: &SyncResponse,
     now: i64,
+    unacknowledged: &Unacknowledged,
 ) -> Result<Outcome> {
     let tx = conn.transaction()?;
     let mut outcome = Outcome::default();
@@ -133,10 +143,10 @@ pub fn apply_response(
         acknowledge(&tx, sent, applied)?;
     }
     for conflict in &response.conflicts {
-        resolve_conflict(&tx, &conflict.server, now, &mut outcome)?;
+        resolve_conflict(&tx, &conflict.server, now, unacknowledged, &mut outcome)?;
     }
     for server in &response.changes {
-        receive(&tx, server, now, &mut outcome)?;
+        receive(&tx, server, now, unacknowledged, &mut outcome)?;
     }
     config::save_cursor(&tx, response.cursor)?;
     config::save_last_sync(&tx, now)?;
@@ -149,8 +159,13 @@ fn acknowledge(conn: &Connection, sent: &[Change], applied: &Applied) -> Result<
     let Some(change) = sent.iter().find(|change| change.note.id == applied.id) else {
         return Ok(());
     };
-    // Purged here meanwhile (a note the server had never seen): nothing left to update.
     let Some(local) = local(conn, &applied.id)? else {
+        // Deleted for good here while the request was on its way: a note the server had never
+        // seen is removed without a tombstone, but the server has just stored it. Its deletion
+        // must reach the server and the other devices: a tombstone, still to be sent.
+        if !change.note.deleted && applied.rev > 0 {
+            insert_tombstone(conn, &change.note, applied.rev)?;
+        }
         return Ok(());
     };
     if change.note.deleted && local.note.deleted {
@@ -171,15 +186,49 @@ fn acknowledge(conn: &Connection, sent: &[Change], applied: &Applied) -> Result<
     Ok(())
 }
 
+/// A tombstone of `note` known to the server at revision `rev`, still to be sent.
+fn insert_tombstone(conn: &Connection, note: &SyncNote, rev: i64) -> Result<()> {
+    conn.execute(
+        "INSERT INTO notes (id, title, content, kind, code_language, pinned, color,
+                            ephemeral_mode, ephemeral_delay_hours, ephemeral_started_at,
+                            destroy_at, trashed_at, trash_reason, deleted, created_at, updated_at,
+                            server_rev, dirty)
+         VALUES (?1, '', '', ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, 1, ?12, ?13, ?14, 1)",
+        params![
+            note.id,
+            note.kind,
+            note.code_language,
+            note.pinned,
+            note.color,
+            note.ephemeral_mode,
+            note.ephemeral_delay_hours,
+            note.ephemeral_started_at,
+            note.destroy_at,
+            note.trashed_at,
+            note.trash_reason,
+            note.created_at,
+            note.updated_at,
+            rev
+        ],
+    )?;
+    Ok(())
+}
+
 /// A note changed on another device.
-fn receive(conn: &Connection, server: &ServerNote, now: i64, outcome: &mut Outcome) -> Result<()> {
+fn receive(
+    conn: &Connection,
+    server: &ServerNote,
+    now: i64,
+    unacknowledged: &Unacknowledged,
+    outcome: &mut Outcome,
+) -> Result<()> {
     match local(conn, &server.note.id)? {
         // Deleted before this device ever had it.
         None if server.note.deleted => {}
         // Already known at this revision or a later one (e.g. a note this device just sent).
         Some(local) if server.rev <= local.server_rev => {}
         // Modified here too and not sent yet: a conflict (docs/04).
-        Some(local) if local.dirty => resolve_conflict(conn, server, now, outcome)?,
+        Some(local) if local.dirty => resolve_conflict(conn, server, now, unacknowledged, outcome)?,
         _ => {
             store(conn, server)?;
             outcome.changed = true;
@@ -195,10 +244,24 @@ fn resolve_conflict(
     conn: &Connection,
     server: &ServerNote,
     now: i64,
+    unacknowledged: &Unacknowledged,
     outcome: &mut Outcome,
 ) -> Result<()> {
+    let local = local(conn, &server.note.id)?;
+    // The server holds a version this device sent, whose answer was lost: it is not another
+    // device's version. The local note simply goes on from that revision, still to be sent.
+    let own = unacknowledged
+        .get(&server.note.id)
+        .is_some_and(|versions| versions.iter().any(|sent| sent.same_as(&server.note)));
+    if own && local.as_ref().is_some_and(|local| local.dirty) {
+        conn.execute(
+            "UPDATE notes SET server_rev = ?2 WHERE id = ?1",
+            params![server.note.id, server.rev],
+        )?;
+        return Ok(());
+    }
     // `if let … && …`: a local note exists, is not a tombstone, and differs from the server's.
-    if let Some(local) = local(conn, &server.note.id)?
+    if let Some(local) = local
         && !local.note.deleted
         && !local.note.same_as(&server.note)
     {
@@ -263,6 +326,7 @@ pub fn reset(conn: &Connection, sync_id: &str) -> Result<()> {
     conn.execute("DELETE FROM notes WHERE deleted = 1", [])?;
     conn.execute("UPDATE notes SET server_rev = 0, dirty = 1", [])?;
     config::save_cursor(conn, 0)?;
+    config::forget_last_sync(conn)?;
     config::save_sync_id(conn, sync_id)
 }
 
@@ -396,7 +460,8 @@ mod tests {
             cursor: 8,
             ..response()
         };
-        let outcome = apply_response(&mut conn, &sent, &answer, 2_000).unwrap();
+        let outcome =
+            apply_response(&mut conn, &sent, &answer, 2_000, &Unacknowledged::new()).unwrap();
 
         assert_eq!(state(&conn, &kept), Some((7, false)));
         assert_eq!(state(&conn, &edited), Some((8, true)));
@@ -424,7 +489,7 @@ mod tests {
             }],
             ..response()
         };
-        apply_response(&mut conn, &sent, &answer, 3).unwrap();
+        apply_response(&mut conn, &sent, &answer, 3, &Unacknowledged::new()).unwrap();
         assert_eq!(state(&conn, &id), None);
     }
 
@@ -453,7 +518,8 @@ mod tests {
             cursor: 11,
             ..response()
         };
-        let outcome = apply_response(&mut conn, &[], &answer, 5_000).unwrap();
+        let outcome =
+            apply_response(&mut conn, &[], &answer, 5_000, &Unacknowledged::new()).unwrap();
 
         assert!(outcome.changed);
         assert_eq!(outcome.conflict_copies, 0);
@@ -488,7 +554,7 @@ mod tests {
             cursor: 10,
             ..response()
         };
-        let outcome = apply_response(&mut conn, &[], &answer, 0).unwrap();
+        let outcome = apply_response(&mut conn, &[], &answer, 0, &Unacknowledged::new()).unwrap();
 
         assert!(!outcome.changed);
         assert_eq!(titles(&conn), ["À jour"]);
@@ -518,7 +584,8 @@ mod tests {
             cursor: 6,
             ..response()
         };
-        let outcome = apply_response(&mut conn, &sent, &answer, 3_000).unwrap();
+        let outcome =
+            apply_response(&mut conn, &sent, &answer, 3_000, &Unacknowledged::new()).unwrap();
 
         assert_eq!(
             outcome,
@@ -570,7 +637,8 @@ mod tests {
             cursor: 5,
             ..response()
         };
-        let outcome = apply_response(&mut conn, &[], &answer, 3_000).unwrap();
+        let outcome =
+            apply_response(&mut conn, &[], &answer, 3_000, &Unacknowledged::new()).unwrap();
 
         assert_eq!(outcome.conflict_copies, 1);
         assert_eq!(sync_note(&conn, &id).content, "Ailleurs");
@@ -597,7 +665,8 @@ mod tests {
             changes: vec![server(theirs, 5)],
             ..response()
         };
-        let outcome = apply_response(&mut conn, &[], &answer, 3_000).unwrap();
+        let outcome =
+            apply_response(&mut conn, &[], &answer, 3_000, &Unacknowledged::new()).unwrap();
 
         assert_eq!(outcome.conflict_copies, 0);
         assert_eq!(state(&conn, &id), Some((5, false)));
@@ -622,7 +691,7 @@ mod tests {
             }],
             ..response()
         };
-        let outcome = apply_response(&mut conn, &sent, &answer, 3).unwrap();
+        let outcome = apply_response(&mut conn, &sent, &answer, 3, &Unacknowledged::new()).unwrap();
 
         assert_eq!(outcome.conflict_copies, 0);
         assert_eq!(titles(&conn), ["Modifiée ailleurs"]);
@@ -649,13 +718,85 @@ mod tests {
             changes: vec![server(tombstone, 5)],
             ..response()
         };
-        apply_response(&mut conn, &[], &answer, 3_000).unwrap();
+        apply_response(&mut conn, &[], &answer, 3_000, &Unacknowledged::new()).unwrap();
 
         assert_eq!(state(&conn, &id), None);
         let content: String = conn
             .query_row("SELECT content FROM notes", [], |row| row.get(0))
             .unwrap();
         assert_eq!(content, "Encore utile");
+    }
+
+    #[test]
+    fn a_note_deleted_for_good_while_it_was_being_sent_leaves_a_tombstone() {
+        let mut conn = open_in_memory().unwrap();
+        let id = local_note(&conn, "Jamais synchronisée", 0);
+        notes::trash(&conn, &id, 1).unwrap();
+        let sent = collect_changes(&conn, MAX_CHANGES, MAX_CHANGE_BYTES)
+            .unwrap()
+            .changes;
+        // Emptied from the trash during the request: never synced, so removed without tombstone.
+        notes::delete_forever(&conn, &id, 2).unwrap();
+        assert_eq!(state(&conn, &id), None);
+
+        let answer = SyncResponse {
+            applied: vec![Applied {
+                id: id.clone(),
+                rev: 7,
+            }],
+            ..response()
+        };
+        apply_response(&mut conn, &sent, &answer, 3, &Unacknowledged::new()).unwrap();
+
+        // The server stored it: its deletion is still to be sent.
+        assert_eq!(state(&conn, &id), Some((7, true)));
+        let tombstone = sync_note(&conn, &id);
+        assert!(tombstone.deleted);
+        assert_eq!(
+            (tombstone.title.as_str(), tombstone.content.as_str()),
+            ("", "")
+        );
+        let next = collect_changes(&conn, MAX_CHANGES, MAX_CHANGE_BYTES).unwrap();
+        assert_eq!(next.changes[0].base_rev, 7);
+        // Invisible: tombstones are never listed.
+        assert!(notes::get(&conn, &id).is_err());
+    }
+
+    #[test]
+    fn its_own_version_coming_back_after_a_lost_answer_is_not_a_conflict() {
+        let mut conn = open_in_memory().unwrap();
+        let id = local_note(&conn, "Courses", 4);
+        let patch = NotePatch {
+            content: Some("Version envoyée".to_string()),
+            ..NotePatch::default()
+        };
+        notes::update(&conn, &id, patch, 2_000).unwrap();
+        // Sent; the server applied it at revision 5, but the answer was lost.
+        let lost = sync_note(&conn, &id);
+        let mut unacknowledged = Unacknowledged::new();
+        unacknowledged.insert(id.clone(), vec![lost.clone()]);
+        // Typed since then.
+        let patch = NotePatch {
+            content: Some("Version plus récente".to_string()),
+            ..NotePatch::default()
+        };
+        notes::update(&conn, &id, patch, 3_000).unwrap();
+
+        let answer = SyncResponse {
+            conflicts: vec![Conflict {
+                id: id.clone(),
+                server: server(lost.clone(), 5),
+            }],
+            changes: vec![server(lost, 5)],
+            ..response()
+        };
+        let outcome = apply_response(&mut conn, &[], &answer, 4_000, &unacknowledged).unwrap();
+
+        assert_eq!(outcome, Outcome::default());
+        assert_eq!(titles(&conn).len(), 1);
+        assert_eq!(sync_note(&conn, &id).content, "Version plus récente");
+        // Goes on from the revision the server has: the next push is a plain update.
+        assert_eq!(state(&conn, &id), Some((5, true)));
     }
 
     #[test]

@@ -7,8 +7,10 @@
 //! fin"). Login and logout go through it too: a sync can never be half way when the account
 //! changes.
 //!
-//! The task shares the SQLite connection with the commands: it takes the `Mutex` only for the
-//! few milliseconds it reads or writes notes, never while it waits for the network.
+//! The work itself (one request, logging in and out) is in session.rs; this file decides when
+//! it runs and tells the interface. The task shares the SQLite connection with the commands:
+//! it takes the `Mutex` only for the few milliseconds it reads or writes notes, never while it
+//! waits for the network.
 
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
@@ -18,10 +20,10 @@ use tauri::{AppHandle, Emitter, Manager};
 use tokio::sync::{mpsc, oneshot};
 
 use super::api::Api;
-use super::apply::{self, MAX_CHANGE_BYTES, MAX_CHANGES};
+use super::apply::Unacknowledged;
 use super::config::{self, SyncConfig};
-use super::protocol::SyncRequest;
 use super::schedule::Schedule;
+use super::session::{self, Login};
 use crate::AppState;
 use crate::ephemeral::watcher::notify_notes_changed;
 use crate::error::{Error, Result};
@@ -35,9 +37,6 @@ pub const SYNC_STATUS: &str = "sync-status";
 const MAX_ROUNDS: usize = 20;
 /// Beyond 5 minutes of difference with the server's clock, fuses burn noticeably early or late.
 const CLOCK_SKEW_WARNING_MS: i64 = 5 * 60 * 1000;
-/// Logging out tells the server, but never waits long for it.
-const LOGOUT_TIMEOUT: Duration = Duration::from_secs(5);
-const DEVICE_NAME_MAX_CHARS: usize = 100;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "lowercase")]
@@ -88,15 +87,6 @@ impl SyncStatus {
     }
 }
 
-/// What the user typed to log in, or to create an account (with an invitation code).
-pub struct Login {
-    pub server_url: String,
-    pub email: String,
-    pub password: String,
-    pub device_name: String,
-    pub invitation_code: Option<String>,
-}
-
 /// Messages to the engine. Those that wait for an answer carry a `oneshot` sender: a channel
 /// for a single value, on which the engine sends the result back.
 enum Request {
@@ -124,6 +114,9 @@ pub struct Engine {
     status: Arc<Mutex<SyncStatus>>,
     api: Api,
     schedule: Schedule,
+    /// The versions sent whose answer never came back (a connection lost after sending): kept
+    /// from one sync to the next, see `session::sync_round`.
+    unacknowledged: Unacknowledged,
 }
 
 /// Creates the engine and its handle. `spawn` starts the engine once `AppState` is managed.
@@ -142,6 +135,7 @@ pub fn create(api: Api, config: &SyncConfig) -> (SyncHandle, Engine) {
         status,
         api,
         schedule: Schedule::default(),
+        unacknowledged: Unacknowledged::new(),
     };
     (handle, engine)
 }
@@ -197,15 +191,6 @@ impl SyncHandle {
             .map_err(|_| stopped())?;
         answer.await.map_err(|_| stopped())
     }
-}
-
-/// What one request to the server did.
-#[derive(Default)]
-struct Round {
-    changed: bool,
-    conflicts: usize,
-    /// Another request must follow at once (more to send, or more to receive).
-    again: bool,
 }
 
 impl Engine {
@@ -289,26 +274,38 @@ impl Engine {
         self.schedule.attempt(Instant::now());
         self.set_status(app, |status| status.state = SyncState::Syncing);
 
+        let state = app.state::<AppState>();
         let mut conflicts = 0;
+        let mut left = false;
         let mut result = Ok(());
         for _ in 0..MAX_ROUNDS {
-            match self.round(app).await {
+            // `&mut self.unacknowledged`: the round updates the engine's list in place.
+            match session::sync_round(&state.db, &self.api, &mut self.unacknowledged).await {
                 Ok(round) => {
+                    if let Some(server_time) = round.server_time {
+                        self.check_clock(app, server_time);
+                    }
                     conflicts += round.conflicts;
                     if round.changed {
                         notify_notes_changed(app);
                     }
+                    left = round.again;
                     if !round.again {
                         break;
                     }
                 }
                 Err(error) => {
+                    left = false;
                     result = Err(error);
                     break;
                 }
             }
         }
         self.finish(app, result, conflicts);
+        if left {
+            // Still more to do after MAX_ROUNDS: the next sync comes in 2 s, not in a minute.
+            self.schedule.local_change(Instant::now());
+        }
     }
 
     /// The status and the next sync, after a sync.
@@ -375,55 +372,6 @@ impl Engine {
         }
     }
 
-    /// One request: sends a batch of local changes, applies the answer.
-    async fn round(&mut self, app: &AppHandle) -> Result<Round> {
-        let state = app.state::<AppState>();
-
-        // 1. What to send. The database is locked for a few milliseconds: the block ends, the
-        //    guard is dropped, the lock is released.
-        let (config, batch) = {
-            let conn = state.lock_db()?;
-            (
-                config::load(&conn)?,
-                apply::collect_changes(&conn, MAX_CHANGES, MAX_CHANGE_BYTES)?,
-            )
-        };
-        let Some((server_url, token)) = config.session() else {
-            return Ok(Round::default());
-        };
-
-        // 2. The request, without the lock: the commands and the fuse go on meanwhile. Holding
-        //    a std `MutexGuard` here would not even compile: it is not `Send`, and a task that
-        //    can move between threads at each `.await` may only hold `Send` values.
-        let request = SyncRequest {
-            cursor: config.cursor,
-            changes: &batch.changes,
-        };
-        let response = self.api.sync(server_url, token, &request).await?;
-        self.check_clock(app, response.server_time);
-
-        // 3. The answer, in one transaction.
-        let mut conn = state.lock_db()?;
-        if response.reset || config.sync_id.as_deref() != Some(response.sync_id.as_str()) {
-            // Another history on the server (database recreated or restored): send everything
-            // again from the start (docs/04).
-            eprintln!("the server's sync history changed: starting over");
-            let tx = conn.transaction()?;
-            apply::reset(&tx, &response.sync_id)?;
-            tx.commit()?;
-            return Ok(Round {
-                again: true,
-                ..Round::default()
-            });
-        }
-        let outcome = apply::apply_response(&mut conn, &batch.changes, &response, now_ms())?;
-        Ok(Round {
-            changed: outcome.changed,
-            conflicts: outcome.conflict_copies,
-            again: response.has_more || batch.more,
-        })
-    }
-
     /// Fuses rely on the clocks (docs/04): warns when this one is more than 5 minutes off.
     fn check_clock(&self, app: &AppHandle, server_time: i64) {
         let skew = server_time - now_ms();
@@ -437,82 +385,33 @@ impl Engine {
     }
 
     async fn login(&mut self, app: &AppHandle, login: Login) -> Result<SyncStatus> {
-        let server_url = config::normalize_server_url(&login.server_url)?;
-        let email = login.email.trim();
-        let device_name: String = match login.device_name.trim() {
-            "" => config::default_device_name(),
-            name => name.chars().take(DEVICE_NAME_MAX_CHARS).collect(),
-        };
-        let previous = config::load(&*app.state::<AppState>().lock_db()?)?;
-        // Already logged in (another account, another server): that token is given back first.
-        if let Some((url, token)) = previous.session() {
-            let _ = tokio::time::timeout(LOGOUT_TIMEOUT, self.api.logout(url, token)).await;
+        let state = app.state::<AppState>();
+        let logged = session::log_in(&state.db, &self.api, login).await?;
+        if logged.reset {
+            // Another history: what was waiting for the previous one means nothing here.
+            self.unacknowledged.clear();
         }
-        let answer = match &login.invitation_code {
-            Some(code) => {
-                self.api
-                    .register(&server_url, code, email, &login.password, &device_name)
-                    .await?
-            }
-            None => {
-                self.api
-                    .login(&server_url, email, &login.password, &device_name)
-                    .await?
-            }
-        };
-
-        {
-            let state = app.state::<AppState>();
-            let mut conn = state.lock_db()?;
-            let tx = conn.transaction()?;
-            // Another account or another server than last time: every note of this device
-            // goes to this account, as if it had never been synced (docs/04). The first
-            // login is such a case, with nothing to change: no note was ever synced.
-            let known = config::load(&tx)?.sync_id;
-            if known.as_deref() != Some(answer.sync_id.as_str()) {
-                apply::reset(&tx, &answer.sync_id)?;
-            }
-            config::save_login(
-                &tx,
-                &server_url,
-                &answer.token,
-                &answer.email,
-                &device_name,
-                &answer.sync_id,
-            )?;
-            tx.commit()?;
-        }
-
         self.schedule.start(Instant::now());
         self.set_status(app, |status| {
             status.state = SyncState::Idle;
             status.error_kind = None;
             status.message = None;
             status.logged_in = true;
-            status.server_url = Some(server_url);
-            status.email = Some(answer.email);
-            status.device_name = device_name;
+            status.server_url = Some(logged.server_url);
+            status.email = Some(logged.email);
+            status.device_name = logged.device_name;
+            status.last_sync_at = logged.last_sync_at;
+            status.clock_skew_ms = None;
         });
         Ok(self.status())
     }
 
     async fn logout(&mut self, app: &AppHandle) {
-        let config = app
-            .state::<AppState>()
-            .lock_db()
-            .and_then(|conn| config::load(&conn))
-            .unwrap_or_default();
+        let state = app.state::<AppState>();
         // Best effort: offline, the token stays valid on the server until it is disconnected
         // from another device or expires after 180 days unused.
-        if let Some((url, token)) = config.session() {
-            let _ = tokio::time::timeout(LOGOUT_TIMEOUT, self.api.logout(url, token)).await;
-        }
-        if let Err(error) = app
-            .state::<AppState>()
-            .lock_db()
-            .and_then(|conn| config::forget_token(&conn))
-        {
-            eprintln!("could not forget the token: {error}");
+        if let Err(error) = session::log_out(&state.db, &self.api).await {
+            eprintln!("could not log out: {error}");
         }
         self.schedule.stop();
         self.set_status(app, |status| {

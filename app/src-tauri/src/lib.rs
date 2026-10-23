@@ -73,7 +73,7 @@ pub fn run() {
             // Best effort: the app opens even if this fails.
             ephemeral::run_maintenance_or_log(&mut conn, time::now_ms());
             let (sync, engine) =
-                sync::engine::create(sync::api::Api::new()?, &sync::config::load(&conn)?);
+                sync::engine::create(sync::api::Api::new(), &sync::config::load(&conn)?);
             // From now on Tauri owns the state; commands borrow it with `State<AppState>`.
             app.manage(AppState {
                 db: Mutex::new(conn),

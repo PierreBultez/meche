@@ -74,7 +74,7 @@ impl Error {
 /// The server's error codes the frontend knows, as `kind` (a `&'static str`: the code comes
 /// from the network, so it is matched against the known ones). Any other code is `server`.
 fn api_kind(code: &str) -> &'static str {
-    const KNOWN: [&str; 11] = [
+    const KNOWN: [&str; 12] = [
         "invalid_credentials",
         "invalid_invitation",
         "invalid_email",
@@ -86,6 +86,8 @@ fn api_kind(code: &str) -> &'static str {
         "not_meche_server",
         "invalid_input",
         "not_found",
+        // The server refused a note sent by this device: retrying will not help.
+        "invalid_change",
     ];
     KNOWN
         .into_iter()

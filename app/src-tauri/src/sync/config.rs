@@ -16,8 +16,9 @@ const CURSOR_KEY: &str = "sync_cursor";
 const LAST_SYNC_KEY: &str = "last_sync_at";
 const SYNC_ID_KEY: &str = "server_sync_id";
 
-/// Where and how this device syncs.
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
+/// Where and how this device syncs. `Debug` is written by hand below: the token never appears
+/// in a log.
+#[derive(Clone, Default, PartialEq, Eq)]
 pub struct SyncConfig {
     /// Base address of the server, without `/api` (e.g. `https://meche.pierrebultez.com`).
     pub server_url: Option<String>,
@@ -31,6 +32,20 @@ pub struct SyncConfig {
     pub last_sync_at: Option<i64>,
     /// Identity of the account's sync history on the server (docs/04).
     pub sync_id: Option<String>,
+}
+
+impl std::fmt::Debug for SyncConfig {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("SyncConfig")
+            .field("server_url", &self.server_url)
+            .field("token", &self.token.as_ref().map(|_| "…"))
+            .field("email", &self.email)
+            .field("device_name", &self.device_name)
+            .field("cursor", &self.cursor)
+            .field("last_sync_at", &self.last_sync_at)
+            .field("sync_id", &self.sync_id)
+            .finish()
+    }
 }
 
 impl SyncConfig {
@@ -83,6 +98,12 @@ pub fn save_last_sync(conn: &Connection, at: i64) -> Result<()> {
     write(conn, LAST_SYNC_KEY, &at)
 }
 
+/// Another sync history starts (another account…): its last sync is not known yet.
+pub fn forget_last_sync(conn: &Connection) -> Result<()> {
+    conn.execute("DELETE FROM settings WHERE key = ?1", [LAST_SYNC_KEY])?;
+    Ok(())
+}
+
 pub fn save_sync_id(conn: &Connection, sync_id: &str) -> Result<()> {
     write(conn, SYNC_ID_KEY, &sync_id)
 }
@@ -104,7 +125,14 @@ pub fn normalize_server_url(typed: &str) -> Result<String> {
     let url = Url::parse(&with_scheme).map_err(|_| invalid())?;
     let local = matches!(url.host_str(), Some("localhost" | "127.0.0.1" | "[::1]"));
     let secure = url.scheme() == "https" || (url.scheme() == "http" && local);
-    if !secure || url.host_str().is_none() || url.query().is_some() || url.fragment().is_some() {
+    // `https://user:password@host`: a password in an address would be stored and shown.
+    let credentials = !url.username().is_empty() || url.password().is_some();
+    if !secure
+        || credentials
+        || url.host_str().is_none()
+        || url.query().is_some()
+        || url.fragment().is_some()
+    {
         return Err(invalid());
     }
     let mut base = url.as_str().trim_end_matches('/').to_string();
@@ -182,6 +210,7 @@ mod tests {
             "http://meche.pierrebultez.com",
             "ftp://example.com",
             "https://example.com/?a=1",
+            "https://pierre:secret@example.com",
             "https://",
         ] {
             assert!(normalize_server_url(refused).is_err(), "{refused}");

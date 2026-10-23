@@ -76,22 +76,31 @@ pub async fn set_ephemeral(
     enabled: bool,
 ) -> Result<Note> {
     let now = now_ms();
-    let (note, before) = {
+    let (result, changed) = {
         let mut conn = state.lock_db()?;
         let before = ephemeral::maintenance_before_action(&mut conn, &id, now)?;
-        let note = if before.exploded {
-            notes::get(&conn, &id)?
+        let result = if before.exploded {
+            notes::get(&conn, &id)
         } else {
-            let delay_hours = settings::load(&conn)?.fuse_delay_hours;
-            notes::set_ephemeral(&conn, &id, enabled, delay_hours, now)?
+            settings::load(&conn).and_then(|settings| {
+                notes::set_ephemeral(&conn, &id, enabled, settings.fuse_delay_hours, now)
+            })
         };
-        (note, before)
+        (result, before.changed)
     };
-    if before.changed {
-        watcher::notify_notes_changed(&app);
+    after_action(&app, &state, changed, result.is_ok());
+    result
+}
+
+/// Tells the frontend and the sync after an action preceded by a maintenance. The maintenance
+/// may have changed notes even when the action then failed (the note had just been purged).
+fn after_action(app: &AppHandle, state: &AppState, changed: bool, done: bool) {
+    if changed {
+        watcher::notify_notes_changed(app);
     }
-    state.sync.local_change();
-    Ok(note)
+    if changed || done {
+        state.sync.local_change();
+    }
 }
 
 #[tauri::command]
@@ -106,19 +115,18 @@ pub async fn update_note(state: State<'_, AppState>, id: String, patch: NotePatc
 #[tauri::command]
 pub async fn trash_note(app: AppHandle, state: State<'_, AppState>, id: String) -> Result<()> {
     let now = now_ms();
-    let before = {
+    let (result, changed) = {
         let mut conn = state.lock_db()?;
         let before = ephemeral::maintenance_before_action(&mut conn, &id, now)?;
-        if !before.exploded {
-            notes::trash(&conn, &id, now)?;
-        }
-        before
+        let result = if before.exploded {
+            Ok(())
+        } else {
+            notes::trash(&conn, &id, now)
+        };
+        (result, before.changed)
     };
-    if before.changed {
-        watcher::notify_notes_changed(&app);
-    }
-    state.sync.local_change();
-    Ok(())
+    after_action(&app, &state, changed, result.is_ok());
+    result
 }
 
 #[tauri::command]

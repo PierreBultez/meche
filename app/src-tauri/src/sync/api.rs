@@ -3,7 +3,11 @@
 //! One `Api` is created at startup and shared: `reqwest::Client` keeps its connections open
 //! (keep-alive), so a sync every minute does not pay for a new TLS handshake each time.
 //! Cloning it is cheap: the clones share the same connection pool (an `Arc` inside).
+//!
+//! The client itself is built at its first use, not at startup: building it loads the system's
+//! certificates, and when that fails (no certificate found) the notes must still open, offline.
 
+use std::sync::{Arc, OnceLock};
 use std::time::Duration;
 
 use reqwest::{RequestBuilder, Response, StatusCode};
@@ -19,29 +23,33 @@ use crate::error::{Error, Result};
 /// Version of the sync protocol this app speaks (`api` in `GET /api/health`).
 const API_VERSION: i64 = 1;
 
-#[derive(Clone)]
+/// The server may ask to wait this long at most (`Retry-After`): a larger value is not trusted.
+const MAX_RETRY_AFTER_SECS: u64 = 3600;
+
+#[derive(Clone, Default)]
 pub struct Api {
-    http: reqwest::Client,
+    /// Built once, at the first request. `OnceLock`: a value set only once, safely shared
+    /// between threads; `Arc` shares it between the clones of `Api`. The `Err` keeps why it
+    /// could not be built, reported by every request.
+    http: Arc<OnceLock<std::result::Result<reqwest::Client, String>>>,
 }
 
 impl Api {
-    pub fn new() -> Result<Api> {
-        // reqwest is built with "rustls-no-provider": rustls needs to be told which
-        // cryptography to use, once per process. A second call fails harmlessly (tests).
-        let _ = rustls::crypto::ring::default_provider().install_default();
-        let http = reqwest::Client::builder()
-            .user_agent(concat!("Meche/", env!("CARGO_PKG_VERSION")))
-            .connect_timeout(Duration::from_secs(10))
-            // A 4 MB request on a slow connection still fits.
-            .timeout(Duration::from_secs(60))
-            .build()
-            .map_err(|error| Error::Network(error.to_string()))?;
-        Ok(Api { http })
+    pub fn new() -> Api {
+        Api::default()
+    }
+
+    /// The HTTP client, built at the first call.
+    fn http(&self) -> Result<&reqwest::Client> {
+        self.http
+            .get_or_init(build_client)
+            .as_ref()
+            .map_err(|error| Error::Network(error.clone()))
     }
 
     /// `GET /api/health`: is there a Mèche server at this address?
     pub async fn health(&self, base: &str) -> Result<Health> {
-        let health: Health = send(self.http.get(format!("{base}/api/health"))).await?;
+        let health: Health = send(self.http()?.get(format!("{base}/api/health"))).await?;
         if !health.ok || health.api != API_VERSION {
             return Err(not_meche(format!("api version {}", health.api)));
         }
@@ -57,7 +65,12 @@ impl Api {
         device_name: &str,
     ) -> Result<TokenResponse> {
         let body = json!({ "email": email, "password": password, "device_name": device_name });
-        send(self.http.post(format!("{base}/api/auth/token")).json(&body)).await
+        send(
+            self.http()?
+                .post(format!("{base}/api/auth/token"))
+                .json(&body),
+        )
+        .await
     }
 
     /// `POST /api/auth/register`: creates an account with an invitation code.
@@ -76,7 +89,7 @@ impl Api {
             "device_name": device_name,
         });
         send(
-            self.http
+            self.http()?
                 .post(format!("{base}/api/auth/register"))
                 .json(&body),
         )
@@ -86,7 +99,7 @@ impl Api {
     /// `DELETE /api/auth/token`: this device's token stops working.
     pub async fn logout(&self, base: &str, token: &str) -> Result<()> {
         send_empty(
-            self.http
+            self.http()?
                 .delete(format!("{base}/api/auth/token"))
                 .bearer_auth(token),
         )
@@ -101,7 +114,7 @@ impl Api {
         request: &SyncRequest<'_>,
     ) -> Result<SyncResponse> {
         send(
-            self.http
+            self.http()?
                 .post(format!("{base}/api/sync"))
                 .bearer_auth(token)
                 .json(request),
@@ -111,7 +124,7 @@ impl Api {
 
     pub async fn devices(&self, base: &str, token: &str) -> Result<Vec<Device>> {
         let devices: Devices = send(
-            self.http
+            self.http()?
                 .get(format!("{base}/api/devices"))
                 .bearer_auth(token),
         )
@@ -121,7 +134,7 @@ impl Api {
 
     pub async fn revoke_device(&self, base: &str, token: &str, id: i64) -> Result<()> {
         send_empty(
-            self.http
+            self.http()?
                 .delete(format!("{base}/api/devices/{id}"))
                 .bearer_auth(token),
         )
@@ -130,7 +143,7 @@ impl Api {
 
     pub async fn invitations(&self, base: &str, token: &str) -> Result<Vec<Invitation>> {
         let invitations: Invitations = send(
-            self.http
+            self.http()?
                 .get(format!("{base}/api/invitations"))
                 .bearer_auth(token),
         )
@@ -140,7 +153,7 @@ impl Api {
 
     pub async fn create_invitation(&self, base: &str, token: &str) -> Result<Invitation> {
         send(
-            self.http
+            self.http()?
                 .post(format!("{base}/api/invitations"))
                 .bearer_auth(token)
                 .json(&EmptyBody {}),
@@ -150,7 +163,7 @@ impl Api {
 
     pub async fn delete_invitation(&self, base: &str, token: &str, id: i64) -> Result<()> {
         send_empty(
-            self.http
+            self.http()?
                 .delete(format!("{base}/api/invitations/{id}"))
                 .bearer_auth(token),
         )
@@ -160,6 +173,23 @@ impl Api {
 
 #[derive(Serialize)]
 struct EmptyBody {}
+
+fn build_client() -> std::result::Result<reqwest::Client, String> {
+    // reqwest is built with "rustls-no-provider": rustls needs to be told which cryptography
+    // to use, once per process. A second call fails harmlessly (tests).
+    let _ = rustls::crypto::ring::default_provider().install_default();
+    reqwest::Client::builder()
+        .user_agent(concat!("Meche/", env!("CARGO_PKG_VERSION")))
+        .connect_timeout(Duration::from_secs(10))
+        // Per read, not for the whole request: a 4 MB sync on a slow mobile connection may
+        // take minutes, as long as data keeps coming.
+        .read_timeout(Duration::from_secs(30))
+        // The API never redirects. Following one could send a password or notes elsewhere,
+        // even over plain http (reqwest sends the body again on a 307 / 308).
+        .redirect(reqwest::redirect::Policy::none())
+        .build()
+        .map_err(|error| format!("cannot start the HTTP client: {error}"))
+}
 
 fn not_meche(message: String) -> Error {
     Error::Api {
@@ -177,10 +207,13 @@ fn not_meche(message: String) -> Error {
 /// runtime): nothing is blocked. `T: DeserializeOwned` is the type the JSON is read into.
 async fn send<T: DeserializeOwned>(request: RequestBuilder) -> Result<T> {
     let response = checked(request).await?;
-    response
-        .json::<T>()
+    // Read, then decoded: a connection lost while reading is a network error; only an answer
+    // that is not the JSON expected says it is not a Mèche server.
+    let body = response
+        .bytes()
         .await
-        .map_err(|error| not_meche(format!("unexpected answer: {error}")))
+        .map_err(|error| Error::Network(error.to_string()))?;
+    serde_json::from_slice(&body).map_err(|error| not_meche(format!("unexpected answer: {error}")))
 }
 
 /// Sends a request whose answer has no body (204).
@@ -203,7 +236,8 @@ async fn checked(request: RequestBuilder) -> Result<Response> {
         .headers()
         .get("Retry-After")
         .and_then(|value| value.to_str().ok())
-        .and_then(|value| value.parse().ok());
+        .and_then(|value| value.parse::<u64>().ok())
+        .map(|seconds| seconds.clamp(1, MAX_RETRY_AFTER_SECS));
     let body: serde_json::Value = response.json().await.unwrap_or_default();
     Err(api_error(status, &body, retry_after))
 }
@@ -218,8 +252,10 @@ fn api_error(status: StatusCode, body: &serde_json::Value, retry_after: Option<u
         (StatusCode::UNAUTHORIZED, _) => "unauthorized",
         (StatusCode::TOO_MANY_REQUESTS, _) => "rate_limited",
         (_, Some(code)) if status.is_client_error() => code,
-        // A page that is not from the Mèche API (Apache, another site, a proxy).
+        // A page that is not from the Mèche API (Apache, another site, a proxy), or a redirect
+        // (the API never redirects).
         (StatusCode::NOT_FOUND | StatusCode::METHOD_NOT_ALLOWED, None) => "not_meche_server",
+        _ if status.is_redirection() => "not_meche_server",
         _ => "server",
     };
     Error::Api {
@@ -286,7 +322,7 @@ mod tests {
             "",
             r#"{"token":"1|meche_abc","email":"p@example.com","sync_id":"s1"}"#,
         );
-        let api = Api::new().unwrap();
+        let api = Api::new();
         let answer = run(api.login(&base, "p@example.com", "secret", "PC")).unwrap();
         assert_eq!(answer.token, "1|meche_abc");
         let request = server.join().unwrap();
@@ -301,9 +337,10 @@ mod tests {
             "",
             r#"{"applied":[],"conflicts":[],"changes":[],"cursor":0,"has_more":false,"server_time":5,"sync_id":"s"}"#,
         );
-        let api = Api::new().unwrap();
+        let api = Api::new();
         let request = SyncRequest {
             cursor: 0,
+            sync_id: Some("s"),
             changes: &[],
         };
         let answer = run(api.sync(&base, "1|meche_abc", &request)).unwrap();
@@ -311,7 +348,7 @@ mod tests {
         assert!(!answer.reset);
         let received = server.join().unwrap().to_lowercase();
         assert!(received.contains("authorization: bearer 1|meche_abc"));
-        assert!(received.contains(r#"{"cursor":0,"changes":[]}"#));
+        assert!(received.contains(r#"{"cursor":0,"sync_id":"s","changes":[]}"#));
     }
 
     #[test]
@@ -337,7 +374,7 @@ mod tests {
         ];
         for (status, body, kind) in cases {
             let (base, server) = fake_server(status, "", body);
-            let error = run(Api::new().unwrap().login(&base, "a", "b", "c")).unwrap_err();
+            let error = run(Api::new().login(&base, "a", "b", "c")).unwrap_err();
             assert_eq!(error.kind(), kind, "{status} {body}");
             server.join().unwrap();
         }
@@ -346,11 +383,59 @@ mod tests {
     #[test]
     fn reads_how_long_to_wait_after_too_many_requests() {
         let (base, server) = fake_server("429 Too Many Requests", "Retry-After: 42\r\n", "{}");
-        let error = run(Api::new().unwrap().login(&base, "a", "b", "c")).unwrap_err();
+        let error = run(Api::new().login(&base, "a", "b", "c")).unwrap_err();
         assert!(matches!(
             error,
             Error::Api { ref code, retry_after: Some(42), .. } if code == "rate_limited"
         ));
+        server.join().unwrap();
+    }
+
+    #[test]
+    fn never_waits_more_than_an_hour_whatever_the_server_says() {
+        let (base, server) = fake_server(
+            "429 Too Many Requests",
+            "Retry-After: 18446744073709551615\r\n",
+            "{}",
+        );
+        let error = run(Api::new().login(&base, "a", "b", "c")).unwrap_err();
+        assert!(matches!(
+            error,
+            Error::Api {
+                retry_after: Some(3600),
+                ..
+            }
+        ));
+        server.join().unwrap();
+    }
+
+    #[test]
+    fn does_not_follow_redirects() {
+        let (base, server) = fake_server(
+            "308 Permanent Redirect",
+            "Location: http://example.com/api/auth/token\r\n",
+            "",
+        );
+        let error = run(Api::new().login(&base, "a", "secret", "c")).unwrap_err();
+        assert_eq!(error.kind(), "not_meche_server");
+        server.join().unwrap();
+    }
+
+    #[test]
+    fn a_connection_cut_while_reading_is_a_network_error() {
+        // Announces 100 bytes, sends 2, then closes the connection.
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let base = format!("http://{}", listener.local_addr().unwrap());
+        let server = std::thread::spawn(move || {
+            let (mut stream, _) = listener.accept().unwrap();
+            let mut request = [0; 4096];
+            let _ = stream.read(&mut request).unwrap();
+            stream
+                .write_all(b"HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: 100\r\n\r\n{\"")
+                .unwrap();
+        });
+        let error = run(Api::new().health(&base)).unwrap_err();
+        assert_eq!(error.kind(), "network");
         server.join().unwrap();
     }
 
@@ -362,17 +447,14 @@ mod tests {
             .local_addr()
             .unwrap()
             .port();
-        let error = run(Api::new()
-            .unwrap()
-            .health(&format!("http://127.0.0.1:{port}")))
-        .unwrap_err();
+        let error = run(Api::new().health(&format!("http://127.0.0.1:{port}"))).unwrap_err();
         assert_eq!(error.kind(), "network");
     }
 
     #[test]
     fn refuses_a_server_that_is_not_a_meche_server() {
         let (base, server) = fake_server("200 OK", "", r#"{"hello":"world"}"#);
-        let error = run(Api::new().unwrap().health(&base)).unwrap_err();
+        let error = run(Api::new().health(&base)).unwrap_err();
         assert_eq!(error.kind(), "not_meche_server");
         server.join().unwrap();
     }

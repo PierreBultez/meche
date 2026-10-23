@@ -11,6 +11,8 @@ use crate::error::{Error, Result};
 /// Limits of docs/03 ("Limites").
 pub const MAX_TITLE_CHARS: usize = 500;
 pub const MAX_CONTENT_BYTES: usize = 2 * 1024 * 1024;
+/// The server refuses a longer language (a refused note would block the sync).
+pub const MAX_CODE_LANGUAGE_CHARS: usize = 50;
 
 /// Characters of content read from the database to build a list preview: `list` never loads
 /// whole notes (docs/08, performance).
@@ -467,6 +469,13 @@ fn validate(note: &Note) -> Result<()> {
             "the note is larger than 2 MB".to_string(),
         ));
     }
+    if let Some(language) = &note.code_language
+        && language.chars().count() > MAX_CODE_LANGUAGE_CHARS
+    {
+        return Err(Error::InvalidInput(format!(
+            "the code language is longer than {MAX_CODE_LANGUAGE_CHARS} characters"
+        )));
+    }
     Ok(())
 }
 
@@ -764,6 +773,12 @@ pub fn conflict_title(title: &str, content: &str, kind: NoteKind, at: NaiveDateT
         "" => list_texts("", content, kind).0,
         title => title.to_string(),
     };
+    // Neither title nor text: the name the list gives such a note.
+    let shown = if shown.is_empty() {
+        "Nouvelle note".to_string()
+    } else {
+        shown
+    };
     let room = MAX_TITLE_CHARS - suffix.chars().count();
     let base: String = shown.chars().take(room).collect();
     format!("{}{suffix}", base.trim_end())
@@ -1045,6 +1060,14 @@ mod tests {
             update(&conn, &note.id, huge, 1),
             Err(Error::InvalidInput(_))
         ));
+        let language = NotePatch {
+            code_language: Some("x".repeat(MAX_CODE_LANGUAGE_CHARS + 1)),
+            ..NotePatch::default()
+        };
+        assert!(matches!(
+            update(&conn, &note.id, language, 1),
+            Err(Error::InvalidInput(_))
+        ));
     }
 
     /// A patch of the content, sent by an editor that believes `expected` is stored.
@@ -1168,6 +1191,10 @@ mod tests {
         assert_eq!(
             conflict_title("", "# Liste **Lidl**\n- [ ] pain", NoteKind::Rich, at),
             "Liste Lidl (conflit du 22/10 14:05)"
+        );
+        assert_eq!(
+            conflict_title("", "", NoteKind::Rich, at),
+            "Nouvelle note (conflit du 22/10 14:05)"
         );
         let long = conflict_title(&"é".repeat(MAX_TITLE_CHARS), "", NoteKind::Rich, at);
         assert_eq!(long.chars().count(), MAX_TITLE_CHARS);

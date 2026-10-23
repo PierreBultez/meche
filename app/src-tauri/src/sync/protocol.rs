@@ -84,6 +84,8 @@ pub struct ServerNote {
 #[derive(Debug, Serialize)]
 pub struct SyncRequest<'a> {
     pub cursor: i64,
+    /// The sync history this device knows: the server refuses another one (docs/04).
+    pub sync_id: Option<&'a str>,
     pub changes: &'a [Change],
 }
 
@@ -116,11 +118,22 @@ pub struct SyncResponse {
 }
 
 /// Answer of `POST /api/auth/token` and `POST /api/auth/register`.
-#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[derive(Clone, PartialEq, Eq, Deserialize)]
 pub struct TokenResponse {
     pub token: String,
     pub email: String,
     pub sync_id: String,
+}
+
+/// Written by hand: the token never appears in a log.
+impl std::fmt::Debug for TokenResponse {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("TokenResponse")
+            .field("token", &"…")
+            .field("email", &self.email)
+            .field("sync_id", &self.sync_id)
+            .finish()
+    }
 }
 
 /// Answer of `GET /api/health`.

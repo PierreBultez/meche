@@ -7,8 +7,9 @@ use tauri::State;
 use crate::AppState;
 use crate::error::{Error, Result};
 use crate::sync::config;
-use crate::sync::engine::{Login, SyncStatus};
+use crate::sync::engine::SyncStatus;
 use crate::sync::protocol::{Device, Invitation};
+use crate::sync::session::Login;
 
 #[tauri::command]
 pub async fn get_sync_status(state: State<'_, AppState>) -> Result<SyncStatus> {

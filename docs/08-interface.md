@@ -38,7 +38,7 @@
 ```
 - **Colonne gauche** (280 px, redimensionnable, masquable avec `Ctrl+\`) : recherche, bouton nouvelle note, liste. La largeur va de 220 à 520 px ; on la change en glissant la séparation ou avec `←` `→` quand la séparation a le focus, et elle est mémorisée (réglage `list_width`). Dans la liste, `↑` `↓` passent d'une carte à l'autre et `Entrée` ouvre la note.
 - **Élément de liste** : carte aux couleurs de la note ; titre (ou première ligne), aperçu d'une ligne, date relative, icônes : 📌 épinglée, `</>` note code. Quand la mèche est allumée, le badge mèche (pastille, icône, temps restant) prend la place de la date.
-- **Pied de colonne** : filtre (Toutes / Épinglées / Mèches allumées / Corbeille) et pastille d'état de synchro (vert = à jour, gris = hors ligne, orange = en cours, rouge = erreur ; survol = détail).
+- **Pied de colonne** : filtre (Toutes / Épinglées / Mèches allumées / Corbeille) et pastille d'état de synchro (vert `--ok` = à jour, gris = hors ligne ou pas de serveur, orange `--spark` = en cours, rouge = erreur ; survol = détail). Phase 3 (`components/sync/SyncDot.vue`) : l'orange n'apparaît que si la synchro dure plus de 400 ms (pas de clignotement chaque minute) ; un clic synchronise maintenant, ou ouvre Réglages › Serveur sans serveur connecté. La pastille a son propre store : elle ne redessine jamais la liste.
 - **En-tête de note** : titre éditable, temps restant « Explose dans … » quand la mèche est allumée, bouton mèche, épingler, menu ⋯ (couleur de la note, convertir riche/code, copier en Markdown, retour à la ligne pour le code, mettre à la corbeille).
 - **Mode concentration** (`Ctrl+Shift+F`) : masque la colonne et l'en-tête.
 
@@ -64,7 +64,7 @@ Fonctionnement (phase 1) :
 - Palette vide : les 5 premières notes de la liste, puis toutes les actions.
 - En tapant : d'abord les actions dont chaque mot tapé commence un mot (« nouv code » → « Nouvelle note code »), puis les notes (recherche plein texte, 8 au plus, avec l'extrait surligné). Les actions trouvées seulement en recherche floue (« nvnote ») ne s'affichent que si rien d'autre ne correspond : sinon elles noient les résultats.
 - `↑` `↓` pour choisir, `Entrée` pour lancer, `Échap` ou un clic à côté pour fermer, `Ctrl+K` pour rouvrir ou fermer.
-- Actions de la phase 1 : nouvelle note, nouvelle note code ; pour la note ouverte : épingler / désépingler, les 7 autres couleurs, convertir riche ↔ code, mettre à la corbeille (ou restaurer si elle y est) ; afficher toutes / épinglées / mèches allumées / corbeille ; thème clair / sombre / système ; masquer ou afficher la liste ; mode concentration ; réglages. Phase 2 : « Nouvelle note à mèche » (toujours) et « Allumer / Éteindre la mèche » (note ouverte, hors corbeille). La synchro et l'import arrivent avec leur phase.
+- Actions de la phase 1 : nouvelle note, nouvelle note code ; pour la note ouverte : épingler / désépingler, les 7 autres couleurs, convertir riche ↔ code, mettre à la corbeille (ou restaurer si elle y est) ; afficher toutes / épinglées / mèches allumées / corbeille ; thème clair / sombre / système ; masquer ou afficher la liste ; mode concentration ; réglages. Phase 2 : « Nouvelle note à mèche » (toujours) et « Allumer / Éteindre la mèche » (note ouverte, hors corbeille). Phase 3 : « Synchroniser maintenant » (quand un serveur est connecté ; une notification dit si la synchro a réussi). L'import arrive avec sa phase.
 
 ## Raccourcis desktop
 
@@ -92,7 +92,8 @@ Précisions (phase 1) :
 
 - **Réglages** : serveur (URL, test de connexion, connexion / déconnexion, nom de l'appareil, dernière synchro), mèche (un seul délai : 1 h, 24 h, 3 j, 7 j ou 30 j ; 7 j par défaut ; ne change pas les mèches déjà allumées), apparence (thème, taille du texte), import Standard Notes, à propos (version, mises à jour).
   En phase 1 : thème, retour à la ligne des notes code, version. Phase 2 : section « Mèche ». Les autres sections arrivent avec leur phase ; la taille du texte n'est pas encore proposée.
-- **Premier lancement** : écran simple « Connecter un serveur » ou « Utiliser hors ligne pour l'instant ».
+  Phase 3 : section « Serveur » en tête (`components/settings/ServerSettings.vue`). Sans compte : « J'ai un compte » / « Créer un compte » (avec un code d'invitation), adresse du serveur (`https://meche.pierrebultez.com` proposée) avec « Tester », e-mail, mot de passe, nom de l'appareil (le nom de l'ordinateur par défaut). Se connecter à un autre compte que le précédent demande d'abord une confirmation (ses notes y seront envoyées). Une fois connecté : serveur, compte, appareil, état de la synchro, écart d'horloge éventuel, « Synchroniser maintenant », « Se déconnecter » ; puis « Appareils connectés » (déconnecter un appareil perdu) et « Inviter quelqu'un » (codes d'invitation, affichés une seule fois, avec « Copier » et « Retirer »).
+- **Premier lancement** (phase 3, `views/WelcomeView.vue`) : écran simple « Connecter un serveur » ou « Utiliser hors ligne pour l'instant », affiché au démarrage tant qu'aucun serveur n'est connecté et que la question n'a pas reçu de réponse (réglage `welcome_done`).
 - **États vides** : liste vide, recherche sans résultat, corbeille vide. Textes : voir « Ton des textes » dans `11-direction-artistique.md`.
 
 ## Budgets de performance (à mesurer)

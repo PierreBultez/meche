@@ -36,7 +36,7 @@ Champs **locaux uniquement** (client) :
 Champ **serveur uniquement** :
 | Champ | Description |
 |---|---|
-| `rev` | Numéro de séquence global, croissant, attribué à chaque écriture |
+| `rev` | Numéro de séquence croissant, propre à chaque compte, attribué à chaque écriture |
 
 ## Client — SQLite
 
@@ -95,7 +95,8 @@ CREATE TABLE settings (
   key   TEXT PRIMARY KEY,
   value TEXT NOT NULL
 );
--- Clés : server_url, api_token, device_name, sync_cursor, last_sync_at,
+-- Clés : server_url, api_token, account_email, device_name, sync_cursor, last_sync_at,
+--        server_sync_id, welcome_done (écran de premier lancement déjà répondu),
 --        fuse_delay_hours (délai de la mèche : 1, 24, 72, 168 ou 720 ; 168 par défaut),
 --        theme ('system'|'light'|'dark'),
 --        list_width (largeur de la colonne des notes en px, 220 à 520, 280 par défaut),
@@ -107,6 +108,8 @@ CREATE TABLE import_triage (
   position  INTEGER NOT NULL
 );
 ```
+
+Réglages de la synchro (phase 3, `sync/config.rs`) : `server_url` (adresse de base, sans `/api`), `api_token` (jeton de l'appareil : il ne quitte jamais Rust, ni `get_settings` ni `get_sync_status` ne le renvoient), `account_email` (gardé après une déconnexion, pour prévenir avant de synchroniser l'appareil avec un autre compte), `device_name`, `sync_cursor`, `last_sync_at`, `server_sync_id` (voir `04-synchronisation.md`, « Identité du serveur »). La phase 3 n'a pas demandé de migration 003 : les colonnes `server_rev`, `dirty` et `deleted` existent depuis la migration 001, les index en place suffisent, et les nouveaux réglages sont des clés de la table `settings`.
 
 Réglage de la mèche (phase 2) : une seule clé, `fuse_delay_hours`. Une valeur stockée hors de la liste revient à 168 ; un `set_settings` hors liste est refusé (`invalid_input`). Le commentaire de la migration 001 cite encore les anciennes clés `default_delay_hours_delay` et `default_delay_hours_on_complete`, jamais utilisées : la migration étant publiée, il n'est pas modifié.
 
@@ -129,9 +132,43 @@ Depuis la migration 002 (`002_search_decoded_text.sql`), l'index ne lit plus la 
 
 L'extrait est pris dans la colonne qui correspond le mieux (`-1` : titre ou contenu). Les correspondances y sont entourées de U+E000 / U+E001 (et non de `<mark>`, voir `02-architecture.md`), puis Rust retire la syntaxe Markdown de l'extrait pour n'en garder qu'une ligne de texte.
 
-## Serveur — MySQL (migration Laravel)
+## Serveur — MariaDB (migrations Laravel)
+
+Production : MariaDB 12.3 (pilote `mariadb` de Laravel). Les tests Pest tournent sur SQLite en local et sur MariaDB dans la CI. Migrations dans `server/database/migrations/` :
 
 ```php
+// users : pas de réinitialisation par e-mail ni de sessions (l'API ne connaît que des jetons)
+Schema::create('users', function (Blueprint $table) {
+    $table->id();
+    $table->string('name');
+    $table->string('email')->unique();
+    $table->string('password');
+    $table->foreignId('invited_by')->nullable()->constrained('users')->nullOnDelete();  // qui a invité ce compte
+    $table->timestamps();
+});
+
+// personal_access_tokens : migration de Sanctum, telle quelle (un jeton par appareil)
+
+// Compteur de révision et identité de l'historique de synchro (une ligne par compte)
+Schema::create('sync_counters', function (Blueprint $table) {
+    $table->foreignId('user_id')->primary()->constrained()->cascadeOnDelete();
+    $table->unsignedBigInteger('value')->default(0);
+    $table->uuid('sync_id');
+});
+
+// Codes d'invitation (dates en ms, seule l'empreinte SHA-256 du code est gardée)
+Schema::create('invitations', function (Blueprint $table) {
+    $table->id();
+    $table->foreignId('user_id')->constrained()->cascadeOnDelete();
+    $table->char('code_hash', 64)->unique();
+    $table->char('hint', 4);                       // 4 derniers caractères, pour la liste
+    $table->unsignedBigInteger('created_at');
+    $table->unsignedBigInteger('expires_at');
+    $table->foreignId('used_by')->nullable()->constrained('users')->nullOnDelete();
+    $table->unsignedBigInteger('used_at')->nullable();
+    $table->index(['user_id', 'used_at']);
+});
+
 Schema::create('notes', function (Blueprint $table) {
     $table->uuid('id')->primary();
     $table->foreignId('user_id')->constrained()->cascadeOnDelete();
@@ -151,26 +188,23 @@ Schema::create('notes', function (Blueprint $table) {
     $table->unsignedBigInteger('created_at');   // ms, pas les timestamps() Laravel
     $table->unsignedBigInteger('updated_at');
     $table->unsignedBigInteger('rev');
-    $table->index(['user_id', 'rev']);
-    $table->index(['destroy_at']);
-    $table->index(['trashed_at']);
-});
-
-// Compteur de révision global (une ligne par utilisateur)
-Schema::create('sync_counters', function (Blueprint $table) {
-    $table->foreignId('user_id')->primary()->constrained()->cascadeOnDelete();
-    $table->unsignedBigInteger('value')->default(0);
+    $table->unique(['user_id', 'rev']);         // la réception lit `rev > cursor` le long de cet index
+    $table->index('destroy_at');                // notes:maintenance
+    $table->index('trashed_at');
 });
 ```
 
-Le modèle Eloquent `Note` désactive les timestamps automatiques (`public $timestamps = false;`) : `created_at` et `updated_at` sont fournis par le client en millisecondes.
+Il n'y a pas de modèle Eloquent `Note` : le serveur ne lit et n'écrit les notes qu'avec le Query Builder (`server/app/Sync/`). `created_at` et `updated_at` sont fournis par le client, en millisecondes.
 
-Attribution d'une révision (dans la transaction de synchro) :
+Attribution des révisions (décidé en phase 3, à la place de `LAST_INSERT_ID` note par note) : chaque transaction qui écrit commence par verrouiller la ligne du compteur, puis attribue toutes ses révisions en une fois :
 ```sql
-UPDATE sync_counters SET value = LAST_INSERT_ID(value + 1) WHERE user_id = ?;
-SELECT LAST_INSERT_ID();
+SELECT value, sync_id FROM sync_counters WHERE user_id = ? FOR UPDATE;   -- verrou jusqu'à la fin
+-- … n notes écrites avec les révisions value+1 … value+n …
+UPDATE sync_counters SET value = value + n WHERE user_id = ?;
 ```
+Même garantie (les écritures d'un compte se suivent, leurs révisions sont validées dans l'ordre), moins de requêtes, et cela fonctionne aussi sur SQLite pour les tests.
 
 ## Limites
-- `content` : 2 Mo maximum par note (validé côté client et serveur).
+- `content` : 2 Mo maximum par note, comptés en octets (validé côté client et serveur).
 - `title` : 500 caractères.
+- Une requête de synchro : 200 notes et environ 4 Mo dans chaque sens (`04-synchronisation.md`).

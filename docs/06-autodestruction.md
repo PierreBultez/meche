@@ -43,9 +43,12 @@ Côté client (Rust), la **maintenance** (`ephemeral::run_maintenance`) enchaîn
 
 Quand elle a modifié des notes, Rust émet l'événement `notes-changed` et l'interface recharge la liste et la note ouverte. Au démarrage et dans `list_notes`, un échec de la maintenance est journalisé sans bloquer : la liste s'affiche quand même, et le fil réessaie une minute plus tard. Mesuré (build release, 1 000 notes dont 100 mèches) : 1 ms quand rien n'est échu, 4 ms quand les 100 notes explosent d'un coup.
 
-Côté serveur (phase 3) : commande planifiée `notes:maintenance` (toutes les 10 minutes), **exactement la même règle** (bornes incluses : `destroy_at <= now` ; même tombstone). Elle garantit la destruction même si aucun appareil n'est ouvert.
+Côté serveur (phase 3) : commande planifiée `notes:maintenance` (toutes les 10 minutes, `server/app/Console/Commands/Maintenance.php`), **exactement la même règle** (bornes incluses : `destroy_at <= now` ; `trashed_at = destroy_at` ; même tombstone). Elle garantit la destruction même si aucun appareil n'est ouvert. Vérifié dans la vraie application : qu'un appareil fasse exploser la note avant le serveur, ou le serveur avant les appareils (fermés pendant ce temps), les deux versions sont reconnues identiques, sans copie de conflit ni nouvelle révision.
 
-Fenêtre connue, à traiter dans la conception de la synchro (phase 3) : entre `destroy_at` et la maintenance suivante (60 s au plus), une note échue peut encore être modifiée, éteinte ou mise à la corbeille à la main. Si le serveur l'a déjà fait exploser entre-temps, la synchro produira une copie « (conflit du …) » : rien n'est perdu.
+**La fenêtre d'une minute** (tranchée en phase 3) : entre `destroy_at` et la maintenance suivante (60 s au plus), une note échue semble encore vivante. Le serveur, qui la fait exploser toutes les 10 minutes, l'a peut-être déjà fait.
+- **Éteindre la mèche** ou **mettre à la corbeille** une telle note n'est plus possible : `set_ephemeral` et `trash_note` lancent d'abord la maintenance (`ephemeral::maintenance_before_action`, environ 1 ms). La note explose d'abord, comme elle aurait dû ; éteindre la mèche renvoie alors la note explosée, sans erreur (« Sa mèche a brûlé : cette note est dans la corbeille. »), et la mettre à la corbeille est déjà fait.
+- **Le texte tapé pendant cette minute** est enregistré dans la note (règle ci-dessous). Si le serveur l'avait déjà fait exploser avec l'ancien texte, la synchro garde le nouveau dans une copie « (conflit du …) », qui part elle aussi à la corbeille puisqu'elle porte l'explosion. Rien n'est perdu.
+- Le plus souvent, l'appareil fait exploser la note avant le serveur (60 s contre 10 min) et l'envoie : le serveur l'accepte, sans conflit.
 
 **Si la note est ouverte au moment de la destruction** : elle reste affichée, en lecture seule, avec le bandeau de la corbeille (« Sa mèche a brûlé : cette note est dans la corbeille. »). Ce qui était en train d'être tapé est enregistré : `update_note` accepte volontairement une note de la corbeille et ne touche ni à la mèche ni à `trashed_at`.
 
@@ -54,7 +57,7 @@ Fenêtre connue, à traiter dans la conception de la synchro (phase 3) : entre `
 - Une note autodétruite ou supprimée manuellement va dans la **corbeille** (`trashed_at` renseigné).
 - Elle y reste **7 jours** (`TRASH_RETENTION_DAYS = 7`, constante côté client et `config('notes.trash_retention_days')` côté serveur).
 - Ensuite, **purge** (`ephemeral::purge_trash`, notes avec `trashed_at <= now − 7 jours`) : une note jamais synchronisée (`server_rev = 0`) est supprimée de la base ; une note connue du serveur devient un tombstone (`deleted = 1`, titre et contenu vidés, `dirty = 1`), propagé aux autres appareils à la prochaine synchro.
-- Tant qu'il n'y a pas de serveur, **le client purge toujours** (à chaque maintenance). C'est sans risque pour la phase 3 : la purge est déterministe, et le tombstone l'emporte de toute façon en cas de conflit. Comme `trashed_at = destroy_at`, une note dont la mèche a brûlé plus de 7 jours avant l'ouverture de l'application est purgée dès le démarrage, sans passer par la corbeille visible.
+- **Le client purge toujours** (à chaque maintenance), qu'un serveur soit connecté ou non (décidé en phase 3) : la purge est déterministe, fonctionne hors ligne, et un tombstone envoyé après celui du serveur est reconnu identique. Comme `trashed_at = destroy_at`, une note dont la mèche a brûlé plus de 7 jours avant l'ouverture de l'application est purgée dès le démarrage, sans passer par la corbeille visible.
 - Si la note purgée est ouverte, elle est fermée.
 
 Actions dans la corbeille : **Restaurer**, **Supprimer définitivement**, **Vider la corbeille** (confirmation obligatoire).

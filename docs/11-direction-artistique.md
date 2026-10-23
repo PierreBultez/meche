@@ -34,7 +34,8 @@ Définis comme variables CSS (Tailwind 4 `@theme` + surcharge `[data-theme="dark
 | `--on-brand` | `#FFFFFF` | `#1A1446` | Texte sur `--brand` |
 | `--danger` | `#D11F2A` | `#FF647F` | Suppression, erreurs |
 | `--fuse` | `#A8815B` | `#8C7A5B` | Cordon de l'icône mèche allumée |
-| `--spark` | `#DA6800` | `#FFC93C` | Étincelle, mèche allumée |
+| `--spark` | `#DA6800` | `#FFC93C` | Étincelle, mèche allumée, pastille de synchro « en cours » |
+| `--ok` | `#2B8100` | `#A6E22E` | Pastille de synchro « à jour » (phase 3 : le vert du thème du code, Monokai en sombre) |
 | `--selection` | `#7B2FF733` | `#AE81FF4D` | Sélection de texte |
 
 ## Couleur par note

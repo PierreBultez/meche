@@ -33,6 +33,22 @@ pub enum Error {
     /// A command panicked while it held the database lock (see `AppState::lock_db`).
     #[error("the database is unavailable after an internal error")]
     DatabaseLockPoisoned,
+
+    /// The server could not be reached: no network, server down, timeout (docs/04).
+    #[error("server unreachable: {0}")]
+    Network(String),
+
+    /// The server answered with an error. `code` is its stable error code (`invalid_credentials`,
+    /// `unauthorized`, `rate_limited`…, see server/app/Http/Controllers/Api), or `server` when
+    /// it gave none (an Apache error page, a crash).
+    #[error("server error {status} {code}: {message}")]
+    Api {
+        status: u16,
+        code: String,
+        message: String,
+        /// Seconds to wait before trying again (429 answers).
+        retry_after: Option<u64>,
+    },
 }
 
 /// Shorthand: `Result<Settings>` means `std::result::Result<Settings, Error>`.
@@ -49,8 +65,32 @@ impl Error {
             Error::NotFound(_) => "not_found",
             Error::InvalidInput(_) => "invalid_input",
             Error::DatabaseLockPoisoned => "database_lock",
+            Error::Network(_) => "network",
+            Error::Api { code, .. } => api_kind(code),
         }
     }
+}
+
+/// The server's error codes the frontend knows, as `kind` (a `&'static str`: the code comes
+/// from the network, so it is matched against the known ones). Any other code is `server`.
+fn api_kind(code: &str) -> &'static str {
+    const KNOWN: [&str; 11] = [
+        "invalid_credentials",
+        "invalid_invitation",
+        "invalid_email",
+        "email_taken",
+        "weak_password",
+        "too_many_invitations",
+        "unauthorized",
+        "rate_limited",
+        "not_meche_server",
+        "invalid_input",
+        "not_found",
+    ];
+    KNOWN
+        .into_iter()
+        .find(|known| *known == code)
+        .unwrap_or("server")
 }
 
 /// Tauri sends a command's error to the frontend as JSON, so it must be serializable.
@@ -69,6 +109,19 @@ impl Serialize for Error {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn server_errors_keep_the_known_codes_only() {
+        let api = |code: &str| Error::Api {
+            status: 422,
+            code: code.to_string(),
+            message: String::new(),
+            retry_after: None,
+        };
+        assert_eq!(api("email_taken").kind(), "email_taken");
+        assert_eq!(api("something_new").kind(), "server");
+        assert_eq!(Error::Network("timeout".to_string()).kind(), "network");
+    }
 
     #[test]
     fn serializes_kind_and_message_for_the_frontend() {

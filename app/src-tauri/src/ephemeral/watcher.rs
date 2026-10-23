@@ -44,6 +44,8 @@ fn maintain(app: &AppHandle) -> Result<()> {
     }; // The lock is released here, before the event is sent.
     if changed {
         notify_notes_changed(app);
+        // Exploded and purged notes are dirty: they go to the server soon.
+        state.sync.local_change();
     }
     Ok(())
 }

@@ -104,7 +104,7 @@ pub fn apply_patch(conn: &mut Connection, patch: SettingsPatch) -> Result<Settin
 /// `T` is generic so the same function works for every setting type (theme, URL, delays…).
 /// Returns `None` if the key is missing or its value cannot be read (for instance a value
 /// written by a newer version of Mèche): the caller then uses the default value.
-fn read<T: DeserializeOwned>(conn: &Connection, key: &str) -> Result<Option<T>> {
+pub(crate) fn read<T: DeserializeOwned>(conn: &Connection, key: &str) -> Result<Option<T>> {
     let raw: Option<String> = conn
         .query_row("SELECT value FROM settings WHERE key = ?1", [key], |row| {
             row.get(0)
@@ -114,7 +114,7 @@ fn read<T: DeserializeOwned>(conn: &Connection, key: &str) -> Result<Option<T>> 
 }
 
 /// Writes one setting as JSON, replacing any previous value.
-fn write<T: Serialize>(conn: &Connection, key: &str, value: &T) -> Result<()> {
+pub(crate) fn write<T: Serialize>(conn: &Connection, key: &str, value: &T) -> Result<()> {
     let json = serde_json::to_string(value)?;
     conn.execute(
         "INSERT INTO settings (key, value) VALUES (?1, ?2)

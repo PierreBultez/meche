@@ -13,6 +13,9 @@ use crate::time::now_ms;
 
 // `id: String` (owned) rather than `&str`: Tauri builds the arguments from the JSON sent by the
 // frontend, so the command receives values it owns.
+//
+// After every change, `state.sync.local_change()` tells the sync engine, which syncs 2 s after
+// the last one (docs/04). It only sends a message: it never waits.
 
 /// Burns the fuses first (docs/06), so a list never shows a note whose fuse has burnt out.
 /// When that moved notes, the frontend is told as well: the open note may be one of them.
@@ -29,6 +32,7 @@ pub async fn list_notes(
     }; // The database lock is released here, before the event.
     if changed {
         watcher::notify_notes_changed(&app);
+        state.sync.local_change();
     }
     Ok(summaries)
 }
@@ -47,13 +51,17 @@ pub async fn create_note(
     kind: NoteKind,
     fused: Option<bool>,
 ) -> Result<Note> {
-    let conn = state.lock_db()?;
-    if fused == Some(true) {
-        let delay_hours = settings::load(&conn)?.fuse_delay_hours;
-        notes::create_fused(&conn, kind, delay_hours, now_ms())
-    } else {
-        notes::create(&conn, kind, now_ms())
-    }
+    let note = {
+        let conn = state.lock_db()?;
+        if fused == Some(true) {
+            let delay_hours = settings::load(&conn)?.fuse_delay_hours;
+            notes::create_fused(&conn, kind, delay_hours, now_ms())?
+        } else {
+            notes::create(&conn, kind, now_ms())?
+        }
+    };
+    state.sync.local_change();
+    Ok(note)
 }
 
 /// Lights or puts out the fuse of a note (docs/06). A fuse is lit with the delay of the settings.
@@ -82,13 +90,15 @@ pub async fn set_ephemeral(
     if before.changed {
         watcher::notify_notes_changed(&app);
     }
+    state.sync.local_change();
     Ok(note)
 }
 
 #[tauri::command]
 pub async fn update_note(state: State<'_, AppState>, id: String, patch: NotePatch) -> Result<Note> {
-    let conn = state.lock_db()?;
-    notes::update(&conn, &id, patch, now_ms())
+    let note = notes::update(&*state.lock_db()?, &id, patch, now_ms())?;
+    state.sync.local_change();
+    Ok(note)
 }
 
 /// A note whose fuse has just burnt out explodes first: it is then in the trash already, which
@@ -107,19 +117,22 @@ pub async fn trash_note(app: AppHandle, state: State<'_, AppState>, id: String) 
     if before.changed {
         watcher::notify_notes_changed(&app);
     }
+    state.sync.local_change();
     Ok(())
 }
 
 #[tauri::command]
 pub async fn restore_note(state: State<'_, AppState>, id: String) -> Result<()> {
-    let conn = state.lock_db()?;
-    notes::restore(&conn, &id, now_ms())
+    notes::restore(&*state.lock_db()?, &id, now_ms())?;
+    state.sync.local_change();
+    Ok(())
 }
 
 #[tauri::command]
 pub async fn delete_note_forever(state: State<'_, AppState>, id: String) -> Result<()> {
-    let conn = state.lock_db()?;
-    notes::delete_forever(&conn, &id, now_ms())
+    notes::delete_forever(&*state.lock_db()?, &id, now_ms())?;
+    state.sync.local_change();
+    Ok(())
 }
 
 /// Full-text search, run at each keystroke (docs/08: under 30 ms for 1,000 notes).
@@ -132,6 +145,7 @@ pub async fn search(state: State<'_, AppState>, query: String) -> Result<Vec<Sea
 /// Returns how many notes were deleted.
 #[tauri::command]
 pub async fn empty_trash(state: State<'_, AppState>) -> Result<usize> {
-    let mut conn = state.lock_db()?;
-    notes::empty_trash(&mut conn, now_ms())
+    let count = notes::empty_trash(&mut *state.lock_db()?, now_ms())?;
+    state.sync.local_change();
+    Ok(count)
 }

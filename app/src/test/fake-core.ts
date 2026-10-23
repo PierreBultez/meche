@@ -73,10 +73,13 @@ export function installFakeCore(): FakeCore {
         .filter((note) => (filter === "trash" ? note.trashedAt !== null : note.trashedAt === null))
         .filter((note) => filter !== "pinned" || note.pinned)
         .filter((note) => filter !== "ephemeral" || note.ephemeralMode !== null)
+        // Same orders as Rust (db::notes::list).
         .sort((a, b) =>
-          filter === "ephemeral"
-            ? (a.destroyAt ?? Infinity) - (b.destroyAt ?? Infinity)
-            : Number(b.pinned) - Number(a.pinned) || b.updatedAt - a.updatedAt,
+          filter === "trash"
+            ? (b.trashedAt ?? 0) - (a.trashedAt ?? 0)
+            : filter === "ephemeral"
+              ? (a.destroyAt ?? Infinity) - (b.destroyAt ?? Infinity) || b.updatedAt - a.updatedAt
+              : Number(b.pinned) - Number(a.pinned) || b.updatedAt - a.updatedAt,
         )
         .map(summary),
     get_note: ({ id }) => ({ ...find(id as string) }),

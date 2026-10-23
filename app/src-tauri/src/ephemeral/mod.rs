@@ -75,8 +75,8 @@ pub fn run_maintenance(conn: &mut Connection, now: i64) -> Result<bool> {
 /// counts as "nothing changed": the transaction is rolled back when it is dropped, and the
 /// watcher tries again a minute later.
 ///
-/// A second Mèche window writing at the same time is not an error: rusqlite waits up to 5 s
-/// for the database to be free (its default busy timeout), and every write here takes a few ms.
+/// A second Mèche window writing at the same time is not an error: the connection waits up to
+/// 5 s for the database to be free (`db::prepare`), and every write here takes a few ms.
 pub fn run_maintenance_or_log(conn: &mut Connection, now: i64) -> bool {
     match run_maintenance(conn, now) {
         Ok(changed) => changed,

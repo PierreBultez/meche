@@ -37,6 +37,8 @@ export const useNotesStore = defineStore("notes", () => {
 
   let listRequest = 0;
   let openRequest = 0;
+  /** The note asked by the latest open request (it may still be loading), or null. */
+  let wantedId: string | null = null;
   let searchRequest = 0;
 
   /** Ids in the order they are shown (search results first when searching). */
@@ -62,6 +64,7 @@ export const useNotesStore = defineStore("notes", () => {
 
   async function open(id: string | null): Promise<void> {
     const request = ++openRequest;
+    wantedId = id;
     if (id === null) {
       current.value = null;
       return;
@@ -79,6 +82,7 @@ export const useNotesStore = defineStore("notes", () => {
       filter.value = "all";
     }
     openRequest++;
+    wantedId = note.id;
     current.value = note;
     await refresh();
     return note;
@@ -115,7 +119,10 @@ export const useNotesStore = defineStore("notes", () => {
     await refresh();
     const id = current.value?.id;
     if (id === undefined) return true;
-    const stillWanted = () => request === openRequest && current.value?.id === id;
+    // Also false while another note is being opened (asked before the event, still loading):
+    // that note must neither be replaced nor lose its page to a redirection.
+    const stillWanted = () =>
+      request === openRequest && current.value?.id === id && wantedId === id;
     try {
       const note = await getNote(id);
       if (stillWanted()) current.value = note;

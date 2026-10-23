@@ -187,6 +187,21 @@ describe("notes store", () => {
       expect(store.current?.id).toBe(b.id);
     });
 
+    it("opened before the event, the note open before purged meanwhile: no redirection", async () => {
+      const store = useNotesStore();
+      const a = await store.create("rich");
+      const b = await store.create("rich");
+      await store.open(a.id);
+      const getB = core.hold("get_note");
+      const opening = store.open(b.id);
+      await nextTask();
+      core.notes = core.notes.filter((note) => note.id !== a.id);
+      expect(await store.reload()).toBe(true);
+      getB.release();
+      await opening;
+      expect(store.current?.id).toBe(b.id);
+    });
+
     it("the note open before was purged meanwhile: no redirection", async () => {
       const store = useNotesStore();
       const a = await store.create("rich");

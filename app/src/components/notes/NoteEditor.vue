@@ -6,6 +6,7 @@ import { computed, defineAsyncComponent, nextTick, onMounted, ref, watch } from 
 import { useRouter } from "vue-router";
 import { useAutosave } from "../../composables/useAutosave";
 import { useNoteActions } from "../../composables/useNoteActions";
+import { useNow } from "../../composables/useNow";
 import { useNotesStore } from "../../stores/notes";
 import { useSettingsStore } from "../../stores/settings";
 import { useToastsStore } from "../../stores/toasts";
@@ -40,9 +41,10 @@ const fuseLit = computed(() => props.note.ephemeralMode !== null);
 const exploded = computed(() => props.note.trashReason === "self_destruct");
 /** Restoring puts the fuse out: the note exploded, or its fuse burnt out in the trash (Rust,
  * db::notes::restore). */
+const now = useNow();
 const restoresWithoutFuse = computed(
   () =>
-    exploded.value || (props.note.destroyAt !== null && props.note.destroyAt <= Date.now()),
+    exploded.value || (props.note.destroyAt !== null && props.note.destroyAt <= now.value),
 );
 const restoreButton = ref<HTMLButtonElement | null>(null);
 const header = ref<HTMLElement | null>(null);
@@ -52,9 +54,11 @@ const header = ref<HTMLElement | null>(null);
 // typed (Espace, Entrée) must not press the button. The watcher runs before the page is
 // updated, so the header is still there to be checked.
 watch(inTrash, async (trashed) => {
-  if (!trashed || !header.value?.contains(document.activeElement)) return;
+  const active = document.activeElement;
+  if (!trashed || !header.value?.contains(active)) return;
   await nextTick();
-  restoreButton.value?.focus();
+  // The title field stays (read-only): only a button that was removed hands the focus over.
+  if (!active?.isConnected) restoreButton.value?.focus();
 });
 const rich = ref<InstanceType<typeof RichEditorComponent> | null>(null);
 const code = ref<InstanceType<typeof CodeEditorComponent> | null>(null);
@@ -216,9 +220,9 @@ defineExpose({
         @keydown.enter.prevent="onTitleEnter"
       />
       <template v-if="!inTrash">
+        <!-- May shrink (its text is cut) so that a narrow window keeps room for the title. -->
         <UiSelect
           v-if="note.kind === 'code'"
-          class="shrink-0"
           label="Langage"
           :model-value="normalizeLanguage(note.codeLanguage) ?? 'plaintext'"
           :options="languageOptions"

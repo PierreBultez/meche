@@ -69,7 +69,14 @@ export const useNotesStore = defineStore("notes", () => {
       current.value = null;
       return;
     }
-    const note = await getNote(id);
+    let note: Note;
+    try {
+      note = await getNote(id);
+    } catch (error) {
+      // Not opened: the note still open is the one wanted (reload() keeps refreshing it).
+      if (request === openRequest) wantedId = current.value?.id ?? null;
+      throw error;
+    }
     if (request === openRequest) {
       current.value = note;
     }

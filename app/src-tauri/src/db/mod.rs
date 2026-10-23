@@ -39,10 +39,11 @@ pub fn open_in_memory() -> Result<Connection> {
 fn prepare(conn: &mut Connection) -> Result<()> {
     // WAL journal: faster writes, and SQLite readers do not wait for a writer.
     // This mode is saved in the file, so setting it again at each opening is harmless.
-    conn.execute_batch("PRAGMA journal_mode = WAL;")?;
     // When another connection writes (a second Mèche window), wait up to 5 s instead of failing
-    // at once. rusqlite already does this by default; it is written here so it cannot change.
+    // at once, from the first statement on. rusqlite already does this by default; it is written
+    // here so it cannot change.
     conn.busy_timeout(Duration::from_secs(5))?;
+    conn.execute_batch("PRAGMA journal_mode = WAL;")?;
     migrations::run(conn, &migrations::MIGRATIONS)
 }
 

@@ -1,6 +1,6 @@
 // The open note explodes (docs/06): where does the keyboard focus go?
 import { clearMocks } from "@tauri-apps/api/mocks";
-import { flushPromises, mount } from "@vue/test-utils";
+import { enableAutoUnmount, flushPromises, mount } from "@vue/test-utils";
 import { createPinia, setActivePinia } from "pinia";
 import { afterEach, describe, expect, it } from "vitest";
 import { defineComponent, h, nextTick, ref } from "vue";
@@ -48,6 +48,9 @@ async function openBurningNote() {
   return { wrapper, explode };
 }
 
+// Unmounted even when a test fails: the editor and its clock never outlive their test.
+enableAutoUnmount(afterEach);
+
 describe("focus when the open note explodes", () => {
   afterEach(() => {
     clearMocks();
@@ -59,7 +62,6 @@ describe("focus when the open note explodes", () => {
     (wrapper.find('button[aria-label="Épingler"]').element as HTMLElement).focus();
     await explode();
     expect(document.activeElement?.textContent).toContain("Restaurer (la mèche est éteinte)");
-    wrapper.unmount();
   });
 
   it("stays in the title being typed: a key typed next must not restore the note", async () => {
@@ -68,6 +70,5 @@ describe("focus when the open note explodes", () => {
     title.focus();
     await explode();
     expect(document.activeElement).toBe(title);
-    wrapper.unmount();
   });
 });

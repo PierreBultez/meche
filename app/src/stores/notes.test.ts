@@ -187,6 +187,16 @@ describe("notes store", () => {
       expect(store.current?.id).toBe(b.id);
     });
 
+    it("a note that could not be opened does not stop the open note from reloading", async () => {
+      const store = useNotesStore();
+      const a = await store.create("rich");
+      await expect(store.open("missing")).rejects.toMatchObject({ kind: "not_found" });
+      Object.assign(core.notes[0], { trashedAt: 5, trashReason: "self_destruct" });
+      await store.reload();
+      expect(store.current?.id).toBe(a.id);
+      expect(store.current?.trashReason).toBe("self_destruct");
+    });
+
     it("opened before the event, the note open before purged meanwhile: no redirection", async () => {
       const store = useNotesStore();
       const a = await store.create("rich");

@@ -685,7 +685,9 @@ pub fn empty_trash(conn: &mut Connection, now: i64) -> Result<usize> {
     Ok(ids.len())
 }
 
-fn remove_or_tombstone(conn: &Connection, id: &str, now: i64) -> Result<()> {
+/// Removes a note that the server has never seen, or turns it into a tombstone (docs/04).
+/// `pub(crate)`: also used by the trash purge (`ephemeral`).
+pub(crate) fn remove_or_tombstone(conn: &Connection, id: &str, now: i64) -> Result<()> {
     conn.execute("DELETE FROM notes WHERE id = ?1 AND server_rev = 0", [id])?;
     conn.execute(
         "UPDATE notes SET deleted = 1, title = '', content = '', updated_at = ?2, dirty = 1

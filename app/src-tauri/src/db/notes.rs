@@ -664,6 +664,11 @@ pub fn list(conn: &Connection, filter: ListFilter) -> Result<Vec<NoteSummary>> {
 
 /// Applies `patch` to note `id` and returns the updated note. Nothing is written (and the
 /// note is not marked as modified) when the patch changes nothing.
+///
+/// A note in the trash is accepted on purpose, although the interface shows it read-only: when
+/// the open note explodes while you type, the last save arrives after the explosion and must
+/// not be lost (docs/06). The fuse and trash columns are never touched here, so the explosion
+/// stays as it was (trashed_at = destroy_at).
 pub fn update(conn: &Connection, id: &str, patch: NotePatch, now: i64) -> Result<Note> {
     let current = get(conn, id)?;
     // `clone()` makes an independent copy, so `current` stays untouched for the comparison.
@@ -1261,6 +1266,36 @@ mod tests {
         let edited = update(&conn, &note.id, patch, 5_000).unwrap();
         assert_eq!(edited.ephemeral_started_at, Some(0));
         assert_eq!(edited.destroy_at, Some(24 * HOUR));
+    }
+
+    #[test]
+    fn what_was_typed_when_the_note_exploded_is_still_saved() {
+        let mut conn = open_in_memory().unwrap();
+        let note = create_fused(&conn, NoteKind::Rich, 1, 0).unwrap();
+        assert!(ephemeral::run_maintenance(&mut conn, HOUR).unwrap());
+        let exploded = get(&conn, &note.id).unwrap();
+
+        let late_save = NotePatch {
+            content: Some("Lait, pain".to_string()),
+            ..NotePatch::default()
+        };
+        let saved = update(&conn, &note.id, late_save, HOUR + 500).unwrap();
+        assert_eq!(saved.content, "Lait, pain");
+        // Still exploded, exactly as before.
+        assert_eq!(saved.trashed_at, Some(HOUR));
+        assert_eq!(saved.trash_reason, Some(TrashReason::SelfDestruct));
+        assert_eq!(
+            (
+                saved.ephemeral_mode,
+                saved.ephemeral_started_at,
+                saved.destroy_at
+            ),
+            (
+                exploded.ephemeral_mode,
+                exploded.ephemeral_started_at,
+                exploded.destroy_at
+            )
+        );
     }
 
     #[test]

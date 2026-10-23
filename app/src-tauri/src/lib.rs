@@ -65,7 +65,8 @@ pub fn run() {
             let mut conn = db::open_in_dir(&data_dir)?;
             // Notes whose fuse burnt out while the app was closed go to the trash (and the trash
             // is purged) before the first list is shown.
-            ephemeral::run_maintenance(&mut conn, time::now_ms())?;
+            // Best effort: the app opens even if this fails.
+            ephemeral::run_maintenance_or_log(&mut conn, time::now_ms());
             // From now on Tauri owns the state; commands borrow it with `State<AppState>`.
             app.manage(AppState {
                 db: Mutex::new(conn),

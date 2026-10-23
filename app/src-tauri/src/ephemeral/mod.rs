@@ -70,6 +70,23 @@ pub fn run_maintenance(conn: &mut Connection, now: i64) -> Result<bool> {
     Ok(exploded + purged > 0)
 }
 
+/// `run_maintenance` for the callers that must keep working when it fails: the startup and
+/// `list_notes` (a list must never fail because of a background job). The error is logged and
+/// counts as "nothing changed": the transaction is rolled back when it is dropped, and the
+/// watcher tries again a minute later.
+///
+/// A second Mèche window writing at the same time is not an error: rusqlite waits up to 5 s
+/// for the database to be free (its default busy timeout), and every write here takes a few ms.
+pub fn run_maintenance_or_log(conn: &mut Connection, now: i64) -> bool {
+    match run_maintenance(conn, now) {
+        Ok(changed) => changed,
+        Err(error) => {
+            eprintln!("fuse maintenance failed: {error}");
+            false
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -220,6 +237,18 @@ mod tests {
         assert!(!run_maintenance(&mut conn, purge_time - 1).unwrap());
         assert!(run_maintenance(&mut conn, purge_time).unwrap());
         assert!(notes::get(&conn, &id).is_err());
+    }
+
+    #[test]
+    fn a_failing_maintenance_is_logged_not_returned() {
+        // A database without the notes table: run_maintenance fails.
+        let mut broken = Connection::open_in_memory().unwrap();
+        assert!(run_maintenance(&mut broken, 0).is_err());
+        assert!(!run_maintenance_or_log(&mut broken, 0));
+
+        let mut conn = open_in_memory().unwrap();
+        fused_note(&conn, 0, 1);
+        assert!(run_maintenance_or_log(&mut conn, HOUR_MS));
     }
 
     #[test]

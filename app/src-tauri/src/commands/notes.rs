@@ -24,7 +24,7 @@ pub async fn list_notes(
 ) -> Result<Vec<NoteSummary>> {
     let (summaries, changed) = {
         let mut conn = state.lock_db()?;
-        let changed = ephemeral::run_maintenance(&mut conn, now_ms())?;
+        let changed = ephemeral::run_maintenance_or_log(&mut conn, now_ms());
         (notes::list(&conn, filter)?, changed)
     }; // The database lock is released here, before the event.
     if changed {

@@ -16,8 +16,9 @@ La conception complète est dans [`docs/`](docs/). Les consignes pour Claude Cod
 Les phases sont décrites dans [`docs/10-feuille-de-route.md`](docs/10-feuille-de-route.md).
 
 - Phase 0, socle : terminée.
-- Phase 1, prise de notes locale sur desktop (notes riches et code, recherche, couleurs, épingles, corbeille, raccourcis, palette `Ctrl+K`) : livrée, en cours de validation.
-- Prochaine : phase 2, la mèche.
+- Phase 1, prise de notes locale sur desktop (notes riches et code, recherche, couleurs, épingles, corbeille, raccourcis, palette `Ctrl+K`) : terminée.
+- Phase 2, la mèche (autodestruction après un délai réglable, purge de la corbeille à 7 jours) : livrée, en cours de validation.
+- Prochaine : phase 3, serveur et synchronisation.
 
 ## Développement
 

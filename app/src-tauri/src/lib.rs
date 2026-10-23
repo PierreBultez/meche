@@ -5,6 +5,7 @@
 
 mod commands;
 mod db;
+mod ephemeral;
 mod error;
 mod time;
 
@@ -61,11 +62,18 @@ pub fn run() {
         .setup(|app| {
             // Private data folder of the app, e.g. ~/.local/share/fr.pierrebultez.meche on Linux.
             let data_dir = app.path().app_data_dir()?;
-            let conn = db::open_in_dir(&data_dir)?;
+            let mut conn = db::open_in_dir(&data_dir)?;
+            // Notes whose fuse burnt out while the app was closed go to the trash (and the trash
+            // is purged) before the first list is shown.
+            // Best effort: the app opens even if this fails.
+            ephemeral::run_maintenance_or_log(&mut conn, time::now_ms());
             // From now on Tauri owns the state; commands borrow it with `State<AppState>`.
             app.manage(AppState {
                 db: Mutex::new(conn),
             });
+            // Then once a minute while the app is open. `app.handle()` is the running app; the
+            // thread gets its own copy (`clone`) because it outlives this function.
+            ephemeral::watcher::spawn(app.handle().clone());
             show_window_if_frontend_fails(app);
             Ok(())
         })
@@ -76,6 +84,7 @@ pub fn run() {
             commands::notes::get_note,
             commands::notes::create_note,
             commands::notes::update_note,
+            commands::notes::set_ephemeral,
             commands::notes::trash_note,
             commands::notes::restore_note,
             commands::notes::delete_note_forever,

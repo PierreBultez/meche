@@ -4,6 +4,7 @@ use rusqlite::types::{FromSql, FromSqlError, FromSqlResult, ToSql, ToSqlOutput, 
 use rusqlite::{Connection, OptionalExtension, Row, params};
 use serde::{Deserialize, Serialize};
 
+use crate::ephemeral;
 use crate::error::{Error, Result};
 
 /// Limits of docs/03 ("Limites").
@@ -81,7 +82,9 @@ impl NoteColor {
     }
 }
 
-/// Autodestruction mode (phase 2). Read here so that notes always load completely.
+/// Autodestruction mode ("la mèche", docs/06). Only `Delay` is used for now: the note goes to
+/// the trash a delay after its fuse is lit. `OnComplete` (when every box is checked) is kept
+/// because the database schema allows it, but nothing creates it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum EphemeralMode {
@@ -502,6 +505,22 @@ fn recent_colors(conn: &Connection) -> Result<Vec<NoteColor>> {
 
 /// Creates an empty note of the given kind, with an automatic color.
 pub fn create(conn: &Connection, kind: NoteKind, now: i64) -> Result<Note> {
+    insert(conn, kind, None, now)
+}
+
+/// Creates an empty note whose fuse is already lit for `delay_hours` hours
+/// (« Nouvelle note à mèche »).
+pub fn create_fused(conn: &Connection, kind: NoteKind, delay_hours: i64, now: i64) -> Result<Note> {
+    insert(conn, kind, Some(delay_hours), now)
+}
+
+/// Inserts a new empty note, with its fuse lit when `fuse_delay_hours` is `Some`.
+fn insert(
+    conn: &Connection,
+    kind: NoteKind,
+    fuse_delay_hours: Option<i64>,
+    now: i64,
+) -> Result<Note> {
     // UUID v7: unique without asking a server, and sortable by creation date (docs/02, D7).
     let id = uuid::Uuid::now_v7().to_string();
     let color = next_color(&recent_colors(conn)?);
@@ -509,12 +528,82 @@ pub fn create(conn: &Connection, kind: NoteKind, now: i64) -> Result<Note> {
         NoteKind::Code => Some("plaintext".to_string()),
         NoteKind::Rich => None,
     };
+    let fuse = Fuse::lit(fuse_delay_hours, now);
     conn.execute(
-        "INSERT INTO notes (id, kind, code_language, color, created_at, updated_at, dirty)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?5, 1)",
-        params![id, kind, code_language, color, now],
+        "INSERT INTO notes (id, kind, code_language, color, ephemeral_mode, ephemeral_delay_hours,
+                            ephemeral_started_at, destroy_at, created_at, updated_at, dirty)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?9, 1)",
+        params![
+            id,
+            kind,
+            code_language,
+            color,
+            fuse.mode,
+            fuse.delay_hours,
+            fuse.started_at,
+            fuse.destroy_at,
+            now
+        ],
     )?;
     get(conn, &id)
+}
+
+/// The four fuse columns of a note, all set or all empty.
+struct Fuse {
+    mode: Option<EphemeralMode>,
+    delay_hours: Option<i64>,
+    started_at: Option<i64>,
+    destroy_at: Option<i64>,
+}
+
+impl Fuse {
+    /// A fuse lit at `now` for `delay_hours` hours, or no fuse at all when `None`.
+    fn lit(delay_hours: Option<i64>, now: i64) -> Fuse {
+        Fuse {
+            mode: delay_hours.map(|_| EphemeralMode::Delay),
+            delay_hours,
+            started_at: delay_hours.map(|_| now),
+            destroy_at: delay_hours.map(|hours| ephemeral::destroy_at(now, hours)),
+        }
+    }
+}
+
+/// Lights (`enabled`) or puts out the fuse of note `id` and returns the note (docs/06).
+///
+/// A fuse is lit for `delay_hours` hours from `now` and keeps that delay: changing the setting
+/// later does not change it. Lighting a fuse that is already lit, or putting out one that is
+/// already out, changes nothing. A note in the trash is read-only: refused.
+pub fn set_ephemeral(
+    conn: &Connection,
+    id: &str,
+    enabled: bool,
+    delay_hours: i64,
+    now: i64,
+) -> Result<Note> {
+    let note = get(conn, id)?;
+    if note.trashed_at.is_some() {
+        return Err(Error::InvalidInput(
+            "the fuse of a note in the trash cannot be changed".to_string(),
+        ));
+    }
+    if enabled == note.ephemeral_mode.is_some() {
+        return Ok(note);
+    }
+    let fuse = Fuse::lit(enabled.then_some(delay_hours), now);
+    conn.execute(
+        "UPDATE notes SET ephemeral_mode = ?2, ephemeral_delay_hours = ?3,
+                ephemeral_started_at = ?4, destroy_at = ?5, updated_at = ?6, dirty = 1
+         WHERE id = ?1",
+        params![
+            id,
+            fuse.mode,
+            fuse.delay_hours,
+            fuse.started_at,
+            fuse.destroy_at,
+            now
+        ],
+    )?;
+    get(conn, id)
 }
 
 /// The complete note `id`. Deleted notes (tombstones) are not found.
@@ -528,8 +617,8 @@ pub fn get(conn: &Connection, id: &str) -> Result<Note> {
     .ok_or_else(|| Error::NotFound(id.to_string()))
 }
 
-/// Summaries of the notes selected by `filter`: pinned first, then most recently modified
-/// (the trash is sorted by deletion date).
+/// Summaries of the notes selected by `filter`: pinned first, then most recently modified.
+/// The trash is sorted by deletion date, the lit fuses by the moment they burn out.
 pub fn list(conn: &Connection, filter: ListFilter) -> Result<Vec<NoteSummary>> {
     let condition = match filter {
         ListFilter::All => "trashed_at IS NULL",
@@ -539,6 +628,8 @@ pub fn list(conn: &Connection, filter: ListFilter) -> Result<Vec<NoteSummary>> {
     };
     let order = match filter {
         ListFilter::Trash => "trashed_at DESC",
+        // Soonest first. `destroy_at IS NULL` (0 or 1) puts a fuse without date last.
+        ListFilter::Ephemeral => "destroy_at IS NULL, destroy_at ASC, updated_at DESC",
         _ => "pinned DESC, updated_at DESC",
     };
     let sql = format!(
@@ -573,6 +664,11 @@ pub fn list(conn: &Connection, filter: ListFilter) -> Result<Vec<NoteSummary>> {
 
 /// Applies `patch` to note `id` and returns the updated note. Nothing is written (and the
 /// note is not marked as modified) when the patch changes nothing.
+///
+/// A note in the trash is accepted on purpose, although the interface shows it read-only: when
+/// the open note explodes while you type, the last save arrives after the explosion and must
+/// not be lost (docs/06). The fuse and trash columns are never touched here, so the explosion
+/// stays as it was (trashed_at = destroy_at).
 pub fn update(conn: &Connection, id: &str, patch: NotePatch, now: i64) -> Result<Note> {
     let current = get(conn, id)?;
     // `clone()` makes an independent copy, so `current` stays untouched for the comparison.
@@ -641,16 +737,23 @@ pub fn trash(conn: &Connection, id: &str, now: i64) -> Result<()> {
     ensure_found(changed, id, conn)
 }
 
-/// Takes a note out of the trash. A note that destroyed itself comes back with its fuse
-/// turned off, otherwise it would go straight back to the trash (docs/06).
+/// Takes a note out of the trash. Its fuse is put out when the note destroyed itself, or when
+/// the fuse has burnt out while the note was in the trash: otherwise it would go straight back
+/// to the trash (docs/06).
 pub fn restore(conn: &Connection, id: &str, now: i64) -> Result<()> {
+    // `?2` is now. In an UPDATE, every expression reads the row as it was before the update:
+    // `trash_reason` and `destroy_at` are the old values on every line.
+    const FUSE_OUT: &str = "(trash_reason = 'self_destruct' OR destroy_at <= ?2)";
     let changed = conn.execute(
-        "UPDATE notes SET
-           ephemeral_mode = CASE WHEN trash_reason = 'self_destruct' THEN NULL ELSE ephemeral_mode END,
-           ephemeral_started_at = CASE WHEN trash_reason = 'self_destruct' THEN NULL ELSE ephemeral_started_at END,
-           destroy_at = CASE WHEN trash_reason = 'self_destruct' THEN NULL ELSE destroy_at END,
-           trashed_at = NULL, trash_reason = NULL, updated_at = ?2, dirty = 1
-         WHERE id = ?1 AND deleted = 0 AND trashed_at IS NOT NULL",
+        &format!(
+            "UPDATE notes SET
+               ephemeral_mode = CASE WHEN {FUSE_OUT} THEN NULL ELSE ephemeral_mode END,
+               ephemeral_delay_hours = CASE WHEN {FUSE_OUT} THEN NULL ELSE ephemeral_delay_hours END,
+               ephemeral_started_at = CASE WHEN {FUSE_OUT} THEN NULL ELSE ephemeral_started_at END,
+               destroy_at = CASE WHEN {FUSE_OUT} THEN NULL ELSE destroy_at END,
+               trashed_at = NULL, trash_reason = NULL, updated_at = ?2, dirty = 1
+             WHERE id = ?1 AND deleted = 0 AND trashed_at IS NOT NULL"
+        ),
         params![id, now],
     )?;
     ensure_found(changed, id, conn)
@@ -685,7 +788,9 @@ pub fn empty_trash(conn: &mut Connection, now: i64) -> Result<usize> {
     Ok(ids.len())
 }
 
-fn remove_or_tombstone(conn: &Connection, id: &str, now: i64) -> Result<()> {
+/// Removes a note that the server has never seen, or turns it into a tombstone (docs/04).
+/// `pub(crate)`: also used by the trash purge (`ephemeral`).
+pub(crate) fn remove_or_tombstone(conn: &Connection, id: &str, now: i64) -> Result<()> {
     conn.execute("DELETE FROM notes WHERE id = ?1 AND server_rev = 0", [id])?;
     conn.execute(
         "UPDATE notes SET deleted = 1, title = '', content = '', updated_at = ?2, dirty = 1
@@ -1062,8 +1167,184 @@ mod tests {
         restore(&conn, &note.id, 4_000_000).unwrap();
         let restored = get(&conn, &note.id).unwrap();
         assert_eq!(restored.ephemeral_mode, None);
+        assert_eq!(restored.ephemeral_delay_hours, None);
+        assert_eq!(restored.ephemeral_started_at, None);
         assert_eq!(restored.destroy_at, None);
         assert_eq!(restored.trashed_at, None);
+        assert_eq!(restored.trash_reason, None);
+    }
+
+    // ── fuse (docs/06)
+
+    const HOUR: i64 = 3_600_000;
+
+    #[test]
+    fn lighting_a_fuse_starts_the_countdown_now() {
+        let conn = open_in_memory().unwrap();
+        let note = create(&conn, NoteKind::Rich, 0).unwrap();
+        let lit = set_ephemeral(&conn, &note.id, true, 24, 5_000).unwrap();
+        assert_eq!(lit.ephemeral_mode, Some(EphemeralMode::Delay));
+        assert_eq!(lit.ephemeral_delay_hours, Some(24));
+        assert_eq!(lit.ephemeral_started_at, Some(5_000));
+        assert_eq!(lit.destroy_at, Some(5_000 + 24 * HOUR));
+        assert_eq!(lit.updated_at, 5_000);
+        assert_eq!(get(&conn, &note.id).unwrap(), lit);
+    }
+
+    #[test]
+    fn lighting_a_lit_fuse_keeps_its_delay_and_its_start() {
+        // The setting changed from 24 h to 7 days: the fuse already burning is not touched.
+        let conn = open_in_memory().unwrap();
+        let note = create(&conn, NoteKind::Code, 0).unwrap();
+        let lit = set_ephemeral(&conn, &note.id, true, 24, 1_000).unwrap();
+        let again = set_ephemeral(&conn, &note.id, true, 168, 9_000).unwrap();
+        assert_eq!(again, lit);
+    }
+
+    #[test]
+    fn putting_a_fuse_out_clears_it() {
+        let conn = open_in_memory().unwrap();
+        let note = create(&conn, NoteKind::Rich, 0).unwrap();
+        set_ephemeral(&conn, &note.id, true, 1, 1_000).unwrap();
+        let out = set_ephemeral(&conn, &note.id, false, 1, 2_000).unwrap();
+        assert_eq!(
+            (
+                out.ephemeral_mode,
+                out.ephemeral_delay_hours,
+                out.ephemeral_started_at,
+                out.destroy_at
+            ),
+            (None, None, None, None)
+        );
+        assert_eq!(out.updated_at, 2_000);
+        // Already out: nothing is written.
+        assert_eq!(
+            set_ephemeral(&conn, &note.id, false, 1, 3_000).unwrap(),
+            out
+        );
+    }
+
+    #[test]
+    fn the_fuse_of_a_note_in_the_trash_cannot_change() {
+        let conn = open_in_memory().unwrap();
+        let note = create(&conn, NoteKind::Rich, 0).unwrap();
+        trash(&conn, &note.id, 1).unwrap();
+        assert!(matches!(
+            set_ephemeral(&conn, &note.id, true, 1, 2),
+            Err(Error::InvalidInput(_))
+        ));
+        assert!(matches!(
+            set_ephemeral(&conn, "nope", true, 1, 2),
+            Err(Error::NotFound(_))
+        ));
+    }
+
+    #[test]
+    fn creates_a_note_whose_fuse_is_already_lit() {
+        let conn = open_in_memory().unwrap();
+        let note = create_fused(&conn, NoteKind::Rich, 72, 1_000).unwrap();
+        assert_eq!(note.ephemeral_mode, Some(EphemeralMode::Delay));
+        assert_eq!(note.ephemeral_delay_hours, Some(72));
+        assert_eq!(note.ephemeral_started_at, Some(1_000));
+        assert_eq!(note.destroy_at, Some(1_000 + 72 * HOUR));
+        assert_eq!((note.created_at, note.updated_at), (1_000, 1_000));
+        assert_eq!(note.content, "");
+        // A plain new note has no fuse.
+        let plain = create(&conn, NoteKind::Rich, 1_000).unwrap();
+        assert_eq!((plain.ephemeral_mode, plain.destroy_at), (None, None));
+    }
+
+    #[test]
+    fn editing_or_converting_a_note_keeps_its_fuse_burning() {
+        let conn = open_in_memory().unwrap();
+        let note = create_fused(&conn, NoteKind::Rich, 24, 0).unwrap();
+        let patch = NotePatch {
+            content: Some("Lait".to_string()),
+            kind: Some(NoteKind::Code),
+            ..NotePatch::default()
+        };
+        let edited = update(&conn, &note.id, patch, 5_000).unwrap();
+        assert_eq!(edited.ephemeral_started_at, Some(0));
+        assert_eq!(edited.destroy_at, Some(24 * HOUR));
+    }
+
+    #[test]
+    fn what_was_typed_when_the_note_exploded_is_still_saved() {
+        let mut conn = open_in_memory().unwrap();
+        let note = create_fused(&conn, NoteKind::Rich, 1, 0).unwrap();
+        assert!(ephemeral::run_maintenance(&mut conn, HOUR).unwrap());
+        let exploded = get(&conn, &note.id).unwrap();
+
+        let late_save = NotePatch {
+            content: Some("Lait, pain".to_string()),
+            ..NotePatch::default()
+        };
+        let saved = update(&conn, &note.id, late_save, HOUR + 500).unwrap();
+        assert_eq!(saved.content, "Lait, pain");
+        // Still exploded, exactly as before.
+        assert_eq!(saved.trashed_at, Some(HOUR));
+        assert_eq!(saved.trash_reason, Some(TrashReason::SelfDestruct));
+        assert_eq!(
+            (
+                saved.ephemeral_mode,
+                saved.ephemeral_started_at,
+                saved.destroy_at
+            ),
+            (
+                exploded.ephemeral_mode,
+                exploded.ephemeral_started_at,
+                exploded.destroy_at
+            )
+        );
+    }
+
+    #[test]
+    fn restoring_a_note_trashed_by_hand_keeps_a_fuse_still_burning() {
+        let conn = open_in_memory().unwrap();
+        let note = create_fused(&conn, NoteKind::Rich, 24, 0).unwrap();
+        trash(&conn, &note.id, HOUR).unwrap();
+        restore(&conn, &note.id, 2 * HOUR).unwrap();
+        let restored = get(&conn, &note.id).unwrap();
+        assert_eq!(restored.destroy_at, Some(24 * HOUR));
+        assert_eq!(restored.ephemeral_mode, Some(EphemeralMode::Delay));
+    }
+
+    #[test]
+    fn restoring_a_note_trashed_by_hand_puts_out_a_burnt_fuse() {
+        // Its fuse burnt out while it was in the trash: restored, it would explode at once.
+        let conn = open_in_memory().unwrap();
+        let note = create_fused(&conn, NoteKind::Rich, 1, 0).unwrap();
+        trash(&conn, &note.id, 10).unwrap();
+        restore(&conn, &note.id, HOUR).unwrap();
+        let restored = get(&conn, &note.id).unwrap();
+        assert_eq!((restored.ephemeral_mode, restored.destroy_at), (None, None));
+        assert_eq!(restored.trashed_at, None);
+    }
+
+    #[test]
+    fn a_restored_exploded_note_does_not_explode_again() {
+        let mut conn = open_in_memory().unwrap();
+        let note = create_fused(&conn, NoteKind::Rich, 1, 0).unwrap();
+        assert!(ephemeral::run_maintenance(&mut conn, HOUR).unwrap());
+        assert_eq!(
+            get(&conn, &note.id).unwrap().trash_reason,
+            Some(TrashReason::SelfDestruct)
+        );
+        restore(&conn, &note.id, 2 * HOUR).unwrap();
+        assert!(!ephemeral::run_maintenance(&mut conn, 3 * HOUR).unwrap());
+        assert_eq!(ids(&list(&conn, ListFilter::All).unwrap()), [&note.id]);
+    }
+
+    #[test]
+    fn lit_fuses_are_listed_soonest_first() {
+        let conn = open_in_memory().unwrap();
+        let week = create_fused(&conn, NoteKind::Rich, 168, 0).unwrap();
+        let hour = create_fused(&conn, NoteKind::Rich, 1, 1_000).unwrap();
+        let day = create_fused(&conn, NoteKind::Code, 24, 2_000).unwrap();
+        create(&conn, NoteKind::Rich, 3_000).unwrap();
+        let fused = list(&conn, ListFilter::Ephemeral).unwrap();
+        assert_eq!(ids(&fused), [&hour.id, &day.id, &week.id]);
+        assert_eq!(fused[0].destroy_at, Some(1_000 + HOUR));
     }
 
     #[test]

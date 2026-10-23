@@ -1,5 +1,5 @@
-// Actions of the command palette (docs/08). Those of later phases (mèche, synchronisation,
-// Standard Notes import) are added with their phase.
+// Actions of the command palette (docs/08). Those of later phases (synchronisation, Standard
+// Notes import) are added with their phase.
 import {
   ArrowLeftRight,
   CodeXml,
@@ -18,7 +18,8 @@ import {
   Trash2,
   ListFilter as FilterIcon,
 } from "lucide-vue-next";
-import { type Component, computed } from "vue";
+import { type Component, computed, h } from "vue";
+import FuseIcon from "../components/fuse/FuseIcon.vue";
 import { useNotesStore } from "../stores/notes";
 import { useSettingsStore } from "../stores/settings";
 import { useUiStore } from "../stores/ui";
@@ -26,6 +27,10 @@ import { NOTE_COLORS, NOTE_COLOR_LABELS } from "../theme/note-colors";
 import type { ListFilter, NoteColor } from "../types/note";
 import type { ThemePreference } from "../types/settings";
 import { useCommands } from "./useCommands";
+
+/** The fuse icon of the palette, lit or out (the palette gives icons a `size` only). */
+const LitFuseIcon = (props: { size?: number }) => h(FuseIcon, { lit: true, size: props.size });
+const FuseOutIcon = (props: { size?: number }) => h(FuseIcon, { lit: false, size: props.size });
 
 export interface PaletteAction {
   id: string;
@@ -77,6 +82,13 @@ export function usePaletteActions() {
         icon: CodeXml,
         run: () => actions.create("code"),
       },
+      {
+        id: "new-fused-note",
+        label: "Nouvelle note à mèche",
+        keywords: "créer éphémère jetable autodestruction",
+        icon: LitFuseIcon,
+        run: () => actions.create("rich", true),
+      },
     ];
 
     const note = commands.editableNote();
@@ -88,6 +100,14 @@ export function usePaletteActions() {
           shortcut: "Ctrl+P",
           icon: note.pinned ? PinOff : Pin,
           run: () => actions.togglePin(note),
+        },
+        {
+          id: "toggle-fuse",
+          label: note.ephemeralMode !== null ? "Éteindre la mèche" : "Allumer la mèche",
+          keywords: "éphémère autodestruction explosion",
+          shortcut: "Ctrl+Maj+E",
+          icon: note.ephemeralMode !== null ? FuseOutIcon : LitFuseIcon,
+          run: () => actions.toggleFuse(note),
         },
         ...NOTE_COLORS.filter((color) => color !== note.color).map(
           (color): PaletteAction => ({

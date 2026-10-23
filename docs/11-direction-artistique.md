@@ -33,7 +33,7 @@ Définis comme variables CSS (Tailwind 4 `@theme` + surcharge `[data-theme="dark
 | `--brand-2` | `#F04097` | `#FFC93C` | Accent secondaire (étincelle) |
 | `--on-brand` | `#FFFFFF` | `#1A1446` | Texte sur `--brand` |
 | `--danger` | `#D11F2A` | `#FF647F` | Suppression, erreurs |
-| `--fuse` | `#A8815B` | `#8C7A5B` | Mèche non consumée (cordon) |
+| `--fuse` | `#A8815B` | `#8C7A5B` | Cordon de l'icône mèche allumée |
 | `--spark` | `#DA6800` | `#FFC93C` | Étincelle, mèche allumée |
 | `--selection` | `#7B2FF733` | `#AE81FF4D` | Sélection de texte |
 
@@ -75,20 +75,24 @@ Les néons du thème sombre reprennent volontairement la palette Monokai (`#F926
 
 ## La mèche (élément signature)
 
+V1 (phase 2, simplifiée avec Pierre) : une icône et un temps restant, **sans animation**. Les idées plus riches (mèche qui se consume, étincelle qui scintille, explosion) sont dans « Plus tard » ci-dessous.
+
+### Icône
+- Lucide n'a pas de mèche : icône SVG maison (`components/fuse/FuseIcon.vue`), cordon courbe terminé par une étincelle.
+- **Éteinte** : le cordon seul, dans la couleur du texte du bouton, avec un point au bout.
+- **Allumée** : cordon en `--fuse`, étoile d'étincelle en `--spark`, fixe.
+
 ### Badge dans la liste
-- Une petite mèche horizontale (≈ 40 px) en bas à droite de la carte, posée sur une **pastille arrondie de fond `--bg`** (ainsi ses couleurs restent lisibles sur toutes les cartes) : le cordon (`--fuse`) dont la **longueur restante est proportionnelle au temps restant** (`(destroy_at − now) / (delay)`), terminé par une **étincelle** (`--spark`) qui scintille, suivie du texte « 2 j », « 5 h », « 12 min ».
-- Moins d'une heure : l'étincelle scintille plus vite, le texte passe en `--danger`.
-- Mode « quand tout est coché » pas encore armé : mèche **éteinte** (cordon entier, pas d'étincelle) + « 3/5 ».
+- Sur une carte dont la mèche est allumée, à la place de la date : une **pastille arrondie de fond `--bg`** (ses couleurs restent lisibles sur toutes les cartes), avec l'icône allumée (14 px) et le temps restant « 2 j », « 5 h », « 12 min », « < 1 min » en `--text-muted`, en `--danger` sous 1 h.
+- La pastille a la hauteur de la ligne : la carte garde sa hauteur. Pas de badge dans la corbeille.
 
 ### Dans la note
-- Quand la mèche est allumée, une **longue mèche** court sur toute la largeur, juste sous l'en-tête de la note, et se consume en temps réel de droite à gauche, l'étincelle au bout.
-- Le bouton de l'en-tête est une icône de mèche (Lucide n'en a pas : dessiner une icône SVG maison, cordon courbe + étoile d'étincelle), éteinte ou allumée.
-- Libellés : « Allumer la mèche » / « Éteindre la mèche », « Explose dans 2 j 4 h », « Mèche en attente : 3 cases sur 5 ».
+- Bouton mèche dans l'en-tête (`aria-pressed`), infobulle « Allumer la mèche (Ctrl+Maj+E) » / « Éteindre la mèche (Ctrl+Maj+E) ».
+- Mèche allumée : « Explose dans 2 j 4 h » à côté du bouton (`--text-muted`, `--danger` sous 1 h ; coupé avec « … » si la place manque, la date complète reste dans l'infobulle).
 
 ### Explosion
-- **V1 (simple)** : quand une note explose pendant que l'application est ouverte, sa carte fait un bref flash `--spark`, rétrécit et disparaît (≈ 300 ms), puis notification « Boum ! « Courses » a explosé — Annuler ».
-- **V2 (plus tard)** : vraie animation d'explosion (particules aux couleurs de la note, petite secousse), et action « Faire exploser maintenant » qui joue l'animation immédiatement.
-- Toutes les animations respectent `prefers-reduced-motion` : dans ce cas, simple fondu, étincelle fixe.
+- **V1** : pas d'animation ni de notification. La carte disparaît au rechargement de la liste (`notes-changed`). Une note ouverte reste affichée, en lecture seule, avec le bandeau « Sa mèche a brûlé : cette note est dans la corbeille. » et « Restaurer (la mèche est éteinte) ».
+- **Plus tard** : longue mèche qui se consume sous l'en-tête, mini-mèche proportionnelle au temps restant et étincelle qui scintille, flash `--spark` de la carte puis notification « Boum ! « Courses » a explosé. Annuler », vraie animation (particules aux couleurs de la note), action « Faire exploser maintenant ». Toutes ces animations devront respecter `prefers-reduced-motion`.
 
 ## Coloration du code
 
@@ -134,9 +138,10 @@ Joueur, mais toujours clair. Le vocabulaire de la mèche ne remplace jamais le s
 |---|---|
 | Activer l'autodestruction | Allumer la mèche |
 | Compte à rebours | Explose dans 2 j |
-| Note explosée | Boum ! « Courses » a explosé. Annuler |
-| Restaurer depuis la corbeille | Restaurer (la mèche est éteinte) |
+| Note explosée (ouverte) | Sa mèche a brûlé : cette note est dans la corbeille. |
+| Restaurer une note explosée | Restaurer (la mèche est éteinte) |
+| Allumer / éteindre | Mèche allumée : la note explosera dans 7 jours. / Mèche éteinte. |
 | Liste vide | Rien ici pour l'instant. `Ctrl+N` pour écrire. |
 | Corbeille vide | Corbeille vide. Les notes y restent 7 jours. |
-| Filtre des éphémères | Mèches allumées |
-| Création rapide | Nouvelle checklist à mèche |
+| Filtre des éphémères | Mèches allumées (vide : « Aucune mèche allumée. ») |
+| Création rapide | Nouvelle note à mèche |

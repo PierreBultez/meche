@@ -26,8 +26,8 @@
 │ ─────────────────────── │                                               │
 │ 📌 Mémo serveur          │  Contenu de la note…                          │
 │    Apache, certbot…  2 j │                                               │
-│ Courses        ⏳ 3/5    │  - [x] Lait                                   │
-│    Lait, pain…     1 h   │  - [ ] Pain                                   │
+│ Courses                  │  - [x] Lait                                   │
+│    Lait, pain…  ⏳ 1 h   │  - [ ] Pain                                   │
 │ Snippet Laravel  </>     │                                               │
 │    Route::get…   3 sem   │  ```php                                       │
 │                          │  Route::get('/', …);                          │
@@ -37,14 +37,14 @@
 └──────────────────────────┴───────────────────────────────────────────────┘
 ```
 - **Colonne gauche** (280 px, redimensionnable, masquable avec `Ctrl+\`) : recherche, bouton nouvelle note, liste. La largeur va de 220 à 520 px ; on la change en glissant la séparation ou avec `←` `→` quand la séparation a le focus, et elle est mémorisée (réglage `list_width`). Dans la liste, `↑` `↓` passent d'une carte à l'autre et `Entrée` ouvre la note.
-- **Élément de liste** : carte aux couleurs de la note ; titre (ou première ligne), aperçu d'une ligne, date relative, icônes : 📌 épinglée, `</>` note code, badge mèche.
+- **Élément de liste** : carte aux couleurs de la note ; titre (ou première ligne), aperçu d'une ligne, date relative, icônes : 📌 épinglée, `</>` note code. Quand la mèche est allumée, le badge mèche (pastille, icône, temps restant) prend la place de la date.
 - **Pied de colonne** : filtre (Toutes / Épinglées / Mèches allumées / Corbeille) et pastille d'état de synchro (vert = à jour, gris = hors ligne, orange = en cours, rouge = erreur ; survol = détail).
-- **En-tête de note** : titre éditable, épingler, bouton mèche, menu ⋯ (couleur de la note, convertir riche/code, copier en Markdown, retour à la ligne pour le code, mettre à la corbeille).
+- **En-tête de note** : titre éditable, temps restant « Explose dans … » quand la mèche est allumée, bouton mèche, épingler, menu ⋯ (couleur de la note, convertir riche/code, copier en Markdown, retour à la ligne pour le code, mettre à la corbeille).
 - **Mode concentration** (`Ctrl+Shift+F`) : masque la colonne et l'en-tête.
 
 ## Mobile (Android) — largeur < 768 px
 
-- **Écran 1, liste** : barre de recherche en haut, liste plein écran, **bouton flottant +** en bas à droite (appui long → « Nouvelle note code » / « Nouvelle checklist à mèche »). Filtre accessible par un menu en haut.
+- **Écran 1, liste** : barre de recherche en haut, liste plein écran, **bouton flottant +** en bas à droite (appui long → « Nouvelle note code » / « Nouvelle note à mèche »). Filtre accessible par un menu en haut.
 - **Écran 2, note** : flèche retour, titre, icônes 📌 ⏳ ⋯ ; éditeur plein écran ; barre d'outils au-dessus du clavier (voir `05-editeur.md`).
 - **Gestes** : glisser un élément de liste vers la gauche → corbeille (avec « Annuler ») ; vers la droite → épingler.
 - Le **bouton retour Android** ferme la note (après sauvegarde) puis quitte l'application depuis la liste.
@@ -55,7 +55,7 @@
 
 Recherche floue sur les notes **et** les actions :
 - Ouvrir une note (résultats de recherche plein texte).
-- Nouvelle note, nouvelle note code, nouvelle checklist à mèche.
+- Nouvelle note, nouvelle note code, nouvelle note à mèche.
 - Changer la couleur de la note, allumer / éteindre la mèche.
 - Afficher : toutes / épinglées / mèches allumées / corbeille.
 - Synchroniser maintenant, thème clair/sombre/système, réglages, importer depuis Standard Notes.
@@ -64,7 +64,7 @@ Fonctionnement (phase 1) :
 - Palette vide : les 5 premières notes de la liste, puis toutes les actions.
 - En tapant : d'abord les actions dont chaque mot tapé commence un mot (« nouv code » → « Nouvelle note code »), puis les notes (recherche plein texte, 8 au plus, avec l'extrait surligné). Les actions trouvées seulement en recherche floue (« nvnote ») ne s'affichent que si rien d'autre ne correspond : sinon elles noient les résultats.
 - `↑` `↓` pour choisir, `Entrée` pour lancer, `Échap` ou un clic à côté pour fermer, `Ctrl+K` pour rouvrir ou fermer.
-- Actions de la phase 1 : nouvelle note, nouvelle note code ; pour la note ouverte : épingler / désépingler, les 7 autres couleurs, convertir riche ↔ code, mettre à la corbeille (ou restaurer si elle y est) ; afficher toutes / épinglées / mèches allumées / corbeille ; thème clair / sombre / système ; masquer ou afficher la liste ; mode concentration ; réglages. La mèche, la synchro et l'import arrivent avec leur phase.
+- Actions de la phase 1 : nouvelle note, nouvelle note code ; pour la note ouverte : épingler / désépingler, les 7 autres couleurs, convertir riche ↔ code, mettre à la corbeille (ou restaurer si elle y est) ; afficher toutes / épinglées / mèches allumées / corbeille ; thème clair / sombre / système ; masquer ou afficher la liste ; mode concentration ; réglages. Phase 2 : « Nouvelle note à mèche » (toujours) et « Allumer / Éteindre la mèche » (note ouverte, hors corbeille). La synchro et l'import arrivent avec leur phase.
 
 ## Raccourcis desktop
 
@@ -75,7 +75,7 @@ Fonctionnement (phase 1) :
 | `Ctrl+Shift+N` | Nouvelle note code |
 | `Ctrl+F` | Rechercher dans les notes (dans une note code : rechercher dans la note) |
 | `Ctrl+P` | Épingler / désépingler |
-| `Ctrl+Shift+E` | Panneau de la mèche (phase 2) |
+| `Ctrl+Shift+E` | Allumer / éteindre la mèche de la note ouverte |
 | `Ctrl+Suppr` | Mettre à la corbeille |
 | `Ctrl+↑` / `Ctrl+↓` | Note précédente / suivante |
 | `Ctrl+\` | Afficher / masquer la liste |
@@ -85,13 +85,13 @@ Fonctionnement (phase 1) :
 Précisions (phase 1) :
 - Les raccourcis `Ctrl` sont pris avant les éditeurs : `Ctrl+Suppr` met la note à la corbeille même dans le texte (la notification « Annuler » permet de revenir en arrière), `Ctrl+↑` / `Ctrl+↓` changent de note.
 - Exception : dans une note code, `Ctrl+F` ouvre la recherche de CodeMirror dans la note.
-- Ils ne font rien quand une fenêtre de confirmation est ouverte. `Ctrl+P`, `Ctrl+Suppr` et `Ctrl+↑` / `Ctrl+↓` n'agissent que sur l'écran des notes, et jamais sur une note de la corbeille (lecture seule). Garder les touches enfoncées ne répète que `Ctrl+↑` / `Ctrl+↓`.
+- Ils ne font rien quand une fenêtre de confirmation est ouverte. `Ctrl+P`, `Ctrl+Maj+E`, `Ctrl+Suppr` et `Ctrl+↑` / `Ctrl+↓` n'agissent que sur l'écran des notes, et jamais sur une note de la corbeille (lecture seule). Garder les touches enfoncées ne répète que `Ctrl+↑` / `Ctrl+↓`.
 - `Échap`, dans l'ordre : ferme le menu ouvert (menu ⋯, menu `/`, recherche de CodeMirror, palette, confirmation) ; sinon quitte le mode concentration ; sinon, depuis la note, remet le focus sur sa carte dans la liste ; sinon, depuis les réglages, revient à la note ouverte. Dans le champ de recherche, `Échap` efface la recherche.
 
 ## Écrans secondaires
 
-- **Réglages** : serveur (URL, test de connexion, connexion / déconnexion, nom de l'appareil, dernière synchro), autodestruction (délais par défaut des deux modes), apparence (thème, taille du texte), import Standard Notes, à propos (version, mises à jour).
-  En phase 1 : thème, retour à la ligne des notes code, version. Les autres sections arrivent avec leur phase ; la taille du texte n'est pas encore proposée.
+- **Réglages** : serveur (URL, test de connexion, connexion / déconnexion, nom de l'appareil, dernière synchro), mèche (un seul délai : 1 h, 24 h, 3 j, 7 j ou 30 j ; 7 j par défaut ; ne change pas les mèches déjà allumées), apparence (thème, taille du texte), import Standard Notes, à propos (version, mises à jour).
+  En phase 1 : thème, retour à la ligne des notes code, version. Phase 2 : section « Mèche ». Les autres sections arrivent avec leur phase ; la taille du texte n'est pas encore proposée.
 - **Premier lancement** : écran simple « Connecter un serveur » ou « Utiliser hors ligne pour l'instant ».
 - **États vides** : liste vide, recherche sans résultat, corbeille vide. Textes : voir « Ton des textes » dans `11-direction-artistique.md`.
 
@@ -112,3 +112,7 @@ Mise en œuvre (phase 1) :
 - La liste est virtualisée dès le départ : seules les cartes visibles sont dans la page, et toutes les cartes ont la même hauteur (mesurée sur la première). Mesuré avec 1 000 notes : sans cela, ouvrir une note prenait 1 à 2 s, car toute la liste était redessinée.
 - Une carte est un simple lien, pas un `RouterLink` : chacun était recalculé à chaque changement de note.
 - Une note ouverte au clavier (`Ctrl+↑` / `Ctrl+↓`, palette, `Entrée` sur une carte) reçoit le focus dans son texte : on peut taper aussitôt. Un clic de souris sur une carte laisse le focus sur la carte.
+
+Mise en œuvre (phase 2) :
+- Le temps restant des mèches est rafraîchi par **une seule horloge partagée** (`composables/useNow.ts`) : une fois par minute, arrêtée quand la fenêtre est cachée, remise à l'heure au retour sur la fenêtre. Seul le composant qui affiche le temps restant s'y abonne : une carte sans mèche n'est jamais redessinée, et la liste non plus. Le badge a la hauteur de la ligne : la carte garde sa hauteur (liste virtualisée).
+- Mesures (build release, juste après la phase 2) : démarrage à froid jusqu'à la fenêtre affichée ≈ 0,45 s, identique à la phase 1 ; recherche sur 1 000 notes 6 à 8 ms ; `list_notes` (1 000 résumés) 8 ms, dont 1 ms pour la maintenance de la mèche ; paquet `.deb` 4,2 Mo.

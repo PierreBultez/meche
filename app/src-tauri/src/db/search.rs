@@ -28,6 +28,8 @@ pub struct SearchResult {
     pub color: NoteColor,
     pub pinned: bool,
     pub updated_at: i64,
+    /// When its fuse burns out, if it is lit (docs/06).
+    pub destroy_at: Option<i64>,
 }
 
 /// Registers the SQL functions the schema needs: the view and the triggers of migration 002
@@ -190,7 +192,7 @@ pub fn search(conn: &Connection, input: &str) -> Result<Vec<SearchResult>> {
     };
     let mut stmt = conn.prepare(
         "SELECT n.id, n.title, substr(n.content, 1, 400), n.kind, n.color, n.pinned,
-                n.updated_at, snippet(notes_fts, -1, ?2, ?3, '…', ?4)
+                n.updated_at, snippet(notes_fts, -1, ?2, ?3, '…', ?4), n.destroy_at
          FROM notes_fts JOIN notes n ON n.seq = notes_fts.rowid
          WHERE notes_fts MATCH ?1 AND n.deleted = 0 AND n.trashed_at IS NULL
          ORDER BY bm25(notes_fts, 5.0, 1.0)
@@ -213,6 +215,7 @@ pub fn search(conn: &Connection, input: &str) -> Result<Vec<SearchResult>> {
                     color: row.get(4)?,
                     pinned: row.get(5)?,
                     updated_at: row.get(6)?,
+                    destroy_at: row.get(8)?,
                 })
             },
         )?
@@ -332,6 +335,18 @@ mod tests {
     }
 
     #[test]
+    fn results_tell_when_the_fuse_burns_out() {
+        let conn = open_in_memory().unwrap();
+        let plain = note(&conn, "Courses", "lait");
+        let fused = note(&conn, "Courses du samedi", "lait");
+        crate::db::notes::set_ephemeral(&conn, &fused, true, 1, 1_000).unwrap();
+        let results = search(&conn, "lait").unwrap();
+        let destroy_at = |id: &str| results.iter().find(|r| r.id == id).unwrap().destroy_at;
+        assert_eq!(destroy_at(&plain), None);
+        assert_eq!(destroy_at(&fused), Some(1_000 + 3_600_000));
+    }
+
+    #[test]
     fn excerpts_mark_the_matches_without_markdown() {
         let conn = open_in_memory().unwrap();
         note(
@@ -430,7 +445,7 @@ mod performance {
     use std::time::{Duration, Instant};
 
     use super::*;
-    use crate::db::notes::{ListFilter, NotePatch, create, list, update};
+    use crate::db::notes::{ListFilter, NotePatch, create, list, set_ephemeral, update};
 
     const WORDS: [&str; 12] = [
         "lait", "pain", "serveur", "apache", "certbot", "laravel", "école", "réunion", "facture",
@@ -441,7 +456,7 @@ mod performance {
     #[ignore]
     fn search_and_list_stay_fast_with_1000_notes() {
         let dir = tempfile::tempdir().unwrap();
-        let conn = crate::db::open_in_dir(dir.path()).unwrap();
+        let mut conn = crate::db::open_in_dir(dir.path()).unwrap();
         for i in 0..1000_usize {
             let id = create(&conn, NoteKind::Rich, i as i64).unwrap().id;
             let words: Vec<&str> = (0..300)
@@ -453,6 +468,10 @@ mod performance {
                 ..NotePatch::default()
             };
             update(&conn, &id, patch, i as i64).unwrap();
+            // One note in ten has its fuse lit (1 h, from i ms).
+            if i % 10 == 0 {
+                set_ephemeral(&conn, &id, true, 1, i as i64).unwrap();
+            }
         }
 
         for query in [
@@ -479,5 +498,21 @@ mod performance {
             "list_notes(all): {count} summaries in {:?}",
             start.elapsed()
         );
+
+        // list_notes runs the fuse maintenance first (docs/06): it must cost next to nothing
+        // when no fuse is due, which is almost always the case.
+        let start = Instant::now();
+        assert!(!crate::ephemeral::run_maintenance(&mut conn, 1_000).unwrap());
+        let idle = start.elapsed();
+        println!("fuse maintenance, nothing due: {idle:?}");
+        assert!(idle < Duration::from_millis(5), "maintenance took {idle:?}");
+        // All 100 fuses burn out at once.
+        let start = Instant::now();
+        assert!(crate::ephemeral::run_maintenance(&mut conn, 10_000_000).unwrap());
+        println!(
+            "fuse maintenance, 100 notes exploding: {:?}",
+            start.elapsed()
+        );
+        assert_eq!(list(&conn, ListFilter::Trash).unwrap().len(), 100);
     }
 }

@@ -8,10 +8,19 @@ import {
   listNotes,
   restoreNote,
   searchNotes,
+  setEphemeral,
   trashNote,
   updateNote,
 } from "../api/notes";
-import type { ListFilter, Note, NoteKind, NotePatch, NoteSummary, SearchResult } from "../types/note";
+import type {
+  CommandError,
+  ListFilter,
+  Note,
+  NoteKind,
+  NotePatch,
+  NoteSummary,
+  SearchResult,
+} from "../types/note";
 
 /**
  * Notes shown in the interface. Rust owns the data: every action calls a command, then reloads
@@ -28,6 +37,8 @@ export const useNotesStore = defineStore("notes", () => {
 
   let listRequest = 0;
   let openRequest = 0;
+  /** The note asked by the latest open request (it may still be loading), or null. */
+  let wantedId: string | null = null;
   let searchRequest = 0;
 
   /** Ids in the order they are shown (search results first when searching). */
@@ -53,22 +64,32 @@ export const useNotesStore = defineStore("notes", () => {
 
   async function open(id: string | null): Promise<void> {
     const request = ++openRequest;
+    wantedId = id;
     if (id === null) {
       current.value = null;
       return;
     }
-    const note = await getNote(id);
+    let note: Note;
+    try {
+      note = await getNote(id);
+    } catch (error) {
+      // Not opened: the note still open is the one wanted (reload() keeps refreshing it).
+      if (request === openRequest) wantedId = current.value?.id ?? null;
+      throw error;
+    }
     if (request === openRequest) {
       current.value = note;
     }
   }
 
-  async function create(kind: NoteKind): Promise<Note> {
-    const note = await createNote(kind);
+  /** `fused`: « Nouvelle note à mèche », its fuse is lit at once. */
+  async function create(kind: NoteKind, fused = false): Promise<Note> {
+    const note = await createNote(kind, fused);
     if (filter.value === "trash") {
       filter.value = "all";
     }
     openRequest++;
+    wantedId = note.id;
     current.value = note;
     await refresh();
     return note;
@@ -82,6 +103,44 @@ export const useNotesStore = defineStore("notes", () => {
     }
     await refresh();
     return note;
+  }
+
+  /** Lights or puts out the fuse of a note (docs/06). */
+  async function setFuse(id: string, enabled: boolean): Promise<Note> {
+    const note = await setEphemeral(id, enabled);
+    if (current.value?.id === id) {
+      current.value = note;
+    }
+    await refresh();
+    return note;
+  }
+
+  /**
+   * Rust changed notes on its own (a fuse burnt out, the trash was purged: `notes-changed`).
+   * Reloads the list and the open note. Returns false when the open note no longer exists.
+   */
+  async function reload(): Promise<boolean> {
+    // Not a new open request: a note opened before or during this reload keeps priority, so
+    // its answer is never dropped for the note that was open when the event came.
+    const request = openRequest;
+    await refresh();
+    const id = current.value?.id;
+    if (id === undefined) return true;
+    // Also false while another note is being opened (asked before the event, still loading):
+    // that note must neither be replaced nor lose its page to a redirection.
+    const stillWanted = () =>
+      request === openRequest && current.value?.id === id && wantedId === id;
+    try {
+      const note = await getNote(id);
+      if (stillWanted()) current.value = note;
+      return true;
+    } catch (error) {
+      if ((error as CommandError | undefined)?.kind !== "not_found") throw error;
+      // Another note was opened meanwhile: that one is still there.
+      if (!stillWanted()) return true;
+      current.value = null;
+      return false;
+    }
   }
 
   async function trash(id: string): Promise<void> {
@@ -155,6 +214,8 @@ export const useNotesStore = defineStore("notes", () => {
     open,
     create,
     save,
+    setFuse,
+    reload,
     trash,
     restore,
     deleteForever,

@@ -16,9 +16,9 @@ Conventions :
 | `code_language` | texte nullable | oui | Langage pour `kind = code` (`php`, `ts`, `rust`, `sql`…) |
 | `pinned` | booléen | oui | Épinglée |
 | `color` | texte | oui | Couleur de la note : `violet`, `rose`, `corail`, `orange`, `citron`, `pomme`, `turquoise`, `bleu` (voir `11-direction-artistique.md`) |
-| `ephemeral_mode` | `delay` \| `on_complete` \| null | oui | null = autodestruction désactivée |
-| `ephemeral_delay_hours` | entier nullable | oui | Délai avant destruction |
-| `ephemeral_started_at` | ms nullable | oui | Début du compte à rebours (activation ou complétion) |
+| `ephemeral_mode` | `delay` \| `on_complete` \| null | oui | null = mèche éteinte. Seul `delay` est utilisé en V1 ; `on_complete` reste autorisé par le schéma mais rien ne le crée (`06-autodestruction.md`) |
+| `ephemeral_delay_hours` | entier nullable | oui | Délai avant destruction, copié du réglage `fuse_delay_hours` quand la mèche est allumée ; ne change plus ensuite |
+| `ephemeral_started_at` | ms nullable | oui | Début du compte à rebours (allumage de la mèche) |
 | `destroy_at` | ms nullable | oui | `started_at + delay`. null = pas armé |
 | `trashed_at` | ms nullable | oui | Date de mise en corbeille |
 | `trash_reason` | `manual` \| `self_destruct` \| null | oui | Origine de la mise en corbeille |
@@ -96,7 +96,7 @@ CREATE TABLE settings (
   value TEXT NOT NULL
 );
 -- Clés : server_url, api_token, device_name, sync_cursor, last_sync_at,
---        default_delay_hours_delay (168), default_delay_hours_on_complete (24),
+--        fuse_delay_hours (délai de la mèche : 1, 24, 72, 168 ou 720 ; 168 par défaut),
 --        theme ('system'|'light'|'dark'),
 --        list_width (largeur de la colonne des notes en px, 220 à 520, 280 par défaut),
 --        code_line_wrap (retour à la ligne automatique des notes code, false par défaut)
@@ -107,6 +107,8 @@ CREATE TABLE import_triage (
   position  INTEGER NOT NULL
 );
 ```
+
+Réglage de la mèche (phase 2) : une seule clé, `fuse_delay_hours`. Une valeur stockée hors de la liste revient à 168 ; un `set_settings` hors liste est refusé (`invalid_input`). Le commentaire de la migration 001 cite encore les anciennes clés `default_delay_hours_delay` et `default_delay_hours_on_complete`, jamais utilisées : la migration étant publiée, il n'est pas modifié.
 
 Pourquoi `seq` (décidé en phase 0) : l'index FTS5 « à contenu externe » retrouve ses lignes par un identifiant entier. Avec une clé primaire `TEXT`, cet identifiant serait le `rowid` implicite de SQLite, que la documentation ne garantit pas stable (un `VACUUM` peut le renuméroter). Une colonne `INTEGER PRIMARY KEY` explicite, elle, ne change jamais. L'identifiant de la note reste `id` (UUID), unique et synchronisé ; `seq` n'existe que dans la base locale.
 

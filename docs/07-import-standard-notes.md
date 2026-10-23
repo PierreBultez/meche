@@ -92,7 +92,7 @@ Objectif : faire le ménage de 100 notes en ~10 minutes.
 | Action | Clavier | Mobile | Effet |
 |---|---|---|---|
 | Garder | `G` ou `→` | glisser à droite | Rien |
-| Mèche | `E` | bouton | Allume la mèche : mode `delay`, délai par défaut |
+| Mèche | `E` | bouton | Allume la mèche, avec le délai du réglage `fuse_delay_hours` |
 | Supprimer | `S` ou `←` | glisser à gauche | Corbeille (récupérable 7 jours) |
 | Passer | `Espace` | bouton | Repoussée à la fin |
 

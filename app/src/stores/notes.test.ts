@@ -111,4 +111,124 @@ describe("notes store", () => {
     expect(store.neighbour(first.id, -1)).toBe(second.id);
     expect(store.neighbour(null, 1)).toBe(second.id);
   });
+
+  it("lights and puts out the fuse of the open note", async () => {
+    const store = useNotesStore();
+    const note = await store.create("rich");
+    core.fuseDelayHours = 24;
+    const lit = await store.setFuse(note.id, true);
+    expect(core.calls).toContainEqual({ cmd: "set_ephemeral", args: { id: note.id, enabled: true } });
+    expect(lit.ephemeralDelayHours).toBe(24);
+    expect(store.current?.destroyAt).toBe(lit.destroyAt);
+    expect(store.summaries[0].destroyAt).toBe(lit.destroyAt);
+    await store.setFuse(note.id, false);
+    expect(store.current?.destroyAt).toBeNull();
+  });
+
+  it("creates a note with its fuse already lit", async () => {
+    const store = useNotesStore();
+    const note = await store.create("rich", true);
+    expect(core.calls).toContainEqual({ cmd: "create_note", args: { kind: "rich", fused: true } });
+    expect(note.ephemeralMode).toBe("delay");
+    expect(store.current?.destroyAt).not.toBeNull();
+  });
+
+  it("reloads the open note when Rust says notes changed", async () => {
+    const store = useNotesStore();
+    const note = await store.create("rich");
+    // What the fuse does in Rust: the note goes to the trash on its own.
+    Object.assign(core.notes[0], { trashedAt: 5, trashReason: "self_destruct" });
+    expect(await store.reload()).toBe(true);
+    expect(store.current?.id).toBe(note.id);
+    expect(store.current?.trashReason).toBe("self_destruct");
+    expect(store.summaries).toEqual([]);
+  });
+
+  it("closes the open note when it was deleted for good", async () => {
+    const store = useNotesStore();
+    await store.create("rich");
+    core.notes = [];
+    expect(await store.reload()).toBe(false);
+    expect(store.current).toBeNull();
+  });
+
+  describe("a note opened while Rust's changes are reloaded keeps priority", () => {
+    const nextTask = () => new Promise((resolve) => setTimeout(resolve, 0));
+
+    it("opened while the list is reloading", async () => {
+      const store = useNotesStore();
+      const a = await store.create("rich");
+      const b = await store.create("rich");
+      await store.open(a.id);
+      const list = core.hold("list_notes");
+      const reloading = store.reload();
+      await nextTask();
+      const getB = core.hold("get_note");
+      const opening = store.open(b.id); // what the route watch of NotesView does
+      await nextTask();
+      list.release();
+      await reloading;
+      getB.release();
+      await opening;
+      expect(store.current?.id).toBe(b.id);
+    });
+
+    it("opened before the event, answered after the reload's list", async () => {
+      const store = useNotesStore();
+      const a = await store.create("rich");
+      const b = await store.create("rich");
+      await store.open(a.id);
+      const getB = core.hold("get_note");
+      const opening = store.open(b.id);
+      await nextTask();
+      await store.reload();
+      getB.release();
+      await opening;
+      expect(store.current?.id).toBe(b.id);
+    });
+
+    it("a note that could not be opened does not stop the open note from reloading", async () => {
+      const store = useNotesStore();
+      const a = await store.create("rich");
+      await expect(store.open("missing")).rejects.toMatchObject({ kind: "not_found" });
+      Object.assign(core.notes[0], { trashedAt: 5, trashReason: "self_destruct" });
+      await store.reload();
+      expect(store.current?.id).toBe(a.id);
+      expect(store.current?.trashReason).toBe("self_destruct");
+    });
+
+    it("opened before the event, the note open before purged meanwhile: no redirection", async () => {
+      const store = useNotesStore();
+      const a = await store.create("rich");
+      const b = await store.create("rich");
+      await store.open(a.id);
+      const getB = core.hold("get_note");
+      const opening = store.open(b.id);
+      await nextTask();
+      core.notes = core.notes.filter((note) => note.id !== a.id);
+      expect(await store.reload()).toBe(true);
+      getB.release();
+      await opening;
+      expect(store.current?.id).toBe(b.id);
+    });
+
+    it("the note open before was purged meanwhile: no redirection", async () => {
+      const store = useNotesStore();
+      const a = await store.create("rich");
+      const b = await store.create("rich");
+      await store.open(a.id);
+      const list = core.hold("list_notes");
+      const reloading = store.reload();
+      await nextTask();
+      core.notes = core.notes.filter((note) => note.id !== a.id);
+      const getB = core.hold("get_note");
+      const opening = store.open(b.id);
+      await nextTask();
+      list.release();
+      expect(await reloading).toBe(true);
+      getB.release();
+      await opening;
+      expect(store.current?.id).toBe(b.id);
+    });
+  });
 });

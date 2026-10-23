@@ -9,6 +9,8 @@ import { useUiStore } from "../../stores/ui";
 import { noteRoute } from "../../composables/useNoteActions";
 import type { NoteColor, NoteKind } from "../../types/note";
 import { fullDate, shortRelativeDate } from "../../utils/relative-date";
+import FuseIcon from "../fuse/FuseIcon.vue";
+import FuseTimeLeft from "../fuse/FuseTimeLeft.vue";
 import HighlightedText from "../ui/HighlightedText.vue";
 
 const props = defineProps<{
@@ -22,6 +24,8 @@ const props = defineProps<{
   pinned: boolean;
   /** Date shown on the right (last change, or moment it went to the trash). */
   date: number;
+  /** When the lit fuse burns out: the time left is shown instead of the date (docs/11). */
+  destroyAt?: number | null;
   selected: boolean;
 }>();
 
@@ -62,7 +66,22 @@ function open(event: MouseEvent): void {
         <HighlightedText v-if="highlighted" :text="preview" />
         <template v-else>{{ preview }}</template>
       </span>
-      <time class="shrink-0 text-xs" :datetime="new Date(date).toISOString()" :title="fullDate(date)">
+      <!-- On a --bg pill, so that the fuse colors stay readable on every card (docs/11). Its
+           height is the line's: the card keeps the height of the others. -->
+      <span
+        v-if="destroyAt != null"
+        class="inline-flex h-5 shrink-0 items-center gap-1 self-center rounded-full bg-bg pl-1 pr-1.5 text-xs"
+      >
+        <FuseIcon lit :size="14" />
+        <span class="sr-only">Mèche allumée, explose dans</span>
+        <FuseTimeLeft :destroy-at="destroyAt" />
+      </span>
+      <time
+        v-else
+        class="shrink-0 text-xs"
+        :datetime="new Date(date).toISOString()"
+        :title="fullDate(date)"
+      >
         {{ shortRelativeDate(date) }}
       </time>
     </span>

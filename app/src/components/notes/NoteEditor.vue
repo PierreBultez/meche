@@ -6,6 +6,7 @@ import { computed, defineAsyncComponent, nextTick, onMounted, ref, watch } from 
 import { useRouter } from "vue-router";
 import { useAutosave } from "../../composables/useAutosave";
 import { useNoteActions } from "../../composables/useNoteActions";
+import { useNow } from "../../composables/useNow";
 import { useNotesStore } from "../../stores/notes";
 import { useSettingsStore } from "../../stores/settings";
 import { useToastsStore } from "../../stores/toasts";
@@ -15,6 +16,8 @@ import { noteAsMarkdown } from "../../utils/note-markdown";
 import type CodeEditorComponent from "../editor/CodeEditor.vue";
 import type RichEditorComponent from "../editor/RichEditor.vue";
 import { CODE_LANGUAGES, normalizeLanguage } from "../../editor/languages";
+import FuseIcon from "../fuse/FuseIcon.vue";
+import FuseTimeLeft from "../fuse/FuseTimeLeft.vue";
 import ConfirmDialog from "../ui/ConfirmDialog.vue";
 import UiSelect from "../ui/UiSelect.vue";
 import NoteMenu from "./NoteMenu.vue";
@@ -34,6 +37,29 @@ const actions = useNoteActions();
 
 const id = props.note.id;
 const inTrash = computed(() => props.note.trashedAt !== null);
+const fuseLit = computed(() => props.note.ephemeralMode !== null);
+const exploded = computed(() => props.note.trashReason === "self_destruct");
+/** Restoring puts the fuse out: the note exploded, or its fuse burnt out in the trash (Rust,
+ * db::notes::restore). */
+const now = useNow();
+const restoresWithoutFuse = computed(
+  () =>
+    exploded.value || (props.note.destroyAt !== null && props.note.destroyAt <= now.value),
+);
+const restoreButton = ref<HTMLButtonElement | null>(null);
+const header = ref<HTMLElement | null>(null);
+
+// The open note exploded: its header buttons are about to disappear. If one of them has the
+// focus, it is given to « Restaurer » rather than lost. Only then: from the text, the next key
+// typed (Espace, Entrée) must not press the button. The watcher runs before the page is
+// updated, so the header is still there to be checked.
+watch(inTrash, async (trashed) => {
+  const active = document.activeElement;
+  if (!trashed || !header.value?.contains(active)) return;
+  await nextTick();
+  // The title field stays (read-only): only a button that was removed hands the focus over.
+  if (!active?.isConnected) restoreButton.value?.focus();
+});
 const rich = ref<InstanceType<typeof RichEditorComponent> | null>(null);
 const code = ref<InstanceType<typeof CodeEditorComponent> | null>(null);
 const menu = ref<InstanceType<typeof NoteMenu> | null>(null);
@@ -84,6 +110,7 @@ async function patch(change: Parameters<typeof notes.save>[1], failure: string):
 }
 
 const togglePin = () => actions.togglePin(props.note);
+const toggleFuse = () => actions.toggleFuse(props.note);
 const setColor = (color: NoteColor) => actions.setColor(props.note, color);
 
 const languageOptions = CODE_LANGUAGES.map(({ id: value, label }) => ({ value, label }));
@@ -166,6 +193,7 @@ defineExpose({
   flush,
   focusTitle: () => titleInput.value?.focus(),
   togglePin,
+  toggleFuse,
   moveToTrash,
   toggleMenu: () => menu.value?.toggle(),
 });
@@ -175,6 +203,7 @@ defineExpose({
   <article :data-note-color="note.color" class="flex h-full min-h-0 flex-col">
     <header
       v-if="!ui.focusMode"
+      ref="header"
       class="flex w-full items-center gap-1 px-6 pb-2 pt-4"
       :class="note.kind === 'rich' ? 'mx-auto max-w-[calc(72ch+3rem)]' : ''"
     >
@@ -185,20 +214,37 @@ defineExpose({
         maxlength="500"
         placeholder="Titre"
         aria-label="Titre de la note"
-        class="min-w-0 flex-1 bg-transparent text-[26px] font-semibold text-note placeholder:text-muted"
+        class="min-w-24 flex-1 bg-transparent text-[26px] font-semibold text-note placeholder:text-muted"
         :readonly="inTrash"
         @input="titleSave.touch()"
         @keydown.enter.prevent="onTitleEnter"
       />
       <template v-if="!inTrash">
+        <!-- May shrink (its text is cut) so that a narrow window keeps room for the title. -->
         <UiSelect
           v-if="note.kind === 'code'"
-          class="shrink-0"
           label="Langage"
           :model-value="normalizeLanguage(note.codeLanguage) ?? 'plaintext'"
           :options="languageOptions"
           @update:model-value="setLanguage"
         />
+        <FuseTimeLeft
+          v-if="note.destroyAt !== null"
+          long
+          :destroy-at="note.destroyAt"
+          class="min-w-0 truncate pl-1 text-sm"
+        />
+        <button
+          type="button"
+          class="rounded-button p-2 hover:bg-surface-2"
+          :class="fuseLit ? '' : 'text-muted hover:text-text'"
+          :aria-label="fuseLit ? 'Éteindre la mèche' : 'Allumer la mèche'"
+          :title="fuseLit ? 'Éteindre la mèche (Ctrl+Maj+E)' : 'Allumer la mèche (Ctrl+Maj+E)'"
+          :aria-pressed="fuseLit"
+          @click="toggleFuse"
+        >
+          <FuseIcon :lit="fuseLit" />
+        </button>
         <button
           type="button"
           class="rounded-button p-2 hover:bg-surface-2"
@@ -230,14 +276,21 @@ defineExpose({
       class="mx-6 mb-3 flex self-center w-[calc(100%-3rem)] max-w-[72ch] flex-wrap items-center gap-2 rounded-button border border-border bg-surface px-3 py-2 text-sm"
       role="status"
     >
-      <span class="flex-1 text-text">Cette note est dans la corbeille.</span>
+      <span class="min-w-56 flex-1 text-text">
+        {{
+          exploded
+            ? "Sa mèche a brûlé : cette note est dans la corbeille."
+            : "Cette note est dans la corbeille."
+        }}
+      </span>
       <button
+        ref="restoreButton"
         type="button"
         class="flex items-center gap-1 rounded-[8px] px-2 py-1 font-semibold text-brand hover:bg-surface-2"
         @click="restore()"
       >
         <RotateCcw :size="15" aria-hidden="true" />
-        Restaurer
+        {{ restoresWithoutFuse ? "Restaurer (la mèche est éteinte)" : "Restaurer" }}
       </button>
       <button
         type="button"

@@ -3,6 +3,7 @@ import type { NoteColor } from "../theme/note-colors";
 
 export type { NoteColor };
 export type NoteKind = "rich" | "code";
+/** Autodestruction mode (« la mèche »). Only "delay" is used for now (docs/06). */
 export type EphemeralMode = "delay" | "on_complete";
 export type TrashReason = "manual" | "self_destruct";
 export type ListFilter = "all" | "pinned" | "ephemeral" | "trash";
@@ -61,6 +62,7 @@ export interface SearchResult {
   color: NoteColor;
   pinned: boolean;
   updatedAt: number;
+  destroyAt: number | null;
 }
 
 export const MATCH_START = "\u{E000}";

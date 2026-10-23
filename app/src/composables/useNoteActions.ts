@@ -4,6 +4,7 @@ import { useNotesStore } from "../stores/notes";
 import { useToastsStore } from "../stores/toasts";
 import { useUiStore } from "../stores/ui";
 import type { Note, NoteColor, NoteKind } from "../types/note";
+import { fuseDelayLabel } from "../utils/fuse";
 import { flushAllAutosaves } from "./useAutosave";
 
 export function noteRoute(id: string): string {
@@ -33,10 +34,11 @@ export function useNoteActions() {
     }
   }
 
-  async function create(kind: NoteKind): Promise<Note | null> {
+  /** `fused`: « Nouvelle note à mèche », its fuse is lit with the delay of the settings. */
+  async function create(kind: NoteKind, fused = false): Promise<Note | null> {
     if (!(await saveOpenNote())) return null;
     try {
-      const note = await notes.create(kind);
+      const note = await notes.create(kind, fused);
       await notes.search("");
       await router.push(noteRoute(note.id));
       return note;
@@ -78,6 +80,26 @@ export function useNoteActions() {
     }
   }
 
+  /** Lights or puts out the fuse of a note (docs/06), and says so with the delay: the icon
+   * alone is easy to miss. */
+  async function toggleFuse(note: Note): Promise<void> {
+    const lighting = note.ephemeralMode === null;
+    try {
+      const saved = await notes.setFuse(note.id, lighting);
+      const hours = saved.ephemeralDelayHours;
+      toasts.show(
+        hours !== null
+          ? `Mèche allumée : la note explosera dans ${fuseDelayLabel(hours)}.`
+          : "Mèche éteinte.",
+      );
+    } catch (error) {
+      toasts.error(
+        lighting ? "Impossible d'allumer la mèche." : "Impossible d'éteindre la mèche.",
+        error,
+      );
+    }
+  }
+
   async function setColor(note: Note, color: NoteColor): Promise<void> {
     try {
       await notes.save(note.id, { color });
@@ -102,5 +124,5 @@ export function useNoteActions() {
     await router.push(noteRoute(id));
   }
 
-  return { saveOpenNote, create, restore, trash, togglePin, setColor, convert, open };
+  return { saveOpenNote, create, restore, trash, togglePin, toggleFuse, setColor, convert, open };
 }

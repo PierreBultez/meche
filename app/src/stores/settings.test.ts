@@ -58,14 +58,14 @@ describe("settings store", () => {
 
   it("applies the system theme as soon as it is created", () => {
     mockSystemTheme(true);
-    mockRustCore({ theme: "system", listWidth: 280, codeLineWrap: false });
+    mockRustCore({ theme: "system", listWidth: 280, codeLineWrap: false, fuseDelayHours: 168 });
     useSettingsStore();
     expect(currentTheme()).toBe("dark");
   });
 
   it("applies the saved theme once loaded", async () => {
     mockSystemTheme(true);
-    mockRustCore({ theme: "light", listWidth: 280, codeLineWrap: false });
+    mockRustCore({ theme: "light", listWidth: 280, codeLineWrap: false, fuseDelayHours: 168 });
     const store = useSettingsStore();
     await store.load();
     await nextTick();
@@ -75,7 +75,7 @@ describe("settings store", () => {
 
   it("switches at once and saves the new theme in Rust", async () => {
     mockSystemTheme(false);
-    const calls = mockRustCore({ theme: "system", listWidth: 280, codeLineWrap: false });
+    const calls = mockRustCore({ theme: "system", listWidth: 280, codeLineWrap: false, fuseDelayHours: 168 });
     const store = useSettingsStore();
     const saving = store.setTheme("dark");
     await nextTick();
@@ -86,7 +86,7 @@ describe("settings store", () => {
 
   it("rolls back when saving fails", async () => {
     mockSystemTheme(false);
-    mockRustCore({ theme: "light", listWidth: 280, codeLineWrap: false }, { failWrites: true });
+    mockRustCore({ theme: "light", listWidth: 280, codeLineWrap: false, fuseDelayHours: 168 }, { failWrites: true });
     const store = useSettingsStore();
     await store.load();
     await expect(store.setTheme("dark")).rejects.toThrow();
@@ -97,7 +97,7 @@ describe("settings store", () => {
 
   it("follows system changes only in system mode", async () => {
     const system = mockSystemTheme(false);
-    mockRustCore({ theme: "system", listWidth: 280, codeLineWrap: false });
+    mockRustCore({ theme: "system", listWidth: 280, codeLineWrap: false, fuseDelayHours: 168 });
     const store = useSettingsStore();
     system.switchTo(true);
     await nextTick();
@@ -112,7 +112,7 @@ describe("settings store", () => {
 
   it("loads and saves the list width and code wrapping", async () => {
     mockSystemTheme(false);
-    const calls = mockRustCore({ theme: "system", listWidth: 320, codeLineWrap: true });
+    const calls = mockRustCore({ theme: "system", listWidth: 320, codeLineWrap: true, fuseDelayHours: 168 });
     const store = useSettingsStore();
     await store.load();
     expect(store.listWidth).toBe(320);
@@ -125,5 +125,21 @@ describe("settings store", () => {
       cmd: "set_settings",
       payload: { patch: { codeLineWrap: false } },
     });
+  });
+
+  it("loads and saves the fuse delay", async () => {
+    mockSystemTheme(false);
+    const calls = mockRustCore({
+      theme: "system",
+      listWidth: 280,
+      codeLineWrap: false,
+      fuseDelayHours: 24,
+    });
+    const store = useSettingsStore();
+    await store.load();
+    expect(store.fuseDelayHours).toBe(24);
+    await store.setFuseDelayHours(720);
+    expect(store.fuseDelayHours).toBe(720);
+    expect(calls).toContainEqual({ cmd: "set_settings", payload: { patch: { fuseDelayHours: 720 } } });
   });
 });

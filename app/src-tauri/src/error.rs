@@ -34,6 +34,10 @@ pub enum Error {
     #[error("the database is unavailable after an internal error")]
     DatabaseLockPoisoned,
 
+    /// A request to the server while this device is logged out (devices, invitations).
+    #[error("this device is not connected to a server")]
+    NotConnected,
+
     /// The server could not be reached: no network, server down, timeout (docs/04).
     #[error("server unreachable: {0}")]
     Network(String),
@@ -65,6 +69,7 @@ impl Error {
             Error::NotFound(_) => "not_found",
             Error::InvalidInput(_) => "invalid_input",
             Error::DatabaseLockPoisoned => "database_lock",
+            Error::NotConnected => "not_connected",
             Error::Network(_) => "network",
             Error::Api { code, .. } => api_kind(code),
         }

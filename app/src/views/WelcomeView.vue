@@ -22,7 +22,7 @@ async function choose(connect: boolean): Promise<void> {
 <template>
   <main class="flex h-screen items-center justify-center overflow-y-auto bg-bg px-6 text-text">
     <div class="w-full max-w-md space-y-6 py-8 text-center">
-      <p class="text-5xl font-semibold text-brand">mèche</p>
+      <h1 class="text-5xl font-semibold text-brand">mèche</h1>
       <p class="text-muted">
         Tes notes sont enregistrées sur cet appareil et tout marche sans réseau. Pour les retrouver
         sur ton téléphone et tes autres ordinateurs, connecte un serveur Mèche.

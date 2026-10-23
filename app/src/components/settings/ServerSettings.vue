@@ -4,6 +4,7 @@
 import { computed, ref } from "vue";
 import { checkServer } from "../../api/sync";
 import { useNow } from "../../composables/useNow";
+import { useSyncNow } from "../../composables/useSyncNow";
 import { useSyncStore } from "../../stores/sync";
 import { useToastsStore } from "../../stores/toasts";
 import { agoText } from "../../utils/relative-date";
@@ -53,11 +54,27 @@ async function test(): Promise<void> {
   }
 }
 
-/** Syncing this device with another account than the last one sends it this device's notes. */
+/** The host of an address as typed (https:// may be left out), or null when it is not one. */
+function hostOf(address: string): string | null {
+  const typed = address.trim();
+  try {
+    return new URL(/^[a-z][a-z0-9+.-]*:\/\//i.test(typed) ? typed : `https://${typed}`).host;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Syncing this device with another account than the last one, or another server, sends it this
+ * device's notes.
+ */
 const otherAccount = computed(() => {
   const previous = status.value?.email;
-  return previous !== null && previous !== undefined && previous !== "" &&
-    previous.toLowerCase() !== email.value.trim().toLowerCase();
+  if (previous === null || previous === undefined || previous === "") return false;
+  return (
+    previous.toLowerCase() !== email.value.trim().toLowerCase() ||
+    hostOf(serverUrl.value) !== host.value
+  );
 });
 
 function submit(): void {
@@ -91,17 +108,11 @@ async function connect(): Promise<void> {
   }
 }
 
+const syncNowAndSay = useSyncNow();
 async function syncNow(): Promise<void> {
   syncing.value = true;
   try {
-    const result = await sync.syncNow();
-    if (result.state === "offline" || result.state === "error") {
-      toasts.show(syncErrorMessage(result.errorKind), { tone: "error" });
-    } else {
-      toasts.show("Notes synchronisées.");
-    }
-  } catch (failure) {
-    toasts.error(syncErrorMessage("server"), failure);
+    await syncNowAndSay();
   } finally {
     syncing.value = false;
   }
@@ -128,7 +139,7 @@ async function logout(): Promise<void> {
         <dt class="text-muted">Cet appareil</dt>
         <dd class="min-w-0 truncate">{{ status.deviceName }}</dd>
       </dl>
-      <p class="text-sm" :class="status.state === 'error' ? 'text-danger' : 'text-muted'" role="status">
+      <p class="text-sm" :class="status.state === 'error' ? 'text-danger' : 'text-muted'">
         {{ stateText }}
       </p>
       <p v-if="skewMinutes > 0" class="text-sm text-danger">
@@ -162,33 +173,32 @@ async function logout(): Promise<void> {
         Connecte un serveur Mèche pour retrouver tes notes sur tous tes appareils. Sans serveur,
         elles restent sur celui-ci.
       </p>
-      <div class="flex gap-1 rounded-button bg-surface-2 p-1 text-sm" role="tablist">
+      <div class="flex gap-1 rounded-button bg-surface-2 p-1 text-sm" role="group" aria-label="Compte">
         <button
           type="button"
-          role="tab"
           class="flex-1 rounded-[8px] px-2 py-1 font-semibold"
           :class="mode === 'login' ? 'bg-bg text-text' : 'text-muted hover:text-text'"
-          :aria-selected="mode === 'login'"
+          :aria-pressed="mode === 'login'"
           @click="mode = 'login'"
         >
           J'ai un compte
         </button>
         <button
           type="button"
-          role="tab"
           class="flex-1 rounded-[8px] px-2 py-1 font-semibold"
           :class="mode === 'register' ? 'bg-bg text-text' : 'text-muted hover:text-text'"
-          :aria-selected="mode === 'register'"
+          :aria-pressed="mode === 'register'"
           @click="mode = 'register'"
         >
           Créer un compte
         </button>
       </div>
 
-      <label class="block text-sm">
-        <span class="text-muted">Adresse du serveur</span>
-        <span class="mt-1 flex gap-2">
+      <div class="text-sm">
+        <label for="server-url" class="text-muted">Adresse du serveur</label>
+        <div class="mt-1 flex gap-2">
           <input
+            id="server-url"
             v-model="serverUrl"
             type="url"
             required
@@ -203,25 +213,29 @@ async function logout(): Promise<void> {
           >
             Tester
           </button>
-        </span>
-      </label>
+        </div>
+      </div>
       <p v-if="checkResult" class="text-sm" :class="checkResult.ok ? 'text-muted' : 'text-danger'" role="status">
         {{ checkResult.text }}
       </p>
 
-      <label v-if="mode === 'register'" class="block text-sm">
-        <span class="text-muted">Code d'invitation</span>
+      <div v-if="mode === 'register'" class="text-sm">
+        <label for="server-invitation-code" class="text-muted">Code d'invitation</label>
         <input
+          id="server-invitation-code"
           v-model="invitationCode"
           type="text"
           required
           autocomplete="off"
           spellcheck="false"
           placeholder="XXXX-XXXX-XXXX"
+          aria-describedby="server-invitation-help"
           class="mt-1 w-full rounded-button bg-surface-2 px-2.5 py-1.5 font-mono uppercase text-text placeholder:text-muted"
         />
-        <span class="mt-1 block text-muted">Demande-le à une personne qui a déjà un compte sur ce serveur.</span>
-      </label>
+        <p id="server-invitation-help" class="mt-1 text-muted">
+          Demande-le à une personne qui a déjà un compte sur ce serveur.
+        </p>
+      </div>
 
       <label class="block text-sm">
         <span class="text-muted">Adresse e-mail</span>
@@ -233,20 +247,22 @@ async function logout(): Promise<void> {
           class="mt-1 w-full rounded-button bg-surface-2 px-2.5 py-1.5 text-text"
         />
       </label>
-      <label class="block text-sm">
-        <span class="text-muted">Mot de passe</span>
+      <div class="text-sm">
+        <label for="server-password" class="text-muted">Mot de passe</label>
         <input
+          id="server-password"
           v-model="password"
           type="password"
           required
           :minlength="mode === 'register' ? 12 : undefined"
           :autocomplete="mode === 'register' ? 'new-password' : 'current-password'"
+          :aria-describedby="mode === 'register' ? 'server-password-help' : undefined"
           class="mt-1 w-full rounded-button bg-surface-2 px-2.5 py-1.5 text-text"
         />
-        <span v-if="mode === 'register'" class="mt-1 block text-muted">
+        <p v-if="mode === 'register'" id="server-password-help" class="mt-1 text-muted">
           12 caractères au moins. Une phrase de passe est idéale.
-        </span>
-      </label>
+        </p>
+      </div>
       <label class="block text-sm">
         <span class="text-muted">Nom de cet appareil</span>
         <input
@@ -270,7 +286,7 @@ async function logout(): Promise<void> {
     <ConfirmDialog
       :open="confirmingSwitch"
       title="Changer de compte ?"
-      :message="`Cet appareil était synchronisé avec ${status?.email}. Ses notes seront envoyées vers le compte ${email.trim()}.`"
+      :message="`Cet appareil était synchronisé avec le compte ${status?.email} (${host}). Ses notes seront envoyées vers le compte ${email.trim()} (${hostOf(serverUrl) ?? serverUrl}).`"
       confirm-label="Continuer"
       @confirm="connect"
       @cancel="confirmingSwitch = false"

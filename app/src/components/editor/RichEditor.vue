@@ -13,7 +13,7 @@ import { useToastsStore } from "../../stores/toasts";
 import CodeBlockView from "./CodeBlockView.vue";
 
 const props = defineProps<{
-  /** Markdown of the note, read once when the editor is created. */
+  /** Markdown of the note, read once when the editor is created (then see `replace`). */
   content: string;
   editable: boolean;
 }>();
@@ -126,6 +126,25 @@ defineExpose({
   getMarkdown: (): string => (editor.value ? serializeMarkdown(editor.value) : props.content),
   // null keeps the caret where it is (a fresh editor has it at the start).
   focus: (position: "start" | "end" | null = "start") => editor.value?.commands.focus(position),
+  /**
+   * Shows another version of the note in place (docs/04: brought by the sync). The editor, its
+   * focus and its scroll stay; the caret stays at the same place, within the new text. Not
+   * undoable: Ctrl+Z never brings back the version replaced. Not reported as `changed`.
+   * Returns the editor's own Markdown for it.
+   */
+  replace: (markdown: string): string => {
+    const current = editor.value;
+    if (!current) return markdown;
+    const { from, to } = current.state.selection;
+    current
+      .chain()
+      .setMeta("addToHistory", false)
+      .setContent(markdown, { contentType: "markdown", emitUpdate: false })
+      // Clamped by TipTap to the new document.
+      .setTextSelection({ from, to })
+      .run();
+    return serializeMarkdown(current);
+  },
 });
 </script>
 

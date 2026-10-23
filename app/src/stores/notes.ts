@@ -35,12 +35,6 @@ export const useNotesStore = defineStore("notes", () => {
   /** Search results, or null when the search box is empty. */
   const results = ref<SearchResult[] | null>(null);
 
-  /**
-   * Incremented to mount the editor again on the open note (NotesView's `key`): its text
-   * changed on another device and editors read the text only when they are mounted.
-   */
-  const editorGeneration = ref(0);
-
   let listRequest = 0;
   let openRequest = 0;
   /** The note asked by the latest open request (it may still be loading), or null. */
@@ -79,11 +73,15 @@ export const useNotesStore = defineStore("notes", () => {
     }
     let note: Note;
     try {
-      const changes = changeCount;
+      let changes = changeCount;
       note = await getNote(id);
       // Notes changed while it was read (the sync): reload() could not refresh a note that was
-      // not open yet, so it is read again, to never open an old version.
-      if (changes !== changeCount && request === openRequest) note = await getNote(id);
+      // not open yet, so it is read again, to never open an old version. A few times at most:
+      // a later change is then shown in place by the editor.
+      for (let tries = 0; changes !== changeCount && request === openRequest && tries < 3; tries++) {
+        changes = changeCount;
+        note = await getNote(id);
+      }
     } catch (error) {
       // Not opened: the note still open is the one wanted (reload() keeps refreshing it).
       if (request === openRequest) wantedId = current.value?.id ?? null;
@@ -91,26 +89,6 @@ export const useNotesStore = defineStore("notes", () => {
     }
     if (request === openRequest) {
       current.value = note;
-    }
-  }
-
-  /**
-   * Mounts the editor again on note `id` as it is stored now (docs/04: its text changed on
-   * another device while it was open). Returns false when it no longer exists.
-   */
-  async function reopen(id: string): Promise<boolean> {
-    if (current.value?.id !== id) return true;
-    const request = openRequest;
-    try {
-      const note = await getNote(id);
-      if (request !== openRequest || current.value?.id !== id) return true;
-      current.value = note;
-      editorGeneration.value++;
-      return true;
-    } catch (error) {
-      if ((error as CommandError | undefined)?.kind !== "not_found") throw error;
-      if (request === openRequest && current.value?.id === id) current.value = null;
-      return false;
     }
   }
 
@@ -127,13 +105,39 @@ export const useNotesStore = defineStore("notes", () => {
     return note;
   }
 
-  /** Saves a change and returns the saved note. */
+  /**
+   * Saves a change and returns the saved note. The note is saved once Rust answers: a list
+   * that then fails to reload (reported in the console) does not make the save fail.
+   */
   async function save(id: string, patch: NotePatch): Promise<Note> {
     const note = await updateNote(id, patch);
     if (current.value?.id === id) {
       current.value = note;
     }
-    await refresh();
+    await refreshAfterChange();
+    return note;
+  }
+
+  async function refreshAfterChange(): Promise<void> {
+    try {
+      await refresh();
+    } catch (error) {
+      console.error("could not reload the list", error);
+    }
+  }
+
+  /**
+   * Keeps a text whose note was deleted on another device in a new note of the same kind
+   * (docs/04), without opening it: it shows at the top of the list.
+   */
+  async function keepAsNewNote(of: Note, title: string, content: string): Promise<Note> {
+    const created = await createNote(of.kind, false);
+    const note = await updateNote(created.id, {
+      title,
+      content,
+      ...(of.kind === "code" && of.codeLanguage !== null ? { codeLanguage: of.codeLanguage } : {}),
+    });
+    await refreshAfterChange();
     return note;
   }
 
@@ -239,16 +243,15 @@ export const useNotesStore = defineStore("notes", () => {
     filter,
     summaries,
     current,
-    editorGeneration,
     query,
     results,
     visibleIds,
     refresh,
     setFilter,
     open,
-    reopen,
     create,
     save,
+    keepAsNewNote,
     setFuse,
     reload,
     trash,

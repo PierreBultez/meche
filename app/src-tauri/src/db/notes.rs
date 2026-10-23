@@ -688,7 +688,7 @@ pub fn list(conn: &Connection, filter: ListFilter) -> Result<Vec<NoteSummary>> {
 /// The editor sends with its text the one it believes is stored (`expected_title`,
 /// `expected_content`). If the note holds another text, it changed under the editor: the sync
 /// brought another device's version, or another window saved it. That text is not overwritten:
-/// what was typed goes to a conflict copy « … (conflit du 22/10 14:05) », and the note is
+/// what the editor shows goes to a conflict copy « … (conflit du 22/10 14:05) », and the note is
 /// returned unchanged, so the editor can show it (docs/04). The check and the write happen
 /// under the same database lock: nothing can change in between.
 pub fn update(conn: &Connection, id: &str, patch: NotePatch, now: i64) -> Result<Note> {
@@ -697,6 +697,9 @@ pub fn update(conn: &Connection, id: &str, patch: NotePatch, now: i64) -> Result
     // condition holds. Here: an expected text was sent and it differs from the stored one.
     let changed_elsewhere = matches!(&patch.expected_title, Some(expected) if *expected != current.title)
         || matches!(&patch.expected_content, Some(expected) if *expected != current.content);
+    // Read before `patch.title` and `patch.content` are moved into `note` below.
+    let title_sent = patch.title.is_some();
+    let content_sent = patch.content.is_some();
     // `clone()` makes an independent copy, so `current` stays untouched for the comparison.
     let mut note = current.clone();
 
@@ -733,11 +736,21 @@ pub fn update(conn: &Connection, id: &str, patch: NotePatch, now: i64) -> Result
     if note == current {
         return Ok(current);
     }
-    validate(&note)?;
     if changed_elsewhere {
-        insert_conflict_copy(conn, &note, now)?;
+        // The copy holds the editor's whole version: a field it did not send is the one it
+        // expected, not the one the sync brought. A single copy, even when both changed.
+        let mut mine = note;
+        if !title_sent && let Some(expected) = patch.expected_title {
+            mine.title = expected;
+        }
+        if !content_sent && let Some(expected) = patch.expected_content {
+            mine.content = expected;
+        }
+        validate(&mine)?;
+        insert_conflict_copy(conn, &mine, now)?;
         return Ok(current);
     }
+    validate(&note)?;
     note.updated_at = now;
     conn.execute(
         "UPDATE notes SET title = ?2, content = ?3, kind = ?4, code_language = ?5, pinned = ?6,
@@ -1149,6 +1162,31 @@ mod tests {
         assert!(pinned);
         assert_eq!(color, "bleu");
         assert_eq!((created, dirty, server_rev), (2_000, 1, 0));
+    }
+
+    #[test]
+    fn the_copy_holds_the_whole_version_of_the_editor() {
+        let conn = open_in_memory().unwrap();
+        let note = rich_note(&conn, "Titre d'ailleurs", "Texte d'ailleurs", 1_000);
+        // The editor changed the title only; it shows « Lait » as content.
+        let patch = NotePatch {
+            title: Some("Mon titre".to_string()),
+            expected_title: Some("Courses".to_string()),
+            expected_content: Some("Lait".to_string()),
+            ..NotePatch::default()
+        };
+        update(&conn, &note.id, patch, 2_000).unwrap();
+
+        let (title, content): (String, String) = conn
+            .query_row(
+                "SELECT title, content FROM notes WHERE id != ?1",
+                [&note.id],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .unwrap();
+        assert!(title.starts_with("Mon titre (conflit du "), "{title}");
+        assert_eq!(content, "Lait");
+        assert_eq!(count_notes(&conn), 2);
     }
 
     #[test]

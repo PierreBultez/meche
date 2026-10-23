@@ -1,6 +1,6 @@
 import { clearMocks } from "@tauri-apps/api/mocks";
 import { createPinia, setActivePinia } from "pinia";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { type FakeCore, installFakeCore } from "../test/fake-core";
 import { useNotesStore } from "./notes";
 
@@ -232,26 +232,28 @@ describe("notes store", () => {
     });
   });
 
-  it("mounts the editor again on the stored version of the open note", async () => {
+  it("keeps a text whose note was deleted in a new note, without opening it", async () => {
     const store = useNotesStore();
-    const note = await store.create("rich");
-    core.notes[0].content = "Version d'un autre appareil";
+    const open = await store.create("code");
+    core.notes[0].codeLanguage = "rust";
+    const kept = await store.keepAsNewNote(core.notes[0], "Script", "fn main() {}");
 
-    expect(await store.reopen(note.id)).toBe(true);
-
-    expect(store.current?.content).toBe("Version d'un autre appareil");
-    expect(store.editorGeneration).toBe(1);
-    // Another note is open now: nothing to do.
-    expect(await store.reopen("other")).toBe(true);
-    expect(store.editorGeneration).toBe(1);
+    expect(kept).toMatchObject({ kind: "code", codeLanguage: "rust", title: "Script", content: "fn main() {}" });
+    expect(store.current?.id).toBe(open.id);
+    expect(store.summaries.map((summary) => summary.id)).toContain(kept.id);
   });
 
-  it("closes the note when it was deleted elsewhere", async () => {
+  it("a save is not a failure when only the list fails to reload", async () => {
     const store = useNotesStore();
     const note = await store.create("rich");
-    core.notes = [];
-    expect(await store.reopen(note.id)).toBe(false);
-    expect(store.current).toBeNull();
+    const error = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    core.fail("list_notes", { kind: "database", message: "busy" });
+
+    const saved = await store.save(note.id, { title: "Courses" });
+
+    expect(saved.title).toBe("Courses");
+    expect(error).toHaveBeenCalled();
+    error.mockRestore();
   });
 
   it("reads a note again when notes changed while it was being opened", async () => {

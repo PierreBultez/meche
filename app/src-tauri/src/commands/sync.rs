@@ -96,9 +96,7 @@ fn session(state: &AppState) -> Result<(String, String)> {
     let config = config::load(&*state.lock_db()?)?;
     match config.session() {
         Some((url, token)) => Ok((url.to_string(), token.to_string())),
-        None => Err(Error::InvalidInput(
-            "this device is not connected to a server".to_string(),
-        )),
+        None => Err(Error::NotConnected),
     }
 }
 

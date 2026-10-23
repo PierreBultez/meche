@@ -151,7 +151,13 @@ export function installFakeCore(): FakeCore {
         updated.kind === note.kind && updated.codeLanguage === note.codeLanguage;
       if (same) return { ...note };
       if (changedElsewhere) {
-        core.notes.push({ ...updated, id: `note-${++counter}`, title: `${updated.title} (conflit du 22/10 14:05)` });
+        // The copy holds the editor's whole version: a field not sent is the one expected.
+        const mine = {
+          ...updated,
+          title: change.title ?? expectedTitle ?? updated.title,
+          content: change.content ?? expectedContent ?? updated.content,
+        };
+        core.notes.push({ ...mine, id: `note-${++counter}`, title: `${mine.title} (conflit du 22/10 14:05)` });
         return { ...note };
       }
       Object.assign(note, change, { updatedAt: ++clock });

@@ -120,7 +120,7 @@ defineExpose({ editor });
     <main class="h-full min-w-0 flex-1" data-note-pane>
       <NoteEditor
         v-if="notes.current"
-        :key="`${notes.current.id}:${notes.current.kind}:${notes.editorGeneration}`"
+        :key="`${notes.current.id}:${notes.current.kind}`"
         ref="editor"
         :note="notes.current"
       />

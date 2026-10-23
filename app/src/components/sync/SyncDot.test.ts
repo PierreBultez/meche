@@ -61,6 +61,10 @@ describe("sync dot (docs/08)", () => {
     await flushPromises();
     expect(button().classes()).toContain("text-ok");
     expect(button().attributes("title")).toBe("À jour (dernière synchro à l'instant).");
+    // The label says what a click does, then the state.
+    expect(button().attributes("aria-label")).toBe(
+      "Synchroniser maintenant. À jour (dernière synchro à l'instant).",
+    );
 
     sync.apply(status({ state: "offline", errorKind: "network" }));
     await flushPromises();
@@ -74,7 +78,9 @@ describe("sync dot (docs/08)", () => {
     sync.apply(status({ loggedIn: false }));
     await flushPromises();
     expect(button().classes()).toContain("text-muted");
-    expect(button().attributes("aria-label")).toBe("Synchro désactivée : tes notes restent sur cet appareil.");
+    expect(button().attributes("aria-label")).toBe(
+      "Réglages du serveur. Synchro désactivée : tes notes restent sur cet appareil.",
+    );
   });
 
   it("turns orange only for a sync that lasts", async () => {

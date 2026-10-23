@@ -2,18 +2,16 @@
 import { useRoute, useRouter } from "vue-router";
 import { useNotesStore } from "../stores/notes";
 import { useSettingsStore } from "../stores/settings";
-import { useSyncStore } from "../stores/sync";
 import { useToastsStore } from "../stores/toasts";
 import { useUiStore } from "../stores/ui";
 import type { ListFilter, Note } from "../types/note";
 import type { ThemePreference } from "../types/settings";
-import { syncErrorMessage } from "../utils/sync-messages";
 import { noteRoute, useNoteActions } from "./useNoteActions";
+import { useSyncNow } from "./useSyncNow";
 
 export function useCommands() {
   const notes = useNotesStore();
   const settings = useSettingsStore();
-  const sync = useSyncStore();
   const toasts = useToastsStore();
   const ui = useUiStore();
   const route = useRoute();
@@ -91,18 +89,8 @@ export function useCommands() {
   }
 
   /** « Synchroniser maintenant » (docs/08): waits for the end of the sync, says how it went. */
-  async function syncNow(): Promise<void> {
-    try {
-      const status = await sync.syncNow();
-      if (status.state === "offline" || status.state === "error") {
-        toasts.show(syncErrorMessage(status.errorKind), { tone: "error" });
-      } else {
-        toasts.show("Notes synchronisées.");
-      }
-    } catch (error) {
-      toasts.error(syncErrorMessage("server"), error);
-    }
-  }
+  const syncNowAndSay = useSyncNow();
+  const syncNow = () => syncNowAndSay();
 
   return {
     editableNote,

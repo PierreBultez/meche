@@ -102,6 +102,7 @@ const pending = (invitation: Invitation) => invitation.usedAt === null && invita
           v-if="pending(invitation)"
           type="button"
           class="rounded-button px-2 py-0.5 font-semibold text-danger hover:bg-surface-2"
+          :aria-label="`Retirer le code …${invitation.hint}`"
           @click="withdraw(invitation)"
         >
           Retirer

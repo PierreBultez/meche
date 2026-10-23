@@ -62,7 +62,7 @@ describe("server settings", () => {
 
   it("creates an account with an invitation code", async () => {
     const wrapper = await mountSettings();
-    await wrapper.findAll('[role="tab"]')[1].trigger("click");
+    await wrapper.findAll("button[aria-pressed]")[1].trigger("click");
     await wrapper.find('input[placeholder="XXXX-XXXX-XXXX"]').setValue("7kq2-m9xd-4tph");
     await wrapper.find('input[type="email"]').setValue("papa@example.com");
     await wrapper.find('input[type="password"]').setValue("une phrase de passe");
@@ -83,6 +83,30 @@ describe("server settings", () => {
     await flushPromises();
     expect(core.calls.some((call) => call.cmd === "login")).toBe(false);
     expect(wrapper.find("dialog").text()).toContain("Ses notes seront envoyées vers le compte papa@example.com");
+  });
+
+  it("asks before syncing this device with the same account on another server", async () => {
+    core.sync.email = "pierre@example.com";
+    core.sync.serverUrl = "https://meche.pierrebultez.com";
+    const wrapper = await mountSettings();
+    const urlInput = () => wrapper.find('input[type="url"]');
+    await wrapper.find('input[type="email"]').setValue("pierre@example.com");
+    await wrapper.find('input[type="password"]').setValue("une phrase de passe");
+
+    // The same server, typed without https://: no question.
+    await urlInput().setValue("meche.pierrebultez.com");
+    await wrapper.find("form").trigger("submit");
+    await flushPromises();
+    expect(core.calls.filter((call) => call.cmd === "login")).toHaveLength(1);
+
+    core.sync.loggedIn = false;
+    await useSyncStore().load();
+    await flushPromises();
+    await urlInput().setValue("https://notes.example.com");
+    await wrapper.find("form").trigger("submit");
+    await flushPromises();
+    expect(core.calls.filter((call) => call.cmd === "login")).toHaveLength(1);
+    expect(wrapper.find("dialog").text()).toContain("(notes.example.com)");
   });
 
   it("tests the address of the server", async () => {

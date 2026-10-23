@@ -61,6 +61,7 @@ async function revoke(): Promise<void> {
           v-if="!device.current"
           type="button"
           class="rounded-button px-2 py-1 text-sm font-semibold text-danger hover:bg-surface-2"
+          :aria-label="`Déconnecter ${device.name}`"
           @click="revoking = device"
         >
           Déconnecter

@@ -5,16 +5,16 @@
 import { computed, onBeforeUnmount, ref, watch } from "vue";
 import { useRouter } from "vue-router";
 import { useNow } from "../../composables/useNow";
+import { useSyncNow } from "../../composables/useSyncNow";
 import { useSyncStore } from "../../stores/sync";
-import { useToastsStore } from "../../stores/toasts";
 import { agoText } from "../../utils/relative-date";
-import { syncErrorMessage, syncStateText } from "../../utils/sync-messages";
+import { syncStateText } from "../../utils/sync-messages";
 
 /** A sync shorter than this does not turn the dot orange: no blinking every minute. */
 const SYNCING_SHOWN_AFTER_MS = 400;
 
 const sync = useSyncStore();
-const toasts = useToastsStore();
+const syncNow = useSyncNow();
 const router = useRouter();
 const now = useNow();
 
@@ -74,15 +74,13 @@ async function onClick(): Promise<void> {
     await router.push({ name: "settings", hash: "#server" });
     return;
   }
-  try {
-    const status = await sync.syncNow();
-    if (status.state === "offline" || status.state === "error") {
-      toasts.show(syncErrorMessage(status.errorKind), { tone: "error" });
-    }
-  } catch (error) {
-    toasts.error(syncErrorMessage("server"), error);
-  }
+  await syncNow({ quiet: true });
 }
+
+/** What a click does, then the state: a screen reader says both. */
+const label = computed(
+  () => `${sync.loggedIn ? "Synchroniser maintenant" : "Réglages du serveur"}. ${text.value}`,
+);
 </script>
 
 <template>
@@ -91,7 +89,7 @@ async function onClick(): Promise<void> {
     class="flex items-center rounded-button p-2.5 hover:bg-surface-2"
     :class="color"
     :title="text"
-    :aria-label="text"
+    :aria-label="label"
     data-sync-dot
     @click="onClick"
   >

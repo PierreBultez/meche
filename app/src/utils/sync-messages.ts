@@ -14,7 +14,11 @@ const MESSAGES: Record<string, string> = {
   weak_password: "Le mot de passe doit faire au moins 12 caractères.",
   too_many_invitations: "Tu as déjà 5 codes d'invitation en attente. Retires-en un d'abord.",
   not_meche_server: "Aucun serveur Mèche à cette adresse.",
-  invalid_input: "Adresse du serveur invalide (elle doit commencer par https://).",
+  invalid_input: "Adresse du serveur invalide. Exemple : https://meche.pierrebultez.com",
+  not_connected: "Cet appareil n'est connecté à aucun serveur.",
+  not_found: "Introuvable sur le serveur : la liste a changé entre-temps.",
+  invalid_change:
+    "Le serveur refuse une note de cet appareil : la synchro est bloquée. Tes notes restent ici.",
 };
 
 /** The message for an error kind (or a generic one). */
@@ -42,6 +46,8 @@ export function syncStateText(status: SyncStatus | null, time: (ms: number) => s
     case "error":
       return syncErrorMessage(status.errorKind);
     default:
-      return status.lastSyncAt === null ? "À jour." : `À jour (dernière synchro ${time(status.lastSyncAt)}).`;
+      return status.lastSyncAt === null
+        ? "Pas encore synchronisé."
+        : `À jour (dernière synchro ${time(status.lastSyncAt)}).`;
   }
 }

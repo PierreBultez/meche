@@ -1,6 +1,7 @@
 <script setup lang="ts">
 // An open note (docs/05, docs/08): header, then the rich or code editor. Mounted again
-// (`:key`) whenever the note or its kind changes, so editors read the content only once.
+// (`:key`) whenever the note or its kind changes. A new version brought by the sync is shown in
+// place instead (docs/04): the focus, the caret and the scroll stay.
 import { Pin, PinOff, RotateCcw, Trash2 } from "lucide-vue-next";
 import { computed, defineAsyncComponent, nextTick, onMounted, ref, watch } from "vue";
 import { useRouter } from "vue-router";
@@ -11,7 +12,7 @@ import { useNotesStore } from "../../stores/notes";
 import { useSettingsStore } from "../../stores/settings";
 import { useToastsStore } from "../../stores/toasts";
 import { useUiStore } from "../../stores/ui";
-import type { Note, NoteColor } from "../../types/note";
+import type { CommandError, Note, NoteColor, NotePatch } from "../../types/note";
 import { noteAsMarkdown } from "../../utils/note-markdown";
 import type CodeEditorComponent from "../editor/CodeEditor.vue";
 import type RichEditorComponent from "../editor/RichEditor.vue";
@@ -70,19 +71,12 @@ const confirmingDelete = ref(false);
 const saveFailed = (error: unknown) =>
   toasts.error("Impossible d'enregistrer la note. Tes dernières modifications sont gardées ici.", error);
 
-/** A save found the note changed on another device: Rust kept what was typed in a copy. */
-let keptInCopy = false;
-
-const titleSave = useAutosave({
-  initial: props.note.title,
-  read: () => title.value,
-  write: async (value, expected) => {
-    const saved = await notes.save(id, { title: value, expectedTitle: expected });
-    if (saved.title !== value) keptInCopy = true;
-    return saved.title;
-  },
-  onError: saveFailed,
-});
+/** What the editor shows: title and text are saved together, by one autosave. */
+interface Shown {
+  title: string;
+  content: string;
+}
+const sameShown = (a: Shown, b: Shown) => a.title === b.title && a.content === b.content;
 
 /** The text in the editor, which may be newer than the saved one. */
 function currentContent(): string {
@@ -91,45 +85,123 @@ function currentContent(): string {
     : (code.value?.getText() ?? props.note.content);
 }
 
-const contentSave = useAutosave({
-  initial: props.note.content,
-  read: currentContent,
-  write: async (value, expected) => {
-    const saved = await notes.save(id, { content: value, expectedContent: expected });
-    if (saved.content !== value) keptInCopy = true;
-    return saved.content;
-  },
+/** Where the saves go: this note, or the new note that keeps the text of a deleted one. */
+let target = id;
+/** A save of this editor was kept elsewhere: said once, until the editor shows the note again. */
+let keptElsewhere = false;
+
+function keptMessage(message: string): void {
+  if (keptElsewhere) return;
+  keptElsewhere = true;
+  toasts.show(message);
+}
+
+/**
+ * Saves what the editor shows. Only the fields changed are sent, with both expected values:
+ * if the note changed on another device, Rust keeps the whole version shown here in a single
+ * conflict copy (docs/04). Resolves with false when the text was kept elsewhere.
+ */
+async function writeNote(value: Shown, expected: Shown): Promise<boolean> {
+  const patch: NotePatch = { expectedTitle: expected.title, expectedContent: expected.content };
+  if (value.title !== expected.title) patch.title = value.title;
+  if (value.content !== expected.content) patch.content = value.content;
+  let saved: Note;
+  try {
+    saved = await notes.save(target, patch);
+  } catch (error) {
+    if ((error as CommandError | undefined)?.kind !== "not_found") throw error;
+    // Deleted for good on another device while it was being typed: the text goes to a new
+    // note, which the next saves of this editor go to.
+    const kept = await notes.keepAsNewNote(props.note, value.title, value.content);
+    target = kept.id;
+    keptMessage(
+      "Cette note a été supprimée sur un autre appareil. Ce que tu venais d'écrire est gardé dans une nouvelle note.",
+    );
+    return true;
+  }
+  const applied =
+    (patch.title === undefined || saved.title === patch.title) &&
+    (patch.content === undefined || saved.content === patch.content);
+  if (!applied) {
+    keptMessage(
+      "Cette note a changé sur un autre appareil. Ce que tu venais d'écrire est gardé dans une copie « (conflit du …) ».",
+    );
+    // The note holds another version than the one shown here: show it.
+    void showStored();
+  }
+  return applied;
+}
+
+const save = useAutosave<Shown>({
+  initial: { title: props.note.title, content: props.note.content },
+  read: () => ({ title: title.value, content: currentContent() }),
+  same: sameShown,
+  write: writeNote,
   onError: saveFailed,
 });
 
-async function flush(): Promise<void> {
-  await Promise.all([titleSave.flush(), contentSave.flush()]);
+const flush = () => save.flush();
+
+/** Replaces the title shown, keeping the caret where it was when the field has the focus. */
+function replaceTitle(next: string): void {
+  const input = titleInput.value;
+  if (title.value === next) return;
+  const focused = input !== null && document.activeElement === input;
+  const start = input?.selectionStart ?? next.length;
+  const end = input?.selectionEnd ?? next.length;
+  title.value = next;
+  if (focused) {
+    void nextTick(() => input.setSelectionRange(Math.min(start, next.length), Math.min(end, next.length)));
+  }
 }
 
 // The note shown here changed without this editor writing it: the sync brought the version of
-// another device (docs/04). Editors read the text only when they are mounted, so the editor is
-// mounted again on the new version. What was being typed is saved first: since the note
-// changed, Rust does not write it over the new version but keeps it in a conflict copy.
-let reloading = false;
-async function reloadEditor(): Promise<void> {
-  if (reloading) return;
-  reloading = true;
-  // A failed save is already reported (saveFailed); the editor is reloaded anyway, on what
-  // is stored.
-  await flush().catch(() => undefined);
-  if (keptInCopy) {
-    toasts.show(
-      "Cette note a changé sur un autre appareil. Ce que tu venais d'écrire est gardé dans une copie « (conflit du …) ».",
-    );
+// another device (docs/04), or a save of this editor was kept in a copy. What is being typed is
+// saved first: since the note changed, Rust does not write it over the new version but keeps it
+// in a copy. Then the stored version is shown in place.
+let showing = false;
+let showAgain = false;
+async function showStored(): Promise<void> {
+  if (showing) {
+    showAgain = true;
+    return;
   }
-  await notes.reopen(id).catch((error: unknown) => toasts.error("Impossible de recharger la note.", error));
+  showing = true;
+  try {
+    do {
+      showAgain = false;
+      try {
+        await save.flush();
+      } catch {
+        // Not saved (reported by saveFailed): the text stays on screen rather than being
+        // replaced. The next save that succeeds is kept in a copy, and shows the note again.
+        return;
+      }
+      // Typed during the save: saved first, then the stored version is read again. From here
+      // on, nothing awaits: nothing can be typed until the new version is shown.
+      if (save.pending()) {
+        showAgain = true;
+        continue;
+      }
+      const note = props.note;
+      if (target !== id) return;
+      replaceTitle(note.title);
+      let content = note.content;
+      if (currentContent() !== note.content) {
+        if (note.kind === "rich") content = rich.value?.replace(note.content) ?? note.content;
+        else code.value?.replace(note.content);
+      }
+      save.reset({ title: note.title, content: note.content }, { title: title.value, content });
+      keptElsewhere = false;
+    } while (showAgain);
+  } finally {
+    showing = false;
+  }
 }
 watch(
   () => [props.note.title, props.note.content] as const,
   ([noteTitle, noteContent]) => {
-    if (keptInCopy || !titleSave.knows(noteTitle) || !contentSave.knows(noteContent)) {
-      void reloadEditor();
-    }
+    if (!save.knows({ title: noteTitle, content: noteContent })) void showStored();
   },
 );
 
@@ -254,7 +326,7 @@ defineExpose({
         aria-label="Titre de la note"
         class="min-w-24 flex-1 bg-transparent text-[26px] font-semibold text-note placeholder:text-muted"
         :readonly="inTrash"
-        @input="titleSave.touch()"
+        @input="save.touch()"
         @keydown.enter.prevent="onTitleEnter"
       />
       <template v-if="!inTrash">
@@ -349,11 +421,11 @@ defineExpose({
         ref="rich"
         :content="note.content"
         :editable="!inTrash"
-        @changed="contentSave.touch()"
+        @changed="save.touch()"
         @escape="ui.escapeFromNote()"
         @ready="
           (markdown: string) => {
-            contentSave.rebase(markdown);
+            save.rebase({ title, content: markdown });
             onEditorReady();
           }
         "
@@ -365,7 +437,7 @@ defineExpose({
         :language="note.codeLanguage"
         :wrap="settings.codeLineWrap"
         :editable="!inTrash"
-        @changed="contentSave.touch()"
+        @changed="save.touch()"
         @ready="onEditorReady"
       />
     </div>

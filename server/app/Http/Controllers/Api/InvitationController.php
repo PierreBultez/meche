@@ -47,24 +47,32 @@ class InvitationController extends Controller
     {
         $userId = $request->user()->id;
         $now = Clock::nowMs();
-        $pending = DB::table('invitations')
-            ->where('user_id', $userId)
-            ->whereNull('used_at')
-            ->where('expires_at', '>', $now)
-            ->count();
-        if ($pending >= config('notes.max_pending_invitations')) {
-            return ApiError::response('too_many_invitations', 'too many unused invitation codes');
-        }
-
         $code = InvitationCodes::generate();
         $expiresAt = $now + config('notes.invitation_days') * 86_400_000;
-        $id = DB::table('invitations')->insertGetId([
-            'user_id' => $userId,
-            'code_hash' => InvitationCodes::hash($code),
-            'hint' => substr($code, -4),
-            'created_at' => $now,
-            'expires_at' => $expiresAt,
-        ]);
+        // The account's row stays locked while its pending codes are counted: two requests at
+        // the same moment cannot both pass the limit.
+        $id = DB::transaction(function () use ($userId, $now, $code, $expiresAt) {
+            DB::table('users')->where('id', $userId)->lockForUpdate()->first(['id']);
+            $pending = DB::table('invitations')
+                ->where('user_id', $userId)
+                ->whereNull('used_at')
+                ->where('expires_at', '>', $now)
+                ->count();
+            if ($pending >= config('notes.max_pending_invitations')) {
+                return null;
+            }
+
+            return DB::table('invitations')->insertGetId([
+                'user_id' => $userId,
+                'code_hash' => InvitationCodes::hash($code),
+                'hint' => substr($code, -4),
+                'created_at' => $now,
+                'expires_at' => $expiresAt,
+            ]);
+        });
+        if ($id === null) {
+            return ApiError::response('too_many_invitations', 'too many unused invitation codes');
+        }
 
         return response()->json([
             'id' => $id,

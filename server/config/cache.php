@@ -15,7 +15,7 @@ return [
     |
     */
 
-    'default' => env('CACHE_STORE', 'database'),
+    'default' => env('CACHE_STORE', 'file'),
 
     /*
     |--------------------------------------------------------------------------
@@ -51,6 +51,8 @@ return [
             'driver' => 'file',
             'path' => storage_path('framework/cache/data'),
             'lock_path' => storage_path('framework/cache/locks'),
+            // Group-writable: the scheduler (cron) and PHP-FPM share these files (docs/09).
+            'permission' => 0664,
         ],
 
         'storage' => [

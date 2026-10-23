@@ -6,6 +6,7 @@ use App\Support\Clock;
 use App\Sync\Revisions;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\DB;
+use Throwable;
 
 /**
  * Every 10 minutes (routes/console.php): burns the fuses and purges the trash, even when no
@@ -27,10 +28,17 @@ class Maintenance extends Command
         $now = Clock::nowMs();
         $exploded = 0;
         $purged = 0;
+        $failed = 0;
         foreach (DB::table('sync_counters')->orderBy('user_id')->pluck('user_id') as $userId) {
-            [$accountExploded, $accountPurged] = $this->maintainAccount((int) $userId, $now);
-            $exploded += $accountExploded;
-            $purged += $accountPurged;
+            // One account in trouble (a lock timeout…) must not stop the others.
+            try {
+                [$accountExploded, $accountPurged] = $this->maintainAccount((int) $userId, $now);
+                $exploded += $accountExploded;
+                $purged += $accountPurged;
+            } catch (Throwable $error) {
+                report($error);
+                $failed++;
+            }
         }
 
         $inactiveSince = now()->subDays(config('notes.token_inactivity_days'));
@@ -44,6 +52,11 @@ class Maintenance extends Command
             ->delete();
 
         $this->line("Notes explosées : {$exploded}, purgées : {$purged}, appareils inactifs déconnectés : {$tokens}.");
+        if ($failed > 0) {
+            $this->error("Comptes en échec : {$failed} (voir le journal).");
+
+            return self::FAILURE;
+        }
 
         return self::SUCCESS;
     }
@@ -77,7 +90,7 @@ class Maintenance extends Command
                 ->orderBy('id')
                 ->pluck('id');
             foreach ($due as $id) {
-                DB::table('notes')->where('id', $id)->update([
+                DB::table('notes')->where('user_id', $userId)->where('id', $id)->update([
                     'trashed_at' => DB::raw('destroy_at'),
                     'trash_reason' => 'self_destruct',
                     'updated_at' => $now,
@@ -95,7 +108,7 @@ class Maintenance extends Command
                 ->orderBy('id')
                 ->pluck('id');
             foreach ($old as $id) {
-                DB::table('notes')->where('id', $id)->update([
+                DB::table('notes')->where('user_id', $userId)->where('id', $id)->update([
                     'deleted' => true,
                     'title' => '',
                     'content' => '',

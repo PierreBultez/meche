@@ -200,16 +200,24 @@ it('does not store the tombstone of a note it never had', function () {
     expect(DB::table('notes')->count())->toBe(0)->and(counter())->toBe(0);
 });
 
-it('keeps each account apart', function () {
+it('keeps each account apart, even for the same note id', function () {
     $pierre = deviceToken(account());
     $papa = deviceToken(account('papa@example.com'));
     sync($pierre, 0, [change()]);
 
     expect(sync($papa)->json('changes'))->toBe([]);
-    sync($papa, 0, [change(['title' => 'Pirate'])])->assertStatus(409)->assertJson(['error' => 'id_conflict']);
-    expect(DB::table('notes')->value('title'))->toBe('Courses');
-    // Each account counts its own revisions.
-    sync($papa, 0, [change(['id' => OTHER_ID])])->assertJson(['applied' => [['id' => OTHER_ID, 'rev' => 1]]]);
+    // A device that switched from one account to the other sends the same ids (docs/04): they
+    // become notes of the new account, the other account's note is untouched.
+    sync($papa, 0, [change(['title' => 'Chez papa']), change(['id' => OTHER_ID])])
+        ->assertOk()
+        ->assertJson(['applied' => [['id' => NOTE_ID, 'rev' => 1], ['id' => OTHER_ID, 'rev' => 2]]]);
+    expect(DB::table('notes')->where('id', NOTE_ID)->orderBy('user_id')->pluck('title')->all())
+        ->toBe(['Courses', 'Chez papa']);
+    expect(sync($pierre, 1)->json('changes'))->toBe([]);
+    // A tombstone only reaches its own account.
+    sync($papa, 2, [change(['base_rev' => 1, 'deleted' => true])])->assertOk();
+    expect(DB::table('notes')->where('id', NOTE_ID)->orderBy('user_id')->pluck('deleted')->map(fn ($d) => (bool) $d)->all())
+        ->toBe([false, true]);
 });
 
 it('stores the text exactly as sent: spaces, empty title, accents', function () {
@@ -283,4 +291,59 @@ it('asks devices to start over when their cursor is ahead of the server', functi
 
 it('measures its own duration in a Server-Timing header', function () {
     sync(deviceToken(account()))->assertOk()->assertHeader('Server-Timing');
+});
+
+it('asks a device that knows another history of the account to start over', function () {
+    $user = account();
+    $token = deviceToken($user);
+    sync($token, 0, [change()]);
+    $syncId = DB::table('sync_counters')->value('sync_id');
+
+    freshRequest();
+    $current = $this->withToken($token)->postJson('/api/sync', [
+        'cursor' => 1, 'sync_id' => $syncId, 'changes' => [change(['base_rev' => 1, 'title' => 'À jour'])],
+    ])->assertOk();
+    expect($current->json('reset'))->toBeFalse();
+
+    // After notes:rotate-sync-ids (a restored backup), the old identity is refused: nothing
+    // is applied, and the identity is not changed again (no reset cascade).
+    $this->artisan('notes:rotate-sync-ids')->assertSuccessful();
+    $newSyncId = DB::table('sync_counters')->value('sync_id');
+    freshRequest();
+    $stale = $this->withToken($token)->postJson('/api/sync', [
+        'cursor' => 2, 'sync_id' => $syncId, 'changes' => [change(['base_rev' => 2, 'title' => 'Écrasement'])],
+    ])->assertOk();
+
+    expect($stale->json())->toMatchArray(['reset' => true, 'cursor' => 0, 'applied' => [], 'sync_id' => $newSyncId])
+        ->and(DB::table('notes')->value('title'))->toBe('À jour')
+        ->and(DB::table('sync_counters')->value('sync_id'))->toBe($newSyncId);
+});
+
+it('repairs a counter left behind its notes instead of overwriting one', function () {
+    $user = account();
+    $token = deviceToken($user);
+    sync($token, 0, [change()]);
+    $oldSyncId = DB::table('sync_counters')->value('sync_id');
+    // A partial restore, or a hand edit: the counter is below the highest revision.
+    DB::table('sync_counters')->update(['value' => 0]);
+
+    $response = sync($token, 0, [change(['id' => OTHER_ID, 'title' => 'Nouvelle'])])->assertOk();
+
+    expect($response->json('applied'))->toBe([['id' => OTHER_ID, 'rev' => 2]])
+        ->and(DB::table('notes')->orderBy('rev')->pluck('title')->all())->toBe(['Courses', 'Nouvelle'])
+        ->and((int) DB::table('sync_counters')->value('value'))->toBe(2)
+        // The history was inconsistent: devices start over at their next sync.
+        ->and(DB::table('sync_counters')->value('sync_id'))->not->toBe($oldSyncId);
+});
+
+it('refuses more than about 8 MB in one request', function () {
+    $token = deviceToken(account());
+    $big = str_repeat('a', 2 * 1024 * 1024);
+    $changes = array_map(
+        fn (int $i) => change(['id' => sprintf('0192f1c2-0000-7000-8000-%012d', $i), 'content' => $big]),
+        range(1, 5),
+    );
+
+    sync($token, 0, $changes)->assertStatus(422)->assertJson(['error' => 'invalid_change']);
+    expect(DB::table('notes')->count())->toBe(0);
 });

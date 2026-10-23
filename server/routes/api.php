@@ -17,9 +17,11 @@ Route::middleware('throttle:auth')->group(function () {
 });
 
 Route::middleware('auth:sanctum')->group(function () {
-    Route::delete('/auth/token', [AuthController::class, 'revoke']);
-
     Route::post('/sync', SyncController::class)->middleware('throttle:sync');
+});
+
+Route::middleware(['auth:sanctum', 'throttle:account'])->group(function () {
+    Route::delete('/auth/token', [AuthController::class, 'revoke']);
 
     Route::get('/devices', [DeviceController::class, 'index']);
     Route::delete('/devices/{id}', [DeviceController::class, 'destroy'])->whereNumber('id');

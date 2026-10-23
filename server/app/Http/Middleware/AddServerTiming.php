@@ -16,6 +16,11 @@ class AddServerTiming
     public function handle(Request $request, Closure $next): Response
     {
         $response = $next($request);
+        // Not on logging in or creating an account: a precise duration there could tell
+        // whether an address has an account.
+        if ($request->is('api/auth/*')) {
+            return $response;
+        }
         $start = defined('LARAVEL_START') ? LARAVEL_START : $request->server('REQUEST_TIME_FLOAT');
         if (is_float($start)) {
             $duration = (microtime(true) - $start) * 1000;

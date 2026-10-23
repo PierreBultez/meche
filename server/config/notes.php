@@ -13,6 +13,7 @@ return [
     // docs/04: changes sent at most 200 at a time; changes received at most 500 at a time and
     // about 4 MB (at least one note, whatever its size).
     'push_max_notes' => 200,
+    'push_max_bytes' => 8 * 1024 * 1024,
     'pull_max_notes' => 500,
     'pull_max_bytes' => 4 * 1024 * 1024,
 

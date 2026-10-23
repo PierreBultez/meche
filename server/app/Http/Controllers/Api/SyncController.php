@@ -4,7 +4,6 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Sync\ChangeValidator;
-use App\Sync\ForeignNote;
 use App\Sync\InvalidChange;
 use App\Sync\SyncService;
 use Illuminate\Http\JsonResponse;
@@ -17,11 +16,9 @@ class SyncController extends Controller
     {
         try {
             $input = ChangeValidator::validate($request->json()->all());
-            $result = $sync->sync($request->user()->id, $input['cursor'], $input['changes']);
+            $result = $sync->sync($request->user()->id, $input['cursor'], $input['changes'], $input['sync_id']);
         } catch (InvalidChange $error) {
             return ApiError::response('invalid_change', $error->getMessage());
-        } catch (ForeignNote $error) {
-            return ApiError::response('id_conflict', $error->getMessage(), 409);
         }
 
         // Accents and slashes as they are: smaller answers (Apache compresses them with gzip).

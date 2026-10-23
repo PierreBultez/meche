@@ -55,8 +55,9 @@ class Accounts
         if (mb_strlen($password) < $min) {
             return "at least {$min} characters";
         }
-        if (strlen($password) > 1000) {
-            return 'at most 1000 bytes';
+        // bcrypt ignores everything after 72 bytes: a longer password would only look stronger.
+        if (strlen($password) > 72) {
+            return 'at most 72 bytes';
         }
 
         return null;

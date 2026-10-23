@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\Api\AuthController;
 use App\Models\User;
 use Illuminate\Support\Facades\DB;
 
@@ -107,4 +108,62 @@ it('rehashes a password stored with an older cost', function () {
     ])->assertOk();
 
     expect(password_get_info(User::find($user->id)->password)['options']['cost'])->not->toBe(5);
+});
+
+it('answers 401 in JSON to a request without token, even without Accept: application/json', function (string $method, string $uri) {
+    account();
+    $this->call($method, $uri)->assertUnauthorized()->assertExactJson(['message' => 'Unauthenticated.']);
+})->with([
+    ['POST', '/api/sync'],
+    ['GET', '/api/devices'],
+]);
+
+it('checks an unknown address against a real bcrypt hash of production cost', function () {
+    $reflection = new ReflectionClassConstant(AuthController::class, 'DUMMY_HASH');
+    $info = password_get_info($reflection->getValue());
+    expect($info['algoName'])->toBe('bcrypt')->and($info['options']['cost'])->toBe(12);
+});
+
+it('does not time the login answers (Server-Timing), but times the others', function () {
+    account();
+    $this->postJson('/api/auth/token', [
+        'email' => 'nobody@example.com', 'password' => PASSWORD, 'device_name' => 'PC',
+    ])->assertHeaderMissing('Server-Timing');
+    $this->getJson('/api/health')->assertHeader('Server-Timing');
+});
+
+it('limits the attempts on one address to 30 per hour, from any IP', function () {
+    account();
+    foreach (range(1, 30) as $i) {
+        $this->postJson('/api/auth/token', ['email' => 'pierre@example.com', 'password' => 'wrong', 'device_name' => 'PC'], [
+            'REMOTE_ADDR' => "203.0.113.{$i}",
+        ]);
+    }
+    $this->withServerVariables(['REMOTE_ADDR' => '198.51.100.1'])
+        ->postJson('/api/auth/token', ['email' => 'Pierre@example.com', 'password' => PASSWORD, 'device_name' => 'PC'])
+        ->assertTooManyRequests();
+});
+
+it('logs failed logins in the file read by fail2ban', function () {
+    account();
+    $path = storage_path('logs/auth.log');
+    @unlink($path);
+
+    $this->withServerVariables(['REMOTE_ADDR' => '203.0.113.7'])->postJson('/api/auth/token', [
+        'email' => 'pierre@example.com', 'password' => 'wrong', 'device_name' => 'PC',
+    ]);
+
+    expect(file_get_contents($path))
+        ->toMatch('/^\[[0-9-]+ [0-9:]+\] \w+\.WARNING: Failed login \{"ip":"203\.0\.113\.7"\}/');
+    @unlink($path);
+});
+
+it('throttles the other routes of a device to 60 per minute', function () {
+    $token = deviceToken(account());
+    foreach (range(1, 60) as $ignored) {
+        freshRequest();
+        $this->withToken($token)->getJson('/api/devices')->assertOk();
+    }
+    freshRequest();
+    $this->withToken($token)->getJson('/api/devices')->assertTooManyRequests();
 });

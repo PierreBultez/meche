@@ -12,25 +12,36 @@ use Illuminate\Support\Facades\DB;
  */
 final class SyncService
 {
-    /** Rows written by one INSERT … ON DUPLICATE KEY UPDATE: keeps statements a few MB. */
-    private const UPSERT_CHUNK = 50;
+    /** New notes are inserted by statements of at most this many bytes of text. */
+    private const INSERT_CHUNK_BYTES = 4 * 1024 * 1024;
 
-    public function sync(int $userId, int $cursor, array $changes): array
+    /**
+     * `$syncId`: the identity of the history the device knows (null for a device that has
+     * none yet). When it is not the account's one, the device must start over: nothing is
+     * applied (docs/04, "Identité du serveur").
+     */
+    public function sync(int $userId, int $cursor, array $changes, ?string $syncId = null): array
     {
         // Nothing to write: no transaction and no lock, only the pull (docs/04: < 50 ms).
         if ($changes === []) {
             $counter = Revisions::read($userId);
+            if ($syncId !== null && $syncId !== $counter->sync_id) {
+                return $this->reset($counter->sync_id);
+            }
             if ($cursor > $counter->value) {
-                return $this->reset($userId);
+                return $this->reset(Revisions::newSyncId($userId));
             }
 
             return $this->answer($counter->sync_id, [], [], $this->pull($userId, $cursor, []));
         }
 
-        return DB::transaction(function () use ($userId, $cursor, $changes) {
+        return DB::transaction(function () use ($userId, $cursor, $changes, $syncId) {
             $counter = Revisions::lock($userId);
+            if ($syncId !== null && $syncId !== $counter->sync_id) {
+                return $this->reset($counter->sync_id);
+            }
             if ($cursor > $counter->value) {
-                return $this->reset($userId);
+                return $this->reset(Revisions::newSyncId($userId));
             }
             [$applied, $conflicts] = $this->push($userId, $counter->value, $changes);
 
@@ -47,19 +58,18 @@ final class SyncService
     private function push(int $userId, int $lastRev, array $changes): array
     {
         $existing = DB::table('notes')
+            ->where('user_id', $userId)
             ->whereIn('id', array_column($changes, 'id'))
-            ->get(['user_id', ...NoteFields::SELECT])
+            ->get(NoteFields::SELECT)
             ->keyBy('id');
 
         $applied = [];
         $conflicts = [];
-        $rows = [];
+        $inserts = [];
+        $updates = [];
         $rev = $lastRev;
         foreach ($changes as $change) {
             $row = $existing->get($change['id']);
-            if ($row !== null && (int) $row->user_id !== $userId) {
-                throw new ForeignNote("note {$change['id']} belongs to another account");
-            }
             if ($row === null) {
                 // A tombstone of a note the server does not have: nothing to store.
                 if ($change['deleted']) {
@@ -83,19 +93,59 @@ final class SyncService
                 }
             }
             $rev++;
-            $rows[] = NoteFields::toRow($change, $userId, $rev);
+            if ($row === null) {
+                $inserts[] = NoteFields::toRow($change, $userId, $rev);
+            } else {
+                $updates[] = NoteFields::toRow($change, $userId, $rev);
+            }
             $applied[] = ['id' => $change['id'], 'rev' => $rev];
         }
 
-        if ($rows !== []) {
-            $updated = array_values(array_diff(array_keys($rows[0]), ['id', 'user_id']));
-            foreach (array_chunk($rows, self::UPSERT_CHUNK) as $chunk) {
-                DB::table('notes')->upsert($chunk, ['id'], $updated);
-            }
+        // No INSERT … ON DUPLICATE KEY UPDATE: on MariaDB it fires on any unique key,
+        // (user_id, rev) included, and could then rewrite another note. New notes are inserted,
+        // the others updated by their key; the counter lock makes both safe.
+        foreach (self::chunkByBytes($inserts) as $chunk) {
+            DB::table('notes')->insert($chunk);
+        }
+        foreach ($updates as $row) {
+            DB::table('notes')
+                ->where('user_id', $userId)
+                ->where('id', $row['id'])
+                ->update(array_diff_key($row, ['user_id' => true, 'id' => true]));
+        }
+        if ($inserts !== [] || $updates !== []) {
             Revisions::save($userId, $rev);
         }
 
         return [$applied, $conflicts];
+    }
+
+    /**
+     * Groups rows so that one INSERT carries at most INSERT_CHUNK_BYTES of text (MariaDB's
+     * max_allowed_packet is 16 MB by default). A larger note goes alone.
+     *
+     * @return list<list<array>>
+     */
+    private static function chunkByBytes(array $rows): array
+    {
+        $chunks = [];
+        $chunk = [];
+        $bytes = 0;
+        foreach ($rows as $row) {
+            $size = strlen($row['title']) + strlen($row['content']);
+            if ($chunk !== [] && $bytes + $size > self::INSERT_CHUNK_BYTES) {
+                $chunks[] = $chunk;
+                $chunk = [];
+                $bytes = 0;
+            }
+            $chunk[] = $row;
+            $bytes += $size;
+        }
+        if ($chunk !== []) {
+            $chunks[] = $chunk;
+        }
+
+        return $chunks;
     }
 
     /**
@@ -170,11 +220,13 @@ final class SyncService
     }
 
     /**
-     * The device's cursor is ahead of the server: its database was restored from a backup or
-     * recreated. Nothing is applied; the account gets a new sync identity, and every device,
-     * this one first, sends all its notes again from cursor 0 (docs/04).
+     * The device must start over, from cursor 0, sending all its notes again (docs/04): it
+     * knows another history of the account (`sync_id` changed after a restore, see
+     * notes:rotate-sync-ids), or its cursor is ahead of the server (database restored or
+     * recreated: the account then gets a new identity, so that every device starts over).
+     * Nothing is applied.
      */
-    private function reset(int $userId): array
+    private function reset(string $syncId): array
     {
         return [
             'applied' => [],
@@ -183,7 +235,7 @@ final class SyncService
             'cursor' => 0,
             'has_more' => false,
             'server_time' => Clock::nowMs(),
-            'sync_id' => Revisions::newSyncId($userId),
+            'sync_id' => $syncId,
             'reset' => true,
         ];
     }

@@ -71,6 +71,18 @@ return [
             'level' => env('LOG_LEVEL', 'debug'),
             'max_files' => env('LOG_DAILY_DAYS', 14),
             'replace_placeholders' => true,
+            // Group-writable: the deploy user and PHP-FPM (www-data) both write logs (docs/09).
+            'permission' => 0664,
+        ],
+
+        // Failed logins and invitation codes, one file read by fail2ban (docs/09). A single
+        // file: fail2ban does not follow the dated files of the daily channel.
+        'auth' => [
+            'driver' => 'single',
+            'path' => storage_path('logs/auth.log'),
+            'level' => 'warning',
+            'replace_placeholders' => true,
+            'permission' => 0664,
         ],
 
         'monthly' => [

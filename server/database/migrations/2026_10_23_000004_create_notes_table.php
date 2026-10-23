@@ -11,8 +11,11 @@ return new class extends Migration
         // The notes, as the devices send them (docs/03). Same column names as the client's
         // SQLite; dates in milliseconds, given by the client (not Laravel's timestamps).
         Schema::create('notes', function (Blueprint $table) {
-            $table->uuid('id')->primary();
+            // A note is identified within its account: the same id may exist in two accounts
+            // (a device that switched account sends its notes to the new one, docs/04).
             $table->foreignId('user_id')->constrained()->cascadeOnDelete();
+            $table->uuid('id');
+            $table->primary(['user_id', 'id']);
             $table->string('title', 500)->default('');
             $table->longText('content');
             $table->enum('kind', ['rich', 'code'])->default('rich');

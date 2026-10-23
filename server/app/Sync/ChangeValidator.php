@@ -22,7 +22,7 @@ final class ChangeValidator
     private const MAX_UNSIGNED_INT = 4_294_967_295;
 
     /**
-     * @return array{cursor: int, changes: list<array>} the request, with typed changes
+     * @return array{cursor: int, sync_id: ?string, changes: list<array>} the request, typed
      *
      * @throws InvalidChange
      */
@@ -32,6 +32,10 @@ final class ChangeValidator
             throw new InvalidChange('the body must be a JSON object');
         }
         $cursor = self::unsigned($body['cursor'] ?? null, 'cursor');
+        $syncId = $body['sync_id'] ?? null;
+        if ($syncId !== null && (! is_string($syncId) || strlen($syncId) > 64)) {
+            throw new InvalidChange('sync_id must be a string');
+        }
         $changes = $body['changes'] ?? [];
         if (! is_array($changes) || ! array_is_list($changes)) {
             throw new InvalidChange('changes must be a list');
@@ -41,15 +45,21 @@ final class ChangeValidator
         }
 
         $typed = [];
+        $bytes = 0;
         foreach ($changes as $index => $change) {
             $note = self::change($change, "changes.{$index}");
             if (isset($typed[$note['id']])) {
                 throw new InvalidChange("changes.{$index}.id appears twice");
             }
             $typed[$note['id']] = $note;
+            $bytes += strlen($note['title']) + strlen($note['content']);
+        }
+        // The app sends about 4 MB at most (docs/04); a single note may be up to 2 MB.
+        if (count($typed) > 1 && $bytes > config('notes.push_max_bytes')) {
+            throw new InvalidChange('too many bytes in one request');
         }
 
-        return ['cursor' => $cursor, 'changes' => array_values($typed)];
+        return ['cursor' => $cursor, 'sync_id' => $syncId, 'changes' => array_values($typed)];
     }
 
     private static function change(mixed $change, string $path): array

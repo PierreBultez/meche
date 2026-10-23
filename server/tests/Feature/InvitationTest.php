@@ -141,3 +141,10 @@ it('checks the address and the password, and keeps the code when it refuses', fu
     // None of these used the code.
     register(['invitation_code' => $code])->assertCreated();
 });
+
+it('refuses a password longer than bcrypt can use (72 bytes)', function () {
+    $code = invite(account());
+    register(['invitation_code' => $code, 'password' => str_repeat('é', 37)])
+        ->assertJson(['error' => 'weak_password']);
+    register(['invitation_code' => $code, 'password' => str_repeat('é', 36)])->assertCreated();
+});

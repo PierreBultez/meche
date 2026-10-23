@@ -15,15 +15,32 @@ use Illuminate\Support\Str;
  */
 final class Revisions
 {
-    /** Locks the counter of `$userId` until the end of the current transaction. */
+    /**
+     * Locks the counter of `$userId` until the end of the current transaction.
+     *
+     * A counter below the highest revision of the account's notes means the database was
+     * restored partly or edited by hand: new revisions would collide with existing ones. It is
+     * put back above them, and the account gets a new sync identity so that every device
+     * starts over (docs/04). The check reads one index entry.
+     */
     public static function lock(int $userId): object
     {
         $counter = DB::table('sync_counters')
             ->where('user_id', $userId)
             ->lockForUpdate()
             ->first(['value', 'sync_id']);
+        $value = (int) $counter->value;
+        $syncId = (string) $counter->sync_id;
 
-        return (object) ['value' => (int) $counter->value, 'sync_id' => (string) $counter->sync_id];
+        $highest = (int) DB::table('notes')->where('user_id', $userId)->max('rev');
+        if ($highest > $value) {
+            report(new \RuntimeException("sync counter of account {$userId} was behind its notes: repaired"));
+            $value = $highest;
+            self::save($userId, $value);
+            $syncId = self::newSyncId($userId);
+        }
+
+        return (object) ['value' => $value, 'sync_id' => $syncId];
     }
 
     /** The counter, read without locking (enough to read notes: see the class comment). */

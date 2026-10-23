@@ -11,10 +11,18 @@ class AppServiceProvider extends ServiceProvider
 {
     public function boot(): void
     {
-        // Logging in and creating an account: 5 tries per minute per IP address (docs/04).
-        RateLimiter::for('auth', fn (Request $request) => Limit::perMinute(5)->by($request->ip()));
+        // Logging in and creating an account: 5 tries per minute per IP address (docs/04), and
+        // 30 per hour per e-mail address, whatever the IP. That one is loose on purpose: anyone
+        // can use it to block an address for an hour.
+        RateLimiter::for('auth', fn (Request $request) => [
+            Limit::perMinute(5)->by('ip:'.$request->ip()),
+            Limit::perHour(30)->by('email:'.mb_strtolower(trim((string) $request->input('email')))),
+        ]);
 
         // A device syncs about once a minute; this only stops a client stuck in a loop.
-        RateLimiter::for('sync', fn (Request $request) => Limit::perMinute(300)->by($request->user()?->id ?: $request->ip()));
+        RateLimiter::for('sync', fn (Request $request) => Limit::perMinute(300)->by('user:'.$request->user()?->id));
+
+        // The other routes of a connected device (devices, invitations, logout).
+        RateLimiter::for('account', fn (Request $request) => Limit::perMinute(60)->by('user:'.$request->user()?->id));
     }
 }

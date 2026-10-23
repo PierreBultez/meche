@@ -1,0 +1,58 @@
+# Deploys the server on Pierre's VPS (docs/09): on a push to master that touches server/, or
+# by hand from the Actions tab. The tests run first; nothing is deployed if they fail.
+#
+# The repository is public: the address of the server and the SSH key are GitHub secrets
+# (environment "production"), never written here.
+#   DEPLOY_HOST, DEPLOY_PORT, DEPLOY_USER  where to connect
+#   DEPLOY_SSH_KEY                         private key of the deploy key pair
+#   DEPLOY_KNOWN_HOSTS                     `ssh-keyscan -p <port> <host>`: the server's identity
+#   DEPLOY_PATH                            the clone of the repository on the server
+name: Deploy server
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - "server/**"
+      - ".github/workflows/deploy-server.yml"
+      - ".github/workflows/server-tests.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# One deployment at a time; a newer one waits instead of interrupting a migration.
+concurrency:
+  group: deploy-server
+  cancel-in-progress: false
+
+jobs:
+  tests:
+    name: Tests
+    uses: ./.github/workflows/server-tests.yml
+
+  deploy:
+    name: Deploy
+    needs: tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: production
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Deploy over SSH
+        env:
+          SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+          HOST: ${{ secrets.DEPLOY_HOST }}
+          PORT: ${{ secrets.DEPLOY_PORT }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+          DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
+        run: |
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$SSH_KEY" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          printf '%s\n' "$KNOWN_HOSTS" > ~/.ssh/known_hosts
+          # The script is sent from this checkout and runs on the server.
+          ssh -i ~/.ssh/deploy_key -p "$PORT" -o BatchMode=yes "$DEPLOY_USER@$HOST" \
+            bash -s -- "$DEPLOY_PATH" "$GITHUB_SHA" < server/deploy/deploy.sh

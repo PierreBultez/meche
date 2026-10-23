@@ -1,8 +1,9 @@
 #!/usr/bin/env node
 // Checks the licenses of every dependency against rule 3 of CLAUDE.md.
 //
-//   node scripts/check-licenses.mjs npm     # app/package-lock.json
-//   node scripts/check-licenses.mjs cargo   # app/src-tauri (runs `cargo metadata`)
+//   node scripts/check-licenses.mjs npm       # app/package-lock.json
+//   node scripts/check-licenses.mjs cargo     # app/src-tauri (runs `cargo metadata`)
+//   node scripts/check-licenses.mjs composer  # server/composer.lock
 //
 // Direct dependencies (the ones we choose) must use a license of DIRECT_ALLOWED.
 // Transitive dependencies (pulled in by the mandated stack) may also use TRANSITIVE_EXTRA.
@@ -117,11 +118,31 @@ function cargoPackages() {
     .map((pkg) => ({ name: `${pkg.name} ${pkg.version}`, license: pkg.license, direct: direct.has(pkg.id) }));
 }
 
+/**
+ * [{ name, license, direct }] from the Composer lockfile. Composer lists several licenses as an
+ * array meaning "any of them" (e.g. nette/utils: BSD-3-Clause, GPL-2.0-only, GPL-3.0-only).
+ */
+function composerPackages() {
+  const serverDir = join(ROOT, "server");
+  const lock = JSON.parse(readFileSync(join(serverDir, "composer.lock"), "utf8"));
+  const manifest = JSON.parse(readFileSync(join(serverDir, "composer.json"), "utf8"));
+  const direct = new Set([
+    ...Object.keys(manifest.require ?? {}),
+    ...Object.keys(manifest["require-dev"] ?? {}),
+  ]);
+  return [...lock.packages, ...(lock["packages-dev"] ?? [])].map((pkg) => ({
+    name: `${pkg.name} ${pkg.version}`,
+    license: pkg.license?.length ? pkg.license.map((id) => `(${id})`).join(" OR ") : undefined,
+    direct: direct.has(pkg.name),
+  }));
+}
+
 function main() {
   const ecosystem = process.argv[2];
-  const packages = ecosystem === "npm" ? npmPackages() : ecosystem === "cargo" ? cargoPackages() : null;
+  const readers = { npm: npmPackages, cargo: cargoPackages, composer: composerPackages };
+  const packages = readers[ecosystem]?.() ?? null;
   if (!packages) {
-    console.error("Usage: node scripts/check-licenses.mjs npm|cargo");
+    console.error("Usage: node scripts/check-licenses.mjs npm|cargo|composer");
     process.exit(2);
   }
   const transitiveAllowed = new Set([...DIRECT_ALLOWED, ...TRANSITIVE_EXTRA]);

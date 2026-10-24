@@ -127,16 +127,11 @@ export const useNotesStore = defineStore("notes", () => {
   }
 
   /**
-   * Keeps a text whose note was deleted on another device in a new note of the same kind
-   * (docs/04), without opening it: it shows at the top of the list.
+   * A new note of this kind, not opened: it shows at the top of the list. It keeps the text of
+   * a note deleted on another device while it was being typed (docs/04).
    */
-  async function keepAsNewNote(of: Note, title: string, content: string): Promise<Note> {
-    const created = await createNote(of.kind, false);
-    const note = await updateNote(created.id, {
-      title,
-      content,
-      ...(of.kind === "code" && of.codeLanguage !== null ? { codeLanguage: of.codeLanguage } : {}),
-    });
+  async function createAside(kind: NoteKind): Promise<Note> {
+    const note = await createNote(kind, false);
     await refreshAfterChange();
     return note;
   }
@@ -251,7 +246,7 @@ export const useNotesStore = defineStore("notes", () => {
     open,
     create,
     save,
-    keepAsNewNote,
+    createAside,
     setFuse,
     reload,
     trash,

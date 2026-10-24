@@ -7,17 +7,20 @@ import { createPinia, setActivePinia } from "pinia";
 import { afterEach, describe, expect, it } from "vitest";
 import { defineComponent, h, nextTick, ref } from "vue";
 import { createMemoryHistory, createRouter } from "vue-router";
+import { flushAllAutosaves } from "../../composables/useAutosave";
 import { useNotesStore } from "../../stores/notes";
 import { useToastsStore } from "../../stores/toasts";
 import { type FakeCore, installFakeCore } from "../../test/fake-core";
+import type { Note } from "../../types/note";
 import NoteEditor from "./NoteEditor.vue";
 
 const COPY_TOAST =
   "Cette note a changé sur un autre appareil. Ce que tu venais d'écrire est gardé dans une copie « (conflit du …) ».";
 
-/** Waits until the rich editor exists (it is loaded on demand). */
+/** Waits until the rich editor exists (it is loaded on demand: up to 5 s on a cold run). */
 async function richEditor(): Promise<Editor> {
-  for (let tries = 0; tries < 50; tries++) {
+  const deadline = Date.now() + 5_000;
+  while (Date.now() < deadline) {
     await flushPromises();
     const element = document.querySelector(".ProseMirror") as (HTMLElement & { editor?: Editor }) | null;
     if (element?.editor) return element.editor;
@@ -51,7 +54,7 @@ async function openNote() {
   await new Promise((resolve) => setTimeout(resolve, 50));
   const titleInput = () => wrapper.find("input").element as HTMLInputElement;
   /** Another device changed the note; the sync applied it and sent notes-changed. */
-  async function changedElsewhere(change: { title?: string; content?: string }): Promise<void> {
+  async function changedElsewhere(change: Partial<Note>): Promise<void> {
     Object.assign(core.notes[0], change);
     await notes.reload();
     await flushPromises();
@@ -112,16 +115,69 @@ describe("the open note changes on another device", () => {
     expect(toasts()).toEqual([COPY_TOAST]);
   });
 
-  it("keeps the whole version shown when only the text was typed", async () => {
-    const { core, typeInText, changedElsewhere, copies } = await openNote();
+  it("keeps both a new title from elsewhere and the text typed here", async () => {
+    const { core, editor, titleInput, typeInText, changedElsewhere, copies, toasts } =
+      await openNote();
     typeInText(", beurre");
+
+    await changedElsewhere({ title: "Courses Lidl" });
+
+    expect(core.notes[0]).toMatchObject({ title: "Courses Lidl", content: "Lait, beurre" });
+    expect(copies()).toEqual([]);
+    expect(toasts()).toEqual([]);
+    expect(titleInput().value).toBe("Courses Lidl");
+    expect(editor.getText()).toBe("Lait, beurre");
+  });
+
+  it("keeps the whole version shown when both changed", async () => {
+    const { core, titleInput, typeInText, changedElsewhere, copies } = await openNote();
+    typeInText(", beurre");
+    titleInput().value = "Courses du samedi";
+    titleInput().dispatchEvent(new Event("input"));
 
     await changedElsewhere({ title: "Courses Lidl" });
 
     expect(core.notes[0]).toMatchObject({ title: "Courses Lidl", content: "Lait" });
     expect(copies().map((copy) => [copy.title, copy.content])).toEqual([
-      ["Courses (conflit du 22/10 14:05)", "Lait, beurre"],
+      ["Courses du samedi (conflit du 22/10 14:05)", "Lait, beurre"],
     ]);
+  });
+
+  it("the copy of a note converted elsewhere keeps the kind of the editor", async () => {
+    const { core, typeInText, changedElsewhere, copies } = await openNote();
+    typeInText(", beurre");
+
+    // Converted to a code note on another device: this editor goes away, saving one last time.
+    await changedElsewhere({ kind: "code", codeLanguage: "markdown", content: "Autre chose" });
+
+    expect(core.notes[0].kind).toBe("code");
+    expect(copies().map((copy) => [copy.kind, copy.content])).toEqual([["rich", "Lait, beurre"]]);
+  });
+
+  it("keeps on screen a text whose save failed after the copy, and saves it next time", async () => {
+    const { core, editor, changedElsewhere, typeInText, copies } = await openNote();
+    typeInText(", beurre");
+    const first = core.hold("update_note");
+    const changing = changedElsewhere({ content: "Version d'ailleurs" });
+    await flushPromises();
+    // Typed while the copy is on its way, then the note is left: a second write starts.
+    const second = core.hold("update_note");
+    typeInText(", sel");
+    const leaving = flushAllAutosaves().catch((error: unknown) => error);
+    await flushPromises();
+    first.release();
+    await flushPromises();
+    core.fail("update_note", { kind: "database", message: "disk full" });
+    second.release();
+    await changing;
+    await leaving;
+    await flushPromises();
+
+    // Not replaced while that write was on its way: the text is still on screen.
+    expect(editor.getText()).toContain(", sel");
+    // The next save tries again: kept in a copy, since the note changed.
+    await flushAllAutosaves();
+    expect(copies().map((copy) => copy.content)).toContain("Lait, beurre, sel");
   });
 
   it("never writes over the other version while the copy is being saved", async () => {
@@ -222,6 +278,52 @@ describe("the open note changes on another device", () => {
     expect(editor.getText()).toBe("Pain, lait frais");
   });
 
+  it("a table changed elsewhere stays the same table", async () => {
+    const { core, editor, changedElsewhere, flush } = await openNote();
+    const table = (header: string, row: string) =>
+      `Lait\n\n| a | ${header} |\n| --- | --- |\n| ${row} |`;
+    /** The tables shown, as rows of cell texts. */
+    const tables = () => {
+      const found: string[][][] = [];
+      editor.state.doc.forEach((node) => {
+        if (node.type.name !== "table") return;
+        const rows: string[][] = [];
+        node.forEach((row) => {
+          const cells: string[] = [];
+          row.forEach((cell) => cells.push(cell.textContent));
+          rows.push(cells);
+        });
+        found.push(rows);
+      });
+      return found;
+    };
+    await changedElsewhere({ content: table("b", "1 | 2") });
+    // The focus adds TipTap's empty paragraph after the last table.
+    editor.commands.focus("start");
+
+    // One cell, then a change spanning two cells.
+    await changedElsewhere({ content: table("b aa", "1 | 2") });
+    expect(tables()).toEqual([[["a", "b aa"], ["1", "2"]]]);
+    await changedElsewhere({ content: table("b aa", "10 | 20") });
+    expect(tables()).toEqual([[["a", "b aa"], ["10", "20"]]]);
+
+    editor.commands.insertContentAt(1, "X");
+    await flush();
+    const stored = core.notes[0].content;
+    expect(stored.startsWith("XLait\n\n| a")).toBe(true);
+    expect(stored.split("\n").filter((line) => line.startsWith("|"))).toHaveLength(3);
+    expect(stored).toMatch(/\| 10 +\| 20 +\|/);
+    expect(core.notes).toHaveLength(1);
+  });
+
+  it("an emptied note from elsewhere shows an empty text", async () => {
+    const { editor, changedElsewhere } = await openNote();
+    await changedElsewhere({ content: "" });
+    expect(editor.getText()).toBe("");
+    await changedElsewhere({ content: "De nouveau" });
+    expect(editor.getText()).toBe("De nouveau");
+  });
+
   it("a new version from elsewhere is not undoable", async () => {
     const { editor, changedElsewhere, flush } = await openNote();
     editor.commands.focus("end");
@@ -229,6 +331,23 @@ describe("the open note changes on another device", () => {
     editor.commands.undo();
     await flush();
     expect(editor.getText()).toBe("Version d'ailleurs");
+  });
+
+  it("a deleted note whose text cannot be saved creates one new note only", async () => {
+    const { core, flush, typeInText } = await openNote();
+    typeInText(", beurre");
+    core.notes.splice(0, 1);
+    for (let attempt = 0; attempt < 3; attempt++) {
+      // The note created aside refuses the text (too big, say) every time.
+      const created = core.hold("create_note");
+      const flushing = flush().catch(() => "failed");
+      await flushPromises();
+      core.fail("update_note", { kind: "invalid_input", message: "the note is larger than 2 MB" });
+      created.release();
+      await flushing;
+      typeInText("x");
+    }
+    expect(core.notes).toHaveLength(1);
   });
 
   it("a new title from elsewhere leaves the text being typed alone", async () => {
@@ -256,6 +375,8 @@ describe("the open note changes on another device", () => {
       title: "Courses du samedi",
       expectedTitle: "Courses",
       expectedContent: "Lait",
+      expectedKind: "rich",
+      expectedCodeLanguage: null,
     });
   });
 

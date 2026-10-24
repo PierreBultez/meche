@@ -86,16 +86,25 @@ describe("sync dot (docs/08)", () => {
   it("turns orange only for a sync that lasts", async () => {
     vi.useFakeTimers();
     const { wrapper, sync } = await mountDot();
-    sync.apply(status({ state: "idle" }));
+    const lastSyncAt = Date.now();
+    sync.apply(status({ state: "idle", lastSyncAt }));
     await flushPromises();
-    sync.apply(status({ state: "syncing" }));
+    sync.apply(status({ state: "syncing", lastSyncAt }));
     await flushPromises();
     expect(wrapper.find("button").classes()).toContain("text-ok");
     await vi.advanceTimersByTimeAsync(400);
     expect(wrapper.find("button").classes()).toContain("text-spark");
-    sync.apply(status({ state: "idle" }));
+    sync.apply(status({ state: "idle", lastSyncAt }));
     await flushPromises();
     expect(wrapper.find("button").classes()).toContain("text-ok");
+  });
+
+  it("stays grey until a first sync went through", async () => {
+    const { wrapper, sync } = await mountDot();
+    sync.apply(status({ state: "idle", lastSyncAt: null }));
+    await flushPromises();
+    expect(wrapper.find("button").classes()).toContain("text-muted");
+    expect(wrapper.find("button").attributes("title")).toBe("Pas encore synchronisé.");
   });
 
   it("syncs when clicked, and says when it failed", async () => {

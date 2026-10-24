@@ -139,12 +139,13 @@ export function installFakeCore(): FakeCore {
     },
     update_note: ({ id, patch }) => {
       const note = find(id as string);
-      const { expectedTitle, expectedContent, ...change } = patch as NotePatch;
-      // Like Rust (db::notes::update): a note changed elsewhere is not overwritten, what was
-      // typed goes to a conflict copy.
+      const { expectedTitle, expectedContent, expectedKind, expectedCodeLanguage, ...change } =
+        patch as NotePatch;
+      // Like Rust (db::notes::update): a field sent over a value changed elsewhere is not
+      // written, what the editor shows goes to a conflict copy.
       const changedElsewhere =
-        (expectedTitle !== undefined && expectedTitle !== note.title) ||
-        (expectedContent !== undefined && expectedContent !== note.content);
+        (change.title !== undefined && expectedTitle !== undefined && expectedTitle !== note.title) ||
+        (change.content !== undefined && expectedContent !== undefined && expectedContent !== note.content);
       const updated = { ...note, ...change };
       const same = updated.title === note.title && updated.content === note.content &&
         updated.pinned === note.pinned && updated.color === note.color &&
@@ -156,6 +157,12 @@ export function installFakeCore(): FakeCore {
           ...updated,
           title: change.title ?? expectedTitle ?? updated.title,
           content: change.content ?? expectedContent ?? updated.content,
+          ...(expectedKind !== undefined && expectedKind !== updated.kind
+            ? {
+                kind: expectedKind,
+                codeLanguage: expectedKind === "code" ? (expectedCodeLanguage ?? "plaintext") : null,
+              }
+            : {}),
         };
         core.notes.push({ ...mine, id: `note-${++counter}`, title: `${mine.title} (conflit du 22/10 14:05)` });
         return { ...note };

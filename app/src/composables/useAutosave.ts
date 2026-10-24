@@ -139,7 +139,13 @@ export function createAutosave<T>(
           );
       }
     }
-    await writing;
+    // Until no write is left: another flush (leaving the note, the timer) may have chained
+    // one while this one waited.
+    let last: Promise<void>;
+    do {
+      last = writing;
+      await last;
+    } while (last !== writing);
     if (failure !== null) throw failure;
   }
 

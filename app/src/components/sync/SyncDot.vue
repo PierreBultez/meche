@@ -49,7 +49,8 @@ const color = computed(() => {
     case "error":
       return "text-danger";
     default:
-      return "text-ok";
+      // Green only once a sync went through: « Pas encore synchronisé » is not « à jour ».
+      return status.lastSyncAt === null ? "text-muted" : "text-ok";
   }
 });
 watch(

@@ -252,6 +252,10 @@ pub struct NotePatch {
     pub expected_title: Option<String>,
     /// Same for the content.
     pub expected_content: Option<String>,
+    /// The kind of the editor, and its language for a code note: a conflict copy takes them,
+    /// even when the other device converted the note meanwhile.
+    pub expected_kind: Option<NoteKind>,
+    pub expected_code_language: Option<String>,
 }
 
 // ── Pure helpers (no database: easy to test) ────────────────────────────────────────────────
@@ -693,13 +697,17 @@ pub fn list(conn: &Connection, filter: ListFilter) -> Result<Vec<NoteSummary>> {
 /// under the same database lock: nothing can change in between.
 pub fn update(conn: &Connection, id: &str, patch: NotePatch, now: i64) -> Result<Note> {
     let current = get(conn, id)?;
-    // `matches!(value, pattern if condition)`: true when the value fits the pattern and the
-    // condition holds. Here: an expected text was sent and it differs from the stored one.
-    let changed_elsewhere = matches!(&patch.expected_title, Some(expected) if *expected != current.title)
-        || matches!(&patch.expected_content, Some(expected) if *expected != current.content);
     // Read before `patch.title` and `patch.content` are moved into `note` below.
     let title_sent = patch.title.is_some();
     let content_sent = patch.content.is_some();
+    // A field sent over a value the editor did not know. `matches!(value, pattern if
+    // condition)`: true when the value fits the pattern and the condition holds. A field the
+    // editor did not change is not checked: a new title from elsewhere and a text typed here
+    // are both kept.
+    let changed_elsewhere = (title_sent
+        && matches!(&patch.expected_title, Some(expected) if *expected != current.title))
+        || (content_sent
+            && matches!(&patch.expected_content, Some(expected) if *expected != current.content));
     // `clone()` makes an independent copy, so `current` stays untouched for the comparison.
     let mut note = current.clone();
 
@@ -745,6 +753,17 @@ pub fn update(conn: &Connection, id: &str, patch: NotePatch, now: i64) -> Result
         }
         if !content_sent && let Some(expected) = patch.expected_content {
             mine.content = expected;
+        }
+        if let Some(kind) = patch.expected_kind
+            && kind != mine.kind
+        {
+            mine.kind = kind;
+            mine.code_language = match kind {
+                NoteKind::Code => patch
+                    .expected_code_language
+                    .or_else(|| Some("plaintext".to_string())),
+                NoteKind::Rich => None,
+            };
         }
         validate(&mine)?;
         insert_conflict_copy(conn, &mine, now)?;
@@ -1187,6 +1206,55 @@ mod tests {
         assert!(title.starts_with("Mon titre (conflit du "), "{title}");
         assert_eq!(content, "Lait");
         assert_eq!(count_notes(&conn), 2);
+    }
+
+    #[test]
+    fn a_field_the_editor_did_not_change_is_not_a_conflict() {
+        let conn = open_in_memory().unwrap();
+        // The title was changed on another device; the editor still shows « Courses ».
+        let note = rich_note(&conn, "Courses Lidl", "Lait", 1_000);
+        let patch = NotePatch {
+            content: Some("Lait, pain".to_string()),
+            expected_title: Some("Courses".to_string()),
+            expected_content: Some("Lait".to_string()),
+            ..NotePatch::default()
+        };
+
+        let updated = update(&conn, &note.id, patch, 2_000).unwrap();
+
+        // Both are kept: the other device's title, the text typed here.
+        assert_eq!(
+            (updated.title.as_str(), updated.content.as_str()),
+            ("Courses Lidl", "Lait, pain")
+        );
+        assert_eq!(count_notes(&conn), 1);
+    }
+
+    #[test]
+    fn the_copy_of_a_code_editor_stays_a_code_note() {
+        let conn = open_in_memory().unwrap();
+        // Converted to a rich note on another device, while code was typed here.
+        let note = rich_note(&conn, "Script", "```bash\nmake\n```", 1_000);
+        let patch = NotePatch {
+            content: Some("make && make test".to_string()),
+            expected_title: Some("Script".to_string()),
+            expected_content: Some("make".to_string()),
+            expected_kind: Some(NoteKind::Code),
+            expected_code_language: Some("bash".to_string()),
+            ..NotePatch::default()
+        };
+        update(&conn, &note.id, patch, 2_000).unwrap();
+
+        let (kind, language, content): (NoteKind, Option<String>, String) = conn
+            .query_row(
+                "SELECT kind, code_language, content FROM notes WHERE id != ?1",
+                [&note.id],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+            )
+            .unwrap();
+        assert_eq!(kind, NoteKind::Code);
+        assert_eq!(language.as_deref(), Some("bash"));
+        assert_eq!(content, "make && make test");
     }
 
     #[test]

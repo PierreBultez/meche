@@ -21,8 +21,14 @@ const MESSAGES: Record<string, string> = {
     "Le serveur refuse une note de cet appareil : la synchro est bloquée. Tes notes restent ici.",
 };
 
+/** Errors of this device itself (its database), not of the server. */
+const LOCAL_KINDS = ["database", "database_lock", "migration", "io", "json"];
+
 /** The message for an error kind (or a generic one). */
 export function syncErrorMessage(kind: string | null | undefined): string {
+  if (kind && LOCAL_KINDS.includes(kind)) {
+    return "Erreur de la base de données de cet appareil. La synchro réessaiera.";
+  }
   return (kind && MESSAGES[kind]) || "Le serveur a rencontré une erreur. La synchro réessaiera.";
 }
 

@@ -2,6 +2,9 @@
 // Editor of rich notes (docs/05): TipTap, saved as Markdown by the parent through getMarkdown().
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { type Editor, Extension } from "@tiptap/core";
+import type { Node as ProseMirrorNode } from "@tiptap/pm/model";
+import { TextSelection } from "@tiptap/pm/state";
+import { ReplaceStep } from "@tiptap/pm/transform";
 import { EditorContent, VueNodeViewRenderer, useEditor } from "@tiptap/vue-3";
 import { BubbleMenu } from "@tiptap/vue-3/menus";
 import { Bold, Code, Italic, Link, Strikethrough, Unlink } from "lucide-vue-next";
@@ -122,6 +125,13 @@ function cancelLink(): void {
   editor.value?.commands.focus();
 }
 
+/** The document for `markdown`, as the editor reads it. An empty text gives an empty paragraph,
+ * like a new editor: a document needs at least one block. */
+function documentFor(current: Editor, markdown: string): ProseMirrorNode {
+  const parsed = current.schema.nodeFromJSON(current.markdown!.parse(markdown));
+  return parsed.childCount > 0 ? parsed : current.schema.topNodeType.createAndFill()!;
+}
+
 defineExpose({
   getMarkdown: (): string => (editor.value ? serializeMarkdown(editor.value) : props.content),
   // null keeps the caret where it is (a fresh editor has it at the start).
@@ -137,11 +147,13 @@ defineExpose({
     const current = editor.value;
     if (!current?.markdown) return markdown;
     const { state, view } = current;
-    const next = current.schema.nodeFromJSON(current.markdown.parse(markdown));
+    const next = documentFor(current, markdown);
     const start = state.doc.content.findDiffStart(next.content);
     // `null`: the same document, nothing to replace.
-    const end = start === null ? null : state.doc.content.findDiffEnd(next.content);
-    if (start !== null && end !== null) {
+    if (start === null) return serializeMarkdown(current);
+    let transaction = state.tr;
+    const end = state.doc.content.findDiffEnd(next.content);
+    if (end !== null) {
       let { a: endOld, b: endNew } = end;
       // Repeated text can make the end found before the start: move both ends after it.
       const overlap = start - Math.min(endOld, endNew);
@@ -149,12 +161,18 @@ defineExpose({
         endOld += overlap;
         endNew += overlap;
       }
-      const transaction = state.tr
-        .replace(start, endOld, next.slice(start, endNew))
-        .setMeta("addToHistory", false)
-        .setMeta("preventUpdate", true);
-      view.dispatch(transaction);
+      // A raw step, not `tr.replace`: the slice comes from a document of the same shape, and
+      // `tr.replace` would try to "fit" it, which splits a table when a cell changes.
+      transaction.maybeStep(new ReplaceStep(start, endOld, next.slice(start, endNew)));
     }
+    if (!transaction.doc.eq(next)) {
+      // Safety net: the whole document, the caret kept at the nearest place.
+      const { from } = state.selection;
+      transaction = state.tr.replaceWith(0, state.doc.content.size, next.content);
+      const position = Math.min(from, transaction.doc.content.size);
+      transaction.setSelection(TextSelection.near(transaction.doc.resolve(position)));
+    }
+    view.dispatch(transaction.setMeta("addToHistory", false).setMeta("preventUpdate", true));
     return serializeMarkdown(current);
   },
 });

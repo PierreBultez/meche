@@ -232,15 +232,14 @@ describe("notes store", () => {
     });
   });
 
-  it("keeps a text whose note was deleted in a new note, without opening it", async () => {
+  it("creates a note aside, without opening it", async () => {
     const store = useNotesStore();
     const open = await store.create("code");
-    core.notes[0].codeLanguage = "rust";
-    const kept = await store.keepAsNewNote(core.notes[0], "Script", "fn main() {}");
+    const aside = await store.createAside("code");
 
-    expect(kept).toMatchObject({ kind: "code", codeLanguage: "rust", title: "Script", content: "fn main() {}" });
+    expect(aside.kind).toBe("code");
     expect(store.current?.id).toBe(open.id);
-    expect(store.summaries.map((summary) => summary.id)).toContain(kept.id);
+    expect(store.summaries.map((summary) => summary.id)).toContain(aside.id);
   });
 
   it("a save is not a failure when only the list fails to reload", async () => {

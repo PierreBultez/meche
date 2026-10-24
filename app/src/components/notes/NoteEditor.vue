@@ -97,27 +97,33 @@ function keptMessage(message: string): void {
 }
 
 /**
- * Saves what the editor shows. Only the fields changed are sent, with both expected values:
- * if the note changed on another device, Rust keeps the whole version shown here in a single
- * conflict copy (docs/04). Resolves with false when the text was kept elsewhere.
+ * Saves what the editor shows. Only the fields changed are sent, with both expected values
+ * and the editor's kind: if a field sent changed on another device, Rust keeps the whole
+ * version shown here in a single conflict copy (docs/04). Resolves with false when the text
+ * was kept elsewhere.
  */
 async function writeNote(value: Shown, expected: Shown): Promise<boolean> {
-  const patch: NotePatch = { expectedTitle: expected.title, expectedContent: expected.content };
+  if (target !== id) return writeAside(value);
+  const patch: NotePatch = {
+    expectedTitle: expected.title,
+    expectedContent: expected.content,
+    expectedKind: props.note.kind,
+    expectedCodeLanguage: props.note.codeLanguage,
+  };
   if (value.title !== expected.title) patch.title = value.title;
   if (value.content !== expected.content) patch.content = value.content;
   let saved: Note;
   try {
-    saved = await notes.save(target, patch);
+    saved = await notes.save(id, patch);
   } catch (error) {
     if ((error as CommandError | undefined)?.kind !== "not_found") throw error;
-    // Deleted for good on another device while it was being typed: the text goes to a new
-    // note, which the next saves of this editor go to.
-    const kept = await notes.keepAsNewNote(props.note, value.title, value.content);
-    target = kept.id;
+    // Deleted for good on another device while it was being typed: a new note keeps the
+    // text, and the next saves of this editor go to it (never one note per attempt).
+    target = (await notes.createAside(props.note.kind)).id;
     keptMessage(
       "Cette note a été supprimée sur un autre appareil. Ce que tu venais d'écrire est gardé dans une nouvelle note.",
     );
-    return true;
+    return writeAside(value);
   }
   const applied =
     (patch.title === undefined || saved.title === patch.title) &&
@@ -130,6 +136,16 @@ async function writeNote(value: Shown, expected: Shown): Promise<boolean> {
     void showStored();
   }
   return applied;
+}
+
+/** Saves into the new note that keeps the text of a deleted one: only this editor writes it. */
+async function writeAside(value: Shown): Promise<boolean> {
+  const language =
+    props.note.kind === "code" && props.note.codeLanguage !== null
+      ? { codeLanguage: props.note.codeLanguage }
+      : {};
+  await notes.save(target, { title: value.title, content: value.content, ...language });
+  return true;
 }
 
 const save = useAutosave<Shown>({

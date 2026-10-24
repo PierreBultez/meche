@@ -2,6 +2,7 @@
 
 namespace App\Providers;
 
+use App\Accounts\Accounts;
 use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\RateLimiter;
@@ -21,7 +22,8 @@ class AppServiceProvider extends ServiceProvider
 
             return [
                 Limit::perMinute(5)->by('ip:'.$request->ip()),
-                Limit::perHour(30)->by('email:'.(is_string($email) ? mb_strtolower(trim($email)) : '')),
+                // Normalized like the account lookup, so both agree on what one address is.
+                Limit::perHour(30)->by('email:'.(is_string($email) ? Accounts::normalizeEmail($email) : '')),
             ];
         });
 

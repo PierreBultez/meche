@@ -31,6 +31,12 @@ echo "→ Caches (config, routes, events)"
 # umask 027: bootstrap/cache/config.php holds the database password and APP_KEY; readable by
 # its owner and the www-data group only (setgid folder), like .env.
 (umask 027 && php artisan optimize)
+# PHP-FPM reads it through the www-data group (setgid folder): without it, every request would
+# fail; the API then stays in maintenance.
+if [[ "$(stat -c %G bootstrap/cache/config.php)" != "www-data" ]]; then
+  echo "bootstrap/cache/config.php is not in the www-data group (setgid missing on bootstrap/cache?)" >&2
+  exit 1
+fi
 echo "→ PHP-FPM reload (fresh OPcache)"
 sudo -n systemctl reload "$php_fpm_service"
 php artisan up

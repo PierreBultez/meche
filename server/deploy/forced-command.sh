@@ -27,10 +27,17 @@ if ! git merge-base --is-ancestor "$commit" origin/master; then
   exit 3
 fi
 if ! git merge-base --is-ancestor HEAD "$commit"; then
-  echo "refused: $commit is older than the deployed $(git rev-parse --short HEAD)" >&2
+  echo "refused: $commit does not follow the deployed $(git rev-parse --short HEAD)" >&2
   exit 5
 fi
 
 # The deployment script of that commit (it is on master, so it was reviewed), run from a
 # string rather than through a pipe: a step reading its input cannot swallow the next ones.
-bash -c "$(git show "$commit:server/deploy/deploy.sh")" deploy "$repo_dir" "$commit" < /dev/null
+# Read on its own line first: `set -e` stops here if it cannot be read (an empty script would
+# "succeed" without deploying anything).
+script="$(git show "$commit:server/deploy/deploy.sh")"
+if [[ -z "$script" ]]; then
+  echo "refused: no server/deploy/deploy.sh in $commit" >&2
+  exit 6
+fi
+bash -c "$script" deploy "$repo_dir" "$commit" < /dev/null

@@ -80,7 +80,7 @@ Pour chaque changement :
 
 Une requête de plus de 8 Mo de notes (titres et contenus) est refusée (`invalid_change`) : le client n'en envoie jamais plus de 4 Mo.
 
-Puis la réception des notes `rev > cursor` (tombstones compris), triées par `rev` : **500 notes et environ 4 Mo au plus** (au moins une), lues en deux requêtes (identifiants, révisions et tailles, puis les notes retenues) pour ne jamais charger des centaines de grosses notes en mémoire. Les notes que la requête vient d'écrire (couples `id` + `rev` de `applied`) ne sont pas renvoyées : l'appareil les a. Le curseur avance quand même au-delà.
+Puis la réception des notes `rev > cursor` (tombstones compris), triées par `rev` : **500 notes et environ 4 Mo au plus** (au moins une), lues en deux requêtes (identifiants, révisions et tailles, puis les notes retenues) pour ne jamais charger des centaines de grosses notes en mémoire. Les notes que la requête vient d'écrire (couples `id` + `rev` de `applied`) ne sont pas renvoyées dans cette réponse et ne comptent pas dans ses limites : l'appareil les a, et le curseur avance au-delà. Si la page est pleine avant elles (notes d'autres appareils), elles peuvent revenir dans une page suivante : l'appareil les ignore (`rev <= server_rev`).
 
 ### Réponse
 ```json

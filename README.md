@@ -18,7 +18,8 @@ Les phases sont décrites dans [`docs/10-feuille-de-route.md`](docs/10-feuille-d
 - Phase 0, socle : terminée.
 - Phase 1, prise de notes locale sur desktop (notes riches et code, recherche, couleurs, épingles, corbeille, raccourcis, palette `Ctrl+K`) : terminée.
 - Phase 2, la mèche (autodestruction après un délai réglable, purge de la corbeille à 7 jours) : livrée, en cours de validation.
-- Prochaine : phase 3, serveur et synchronisation.
+- Phase 3, serveur Laravel et synchronisation (comptes sur invitation, appareils, copies de conflit, note ouverte mise à jour sur place) : livrée côté code ; déploiement sur le serveur à faire.
+- Prochaine : phase 4, import de Standard Notes.
 
 ## Développement
 

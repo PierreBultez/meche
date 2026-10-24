@@ -205,7 +205,7 @@ async function showStored(): Promise<void> {
       let content = note.content;
       if (currentContent() !== note.content) {
         if (note.kind === "rich") content = rich.value?.replace(note.content) ?? note.content;
-        else code.value?.replace(note.content);
+        else content = code.value?.replace(note.content) ?? note.content;
       }
       save.reset({ title: note.title, content: note.content }, { title: title.value, content });
       keptElsewhere = false;

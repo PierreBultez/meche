@@ -122,9 +122,10 @@ pub async fn sync_round(
         apply::reset(&tx, &response.sync_id)?;
         tx.commit()?;
         unacknowledged.clear();
+        // Not progress: a server answering « start over » every time must not be asked again
+        // and again (the requests that follow, sending the notes, are).
         return Ok(Round {
             again: true,
-            progress: true,
             server_time: Some(response.server_time),
             ..Round::default()
         });

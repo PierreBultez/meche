@@ -11,7 +11,7 @@ import { Bold, Code, Italic, Link, Strikethrough, Unlink } from "lucide-vue-next
 import { nextTick, ref, watch } from "vue";
 import { SlashCommandExtension } from "../../editor/SlashCommand";
 import { baseCodeBlock, createRichExtensions } from "../../editor/extensions";
-import { followCaretInDocument } from "../../editor/follow-caret";
+import { type Replaced, followCaretInDocument } from "../../editor/follow-caret";
 import { serializeMarkdown } from "../../editor/serialize";
 import { useToastsStore } from "../../stores/toasts";
 import CodeBlockView from "./CodeBlockView.vue";
@@ -148,11 +148,22 @@ defineExpose({
     const current = editor.value;
     if (!current?.markdown) return markdown;
     const { state, view } = current;
-    const next = documentFor(current, markdown);
+    let next = documentFor(current, markdown);
+    // TipTap keeps an empty paragraph after a last table, list or code block, which the stored
+    // text does not have: kept, so that only what really differs is replaced.
+    const last = state.doc.lastChild;
+    if (
+      last?.type.name === "paragraph" &&
+      last.childCount === 0 &&
+      next.lastChild?.type.name !== "paragraph"
+    ) {
+      next = next.copy(next.content.addToEnd(last.type.create()));
+    }
     const start = state.doc.content.findDiffStart(next.content);
     // `null`: the same document, nothing to replace.
     if (start === null) return serializeMarkdown(current);
     let transaction = state.tr;
+    let replaced: Replaced = { from: 0, to: state.doc.content.size, toNew: next.content.size };
     const end = state.doc.content.findDiffEnd(next.content);
     if (end !== null) {
       let { a: endOld, b: endNew } = end;
@@ -165,6 +176,7 @@ defineExpose({
       // A raw step, not `tr.replace`: the slice comes from a document of the same shape, and
       // `tr.replace` would try to "fit" it, which splits a table when a cell changes.
       transaction.maybeStep(new ReplaceStep(start, endOld, next.slice(start, endNew)));
+      replaced = { from: start, to: endOld, toNew: endNew };
     }
     if (!transaction.doc.eq(next)) {
       // Safety net: the whole document, the caret kept at the nearest place.
@@ -172,11 +184,18 @@ defineExpose({
       transaction = state.tr.replaceWith(0, state.doc.content.size, next.content);
       const position = Math.min(from, transaction.doc.content.size);
       transaction.setSelection(TextSelection.near(transaction.doc.resolve(position)));
+      replaced = { from: 0, to: state.doc.content.size, toNew: next.content.size };
     }
-    // A caret (not a selection) whose paragraph is still there goes back into it.
+    // A caret (not a selection) covered by the change goes back into its paragraph.
     if (state.selection.empty) {
       const mapped = transaction.selection.from;
-      const target = followCaretInDocument(state.doc, state.selection.from, transaction.doc, mapped);
+      const target = followCaretInDocument(
+        state.doc,
+        state.selection.from,
+        transaction.doc,
+        mapped,
+        replaced,
+      );
       if (target !== mapped) {
         transaction.setSelection(TextSelection.create(transaction.doc, target));
       }

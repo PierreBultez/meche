@@ -87,10 +87,12 @@ defineExpose({
   /**
    * Shows another version of the note in place (docs/04: brought by the sync). Only the part
    * that differs is replaced, so the caret, the selection and the scroll follow the text
-   * around it. Not undoable, and not reported as `changed`.
+   * around it. Not undoable, and not reported as `changed`. Returns the text as the editor
+   * holds it (CodeMirror keeps "\n" line ends only).
    */
-  replace: (text: string): void => {
-    if (!view) return;
+  replace: (stored: string): string => {
+    const text = stored.replace(/\r\n?/g, "\n");
+    if (!view) return text;
     const old = view.state.doc.toString();
     let start = 0;
     while (start < old.length && start < text.length && old[start] === text[start]) start++;
@@ -107,16 +109,26 @@ defineExpose({
       to: old.length - end,
       insert: text.slice(start, text.length - end),
     });
-    // A caret (not a selection) whose line is still there goes back into it.
+    // A caret (not a selection) covered by the change goes back into its line.
     const { main } = view.state.selection;
+    const replacedPart = { from: start, to: old.length - end, toNew: text.length - end };
     const caret = main.empty
-      ? { anchor: followCaretInText(old, main.head, text, changes.mapPos(main.head, 1)) }
+      ? {
+          anchor: followCaretInText(
+            old,
+            main.head,
+            text,
+            changes.mapPos(main.head, 1),
+            replacedPart,
+          ),
+        }
       : undefined;
     view.dispatch({
       changes,
       selection: caret,
       annotations: [Transaction.addToHistory.of(false), replaced.of(true)],
     });
+    return text;
   },
 });
 </script>

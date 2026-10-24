@@ -39,6 +39,12 @@ const ANSWER_TIMEOUT: Duration = Duration::from_secs(30);
 const SLOW_UPLOAD_BYTES_PER_SEC: u64 = 32 * 1024;
 /// While the answer is read: at most this long without receiving anything.
 const READ_TIMEOUT: Duration = Duration::from_secs(30);
+/// The largest answer read (a sync sends 4 MB of notes at most, plus conflicts): a broken
+/// server or a proxy cannot fill the memory.
+const MAX_ANSWER_BYTES: usize = 64 * 1024 * 1024;
+/// An error page is read quickly or not at all: the status already says what went wrong.
+const MAX_ERROR_BYTES: usize = 64 * 1024;
+const ERROR_BODY_TIMEOUT: Duration = Duration::from_secs(5);
 
 #[derive(Clone, Default)]
 pub struct Api {
@@ -242,7 +248,7 @@ async fn send_within<T: DeserializeOwned>(
     let response = checked(request, until_answer).await?;
     // Read, then decoded: a connection lost while reading is a network error; only an answer
     // that is not the JSON expected says it is not a Mèche server.
-    let body = read_body(response).await?;
+    let body = read_body(response, MAX_ANSWER_BYTES).await?;
     serde_json::from_slice(&body).map_err(|error| not_meche(format!("unexpected answer: {error}")))
 }
 
@@ -280,20 +286,31 @@ async fn checked(request: RequestBuilder, until_answer: Duration) -> Result<Resp
         .and_then(|value| value.to_str().ok())
         .and_then(|value| value.parse::<u64>().ok())
         .map(|seconds| seconds.clamp(1, MAX_RETRY_AFTER_SECS));
-    let body: serde_json::Value = match read_body(response).await {
-        Ok(bytes) => serde_json::from_slice(&bytes).unwrap_or_default(),
-        Err(_) => serde_json::Value::Null,
+    let read = tokio::time::timeout(ERROR_BODY_TIMEOUT, read_body(response, MAX_ERROR_BYTES));
+    let body: serde_json::Value = match read.await {
+        Ok(Ok(bytes)) => serde_json::from_slice(&bytes).unwrap_or_default(),
+        // Too long, too large or cut: the error is told by its status alone.
+        _ => serde_json::Value::Null,
     };
     Err(api_error(status, &body, retry_after))
 }
 
-/// Reads the answer piece by piece: it stops only when nothing arrives for `READ_TIMEOUT`.
-/// `mut response`: reading pieces moves through the answer, which changes it.
-async fn read_body(mut response: Response) -> Result<Vec<u8>> {
+/// Reads the answer piece by piece: it stops only when nothing arrives for `READ_TIMEOUT`, or
+/// when it is larger than `max_bytes`. `mut response`: reading pieces moves through the
+/// answer, which changes it.
+async fn read_body(mut response: Response, max_bytes: usize) -> Result<Vec<u8>> {
     let mut body = Vec::new();
     loop {
         match tokio::time::timeout(READ_TIMEOUT, response.chunk()).await {
-            Ok(Ok(Some(piece))) => body.extend_from_slice(&piece),
+            Ok(Ok(Some(piece))) => {
+                if body.len() + piece.len() > max_bytes {
+                    return Err(Error::Network(format!(
+                        "the answer is larger than {} KB",
+                        max_bytes / 1024
+                    )));
+                }
+                body.extend_from_slice(&piece);
+            }
             // The whole answer was read.
             Ok(Ok(None)) => return Ok(body),
             Ok(Err(error)) => return Err(Error::Network(error.to_string())),
@@ -542,6 +559,16 @@ mod tests {
         let health = run(Api::new().health(&base)).unwrap();
         assert_eq!(health.server_time, 7);
         server.join().unwrap();
+    }
+
+    #[test]
+    fn a_large_error_page_is_told_by_its_status() {
+        let page = "<html>".repeat(20_000);
+        let (base, server) = fake_server("500 Internal Server Error", "", &page);
+        let error = run(Api::new().login(&base, "a", "b", "c")).unwrap_err();
+        assert_eq!(error.kind(), "server");
+        // The connection may be dropped before the whole page was sent: that is fine.
+        let _ = server.join();
     }
 
     #[test]

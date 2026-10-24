@@ -324,6 +324,18 @@ describe("the open note changes on another device", () => {
     expect(editor.getText()).toBe("De nouveau");
   });
 
+  it("the caret stays in its paragraph when text is added before and after it", async () => {
+    const { editor, changedElsewhere, flush } = await openNote();
+    editor.commands.focus("end");
+
+    await changedElsewhere({ content: "Avant\n\nLait\n\n| a | b |\n| --- | --- |\n| 1 | 2 |" });
+    editor.commands.insertContent(", pain");
+    await flush();
+
+    const { $from } = editor.state.selection;
+    expect($from.parent.textContent).toBe("Lait, pain");
+  });
+
   it("a new version from elsewhere is not undoable", async () => {
     const { editor, changedElsewhere, flush } = await openNote();
     editor.commands.focus("end");

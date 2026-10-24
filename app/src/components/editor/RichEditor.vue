@@ -11,6 +11,7 @@ import { Bold, Code, Italic, Link, Strikethrough, Unlink } from "lucide-vue-next
 import { nextTick, ref, watch } from "vue";
 import { SlashCommandExtension } from "../../editor/SlashCommand";
 import { baseCodeBlock, createRichExtensions } from "../../editor/extensions";
+import { followCaretInDocument } from "../../editor/follow-caret";
 import { serializeMarkdown } from "../../editor/serialize";
 import { useToastsStore } from "../../stores/toasts";
 import CodeBlockView from "./CodeBlockView.vue";
@@ -171,6 +172,14 @@ defineExpose({
       transaction = state.tr.replaceWith(0, state.doc.content.size, next.content);
       const position = Math.min(from, transaction.doc.content.size);
       transaction.setSelection(TextSelection.near(transaction.doc.resolve(position)));
+    }
+    // A caret (not a selection) whose paragraph is still there goes back into it.
+    if (state.selection.empty) {
+      const mapped = transaction.selection.from;
+      const target = followCaretInDocument(state.doc, state.selection.from, transaction.doc, mapped);
+      if (target !== mapped) {
+        transaction.setSelection(TextSelection.create(transaction.doc, target));
+      }
     }
     view.dispatch(transaction.setMeta("addToHistory", false).setMeta("preventUpdate", true));
     return serializeMarkdown(current);

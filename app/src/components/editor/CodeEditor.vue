@@ -4,6 +4,7 @@ import { Annotation, Compartment, EditorState, Transaction } from "@codemirror/s
 import { EditorView } from "@codemirror/view";
 import { onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { codeEditorSetup, loadLanguage } from "../../editor/code-mirror";
+import { followCaretInText } from "../../editor/follow-caret";
 
 const props = defineProps<{
   /** Code of the note, read once when the editor is created (then see `replace`). */
@@ -101,8 +102,19 @@ defineExpose({
     ) {
       end++;
     }
+    const changes = view.state.changes({
+      from: start,
+      to: old.length - end,
+      insert: text.slice(start, text.length - end),
+    });
+    // A caret (not a selection) whose line is still there goes back into it.
+    const { main } = view.state.selection;
+    const caret = main.empty
+      ? { anchor: followCaretInText(old, main.head, text, changes.mapPos(main.head, 1)) }
+      : undefined;
     view.dispatch({
-      changes: { from: start, to: old.length - end, insert: text.slice(start, text.length - end) },
+      changes,
+      selection: caret,
       annotations: [Transaction.addToHistory.of(false), replaced.of(true)],
     });
   },

@@ -3,6 +3,10 @@
 # Run by server/deploy/forced-command.sh (the deploy key of GitHub Actions can run nothing
 # else), or by hand: bash server/deploy/deploy.sh /var/www/meche "$(git rev-parse origin/master)"
 set -euo pipefail
+# The code is written by pierre only: the www-data group (PHP of every site on the server) may
+# read it, never change it. Ubuntu's default umask (002) would make every file group-writable.
+# Only storage/ and bootstrap/cache/ are group-writable (docs/09, step 4).
+umask 022
 
 repo_dir="$1"
 commit="$2"

@@ -7,6 +7,10 @@
 # stolen key (or a re-run of an old workflow) can neither run a command of its own nor bring
 # back older code over a newer database.
 set -euo pipefail
+# `git fetch` writes into .git: with Ubuntu's default umask (002) its files would be writable by
+# the www-data group (PHP of every site on the server), which could then plant a hook or a
+# setting run as pierre. The code is written by pierre only (docs/09, step 4).
+umask 022
 
 repo_dir="${MECHE_REPO:-/var/www/meche}"
 commit="${SSH_ORIGINAL_COMMAND:-}"

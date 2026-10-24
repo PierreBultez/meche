@@ -81,8 +81,10 @@ export function followCaretInDocument(
   mapped: number,
   replaced: Replaced,
 ): number {
-  // Outside the part replaced (or at its edge), the editor's mapping is right.
-  if (caret <= replaced.from || caret >= replaced.to) return mapped;
+  // Outside the part replaced, the editor's mapping is right. At its edges it is not always: a
+  // caret at the start or end of « Intro » goes to « Avant » or « Après » (the block must still
+  // lie inside the part replaced, so an edit of its own paragraph keeps the mapping).
+  if (caret < replaced.from || caret > replaced.to) return mapped;
   return follow(
     caret,
     mapped,
@@ -99,7 +101,7 @@ export function followCaretInText(
   mapped: number,
   replaced: Replaced,
 ): number {
-  if (caret <= replaced.from || caret >= replaced.to) return mapped;
+  if (caret < replaced.from || caret > replaced.to) return mapped;
   return follow(
     caret,
     mapped,

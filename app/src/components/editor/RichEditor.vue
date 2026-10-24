@@ -163,7 +163,8 @@ defineExpose({
     // `null`: the same document, nothing to replace.
     if (start === null) return serializeMarkdown(current);
     let transaction = state.tr;
-    let replaced: Replaced = { from: 0, to: state.doc.content.size, toNew: next.content.size };
+    // The part replaced, for the caret; null in the safety net below (whole document).
+    let replaced: Replaced | null = null;
     const end = state.doc.content.findDiffEnd(next.content);
     if (end !== null) {
       let { a: endOld, b: endNew } = end;
@@ -184,10 +185,11 @@ defineExpose({
       transaction = state.tr.replaceWith(0, state.doc.content.size, next.content);
       const position = Math.min(from, transaction.doc.content.size);
       transaction.setSelection(TextSelection.near(transaction.doc.resolve(position)));
-      replaced = { from: 0, to: state.doc.content.size, toNew: next.content.size };
+      replaced = null;
     }
-    // A caret (not a selection) covered by the change goes back into its paragraph.
-    if (state.selection.empty) {
+    // A caret (not a selection) covered by the change goes back into its paragraph. Not in the
+    // safety net: a whole document "replaced" could send it to a copy of its old paragraph.
+    if (replaced !== null && state.selection.empty) {
       const mapped = transaction.selection.from;
       const target = followCaretInDocument(
         state.doc,

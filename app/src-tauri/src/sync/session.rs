@@ -91,7 +91,7 @@ pub async fn sync_round(
             // The server refused the request (4xx: invalid, unauthorized, too many requests):
             // it applied nothing, so these versions are not waiting for anything. Any other
             // error keeps them: the request may have been applied before the answer was lost
-            // (a network error, or a 502 / 504 from Apache while PHP went on).
+            // (a network error, or a 502 / 504 from Nginx while PHP went on).
             if matches!(
                 error,
                 Error::Api {

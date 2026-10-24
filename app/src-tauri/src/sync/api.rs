@@ -334,7 +334,7 @@ fn api_error(status: StatusCode, body: &serde_json::Value, retry_after: Option<u
         (StatusCode::UNAUTHORIZED, _) => "unauthorized",
         (StatusCode::TOO_MANY_REQUESTS, _) => "rate_limited",
         (_, Some(code)) if status.is_client_error() => code,
-        // A page that is not from the Mèche API (Apache, another site, a proxy), or a redirect
+        // A page that is not from the Mèche API (the web server, another site, a proxy), or a redirect
         // (the API never redirects).
         (StatusCode::NOT_FOUND | StatusCode::METHOD_NOT_ALLOWED, None) => "not_meche_server",
         _ if status.is_redirection() => "not_meche_server",

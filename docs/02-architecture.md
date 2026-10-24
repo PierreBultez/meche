@@ -22,7 +22,7 @@
 │  └──────────────────────────────────────────────────────┘                              ││
 └────────────────────────────────────────────────────────────────────────────────────────┘│
                                                                                           │
-┌──────────────────────── VPS Ubuntu (Apache, PHP-FPM 8.5, MariaDB) ──────────────────────▼┐
+┌───────────────────────── VPS Ubuntu (Nginx, PHP-FPM 8.5, MariaDB) ──────────────────────▼┐
 │  API Laravel 13                                                                          │
 │   POST /api/auth/token, /api/auth/register  → jeton Sanctum par appareil                 │
 │   POST /api/sync         → push + pull en un seul aller-retour                           │
@@ -53,7 +53,7 @@
 - TipTap convertit Markdown ↔ document éditable. Voir `05-editeur.md`.
 
 ### D5 — Serveur Laravel
-- Pierre maîtrise Laravel et administre déjà un serveur Ubuntu avec Apache, PHP, MariaDB et le déploiement par GitHub Actions.
+- Pierre maîtrise Laravel et administre déjà un serveur Ubuntu avec Nginx, PHP, MariaDB et le déploiement par GitHub Actions.
 - L'API est petite (synchro, comptes, appareils, invitations). Elle doit répondre **vite** : voir les consignes de performance dans `04-synchronisation.md`.
 
 ### D6 — Recherche dans SQLite FTS5

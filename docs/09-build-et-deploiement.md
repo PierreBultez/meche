@@ -50,7 +50,7 @@ Un nom de paquet Debian ne peut pas contenir d'accent : `app/src-tauri/tauri.lin
 
 ## 3. Serveur (API Laravel)
 
-Mis en place en phase 3. Le VPS de Pierre : Ubuntu 26.04, Apache, PHP-FPM 8.5, MariaDB 12.3, Certbot, fail2ban, Composer ; déploiement par `git pull` avec l'utilisateur `pierre`. Les fichiers d'exemple sont dans `server/deploy/`. Aucune adresse IP, aucun mot de passe ni aucune clé n'est écrit dans ce dépôt public : ils vivent sur le serveur (`.env`) et dans les secrets GitHub.
+Mis en place en phase 3. Le VPS de Pierre : Ubuntu 26.04, Nginx, PHP-FPM 8.5, MariaDB 12.3, Certbot, fail2ban, Composer ; déploiement par `git pull` avec l'utilisateur `pierre`. Les fichiers d'exemple sont dans `server/deploy/`. Aucune adresse IP, aucun mot de passe ni aucune clé n'est écrit dans ce dépôt public : ils vivent sur le serveur (`.env`) et dans les secrets GitHub.
 
 ### 3.1 Première installation (à la main, une fois)
 
@@ -68,8 +68,8 @@ Chaque étape est faite avec Claude Code, qui explique les commandes avant que P
 5. **`.env`** : copie de `.env.example` (`APP_ENV=production`, `APP_DEBUG=false`, `DB_CONNECTION=mariadb`, `CACHE_STORE=file`, `SESSION_DRIVER=array`), mot de passe de la base, puis `php artisan key:generate`. `chmod 640`, groupe `www-data`.
 6. `composer install --no-dev --optimize-autoloader`, `php artisan migrate --force`, `(umask 027 && php artisan optimize)` (`bootstrap/cache/config.php` contient le mot de passe de la base et `APP_KEY` : lisible par `pierre` et le groupe `www-data` seulement), puis **le premier compte** : `php artisan notes:create-user` (une phrase de passe générée par le gestionnaire de mots de passe : 12 caractères au moins, 72 octets au plus).
 7. **PHP-FPM** : `server/deploy/php-fpm-meche.ini` dans `/etc/php/8.5/fpm/conf.d/90-meche.ini` (`post_max_size = 16M`, `memory_limit = 256M`, `expose_php = Off`, OPcache), puis `sudo systemctl reload php8.5-fpm`.
-8. **Apache** : modules `proxy_fcgi`, `setenvif`, `rewrite`, `deflate` ; vhost `server/deploy/apache-meche.conf` (DocumentRoot = `server/public` exactement : `.env`, le code et `.git` restent hors d'atteinte ; `LimitRequestBody` 20 Mo ; `AddOutputFilterByType DEFLATE application/json`). Dans `/etc/apache2/conf-available/security.conf` : `ServerTokens Prod`, `ServerSignature Off`.
-9. **Certificat** : `sudo certbot --apache -d meche.pierrebultez.com` (Certbot crée le vhost HTTPS et la redirection 80 → 443).
+8. **Nginx** : site `server/deploy/nginx-meche.conf` → `/etc/nginx/sites-available/meche`, lien dans `sites-enabled`, `sudo nginx -t` puis `sudo systemctl reload nginx`. `root` = `server/public` exactement (`.env`, le code et `.git` restent hors d'atteinte ; fichiers cachés refusés, seul `index.php` est exécuté) ; PHP-FPM 8.5 par `/run/php/php8.5-fpm.sock` ; `client_max_body_size 20m` ; gzip pour `application/json` ; `server_tokens off`. Essayé avec Nginx 1.28 et PHP-FPM 8.5 : routage vers `index.php` avec l'en-tête `Authorization`, réponses compressées, `.env` et `.git` en 403, autre `.php` en 404, requête de 21 Mo refusée (413).
+9. **Certificat** : `sudo certbot --nginx -d meche.pierrebultez.com` (Certbot ajoute HTTPS et la redirection 80 → 443 dans le fichier du site ; il faut le greffon `python3-certbot-nginx`).
 10. **Vérification** : `curl -s https://meche.pierrebultez.com/api/health` répond `{"ok":true,…}` ; `curl -sI` montre l'en-tête `Server-Timing` (temps passé dans PHP).
 11. **Planificateur** (`notes:maintenance` toutes les 10 minutes), dans la crontab de `www-data` (`sudo crontab -u www-data -e`), le même utilisateur que PHP-FPM :
     ```

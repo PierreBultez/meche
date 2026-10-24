@@ -95,7 +95,7 @@ Puis la réception des notes `rev > cursor` (tombstones compris), triées par `r
   "reset": false
 }
 ```
-Accents et barres obliques ne sont pas échappés (réponses plus petites) ; Apache les compresse en gzip.
+Accents et barres obliques ne sont pas échappés (réponses plus petites) ; Nginx les compresse en gzip.
 
 ### Traitement client (`sync/apply.rs`, dans une transaction SQLite)
 1. **`applied`** : `server_rev = rev`. `dirty = 0` **uniquement si tous les champs synchronisés sont encore ceux envoyés** (la note n'a pas changé pendant la requête). Comparer `updated_at` seul ne suffisait pas : deux écritures dans la même milliseconde (la mèche puis une sauvegarde) auraient trompé le test. Un tombstone accepté est supprimé physiquement de la base locale. Une note jamais synchronisée, supprimée définitivement ici pendant que la requête l'envoyait, n'a plus de ligne locale alors que le serveur vient de la stocker : un tombstone est créé (`server_rev = rev`, `dirty = 1`), sinon elle resterait vivante sur le serveur et les autres appareils.
@@ -104,7 +104,7 @@ Accents et barres obliques ne sont pas échappés (réponses plus petites) ; Apa
    - les deux versions sont identiques (hors `updated_at`).
    Une note locale qui était dans la corbeille donne une copie qui reste dans la corbeille.
 
-   **Réponse perdue** : si une requête a été reçue et appliquée par le serveur mais que sa réponse s'est perdue (connexion coupée, délai dépassé, `502`/`504` d'Apache pendant que PHP continuait), le serveur renverra plus tard la version que cet appareil a lui-même envoyée. Le moteur garde en mémoire les versions envoyées sans réponse (`Unacknowledged`, trois au plus par note ; oubliées quand le serveur a refusé la requête par un `4xx`, puisqu'il n'a alors rien appliqué). Quand le serveur renvoie l'une d'elles :
+   **Réponse perdue** : si une requête a été reçue et appliquée par le serveur mais que sa réponse s'est perdue (connexion coupée, délai dépassé, `502`/`504` de Nginx pendant que PHP continuait), le serveur renverra plus tard la version que cet appareil a lui-même envoyée. Le moteur garde en mémoire les versions envoyées sans réponse (`Unacknowledged`, trois au plus par note ; oubliées quand le serveur a refusé la requête par un `4xx`, puisqu'il n'a alors rien appliqué). Quand le serveur renvoie l'une d'elles :
    - la note a été modifiée ici depuis : ce n'est pas un conflit, elle repart de cette révision (`server_rev = rev`, toujours `dirty`) et sa version plus récente part aussitôt ;
    - la note a été supprimée définitivement ici depuis (jamais synchronisée, elle n'avait pas laissé de tombstone) : un tombstone est créé à cette révision, sinon la note reviendrait ;
    - la note n'a pas changé : la version du serveur est enregistrée normalement.
@@ -204,7 +204,7 @@ Objectif : **< 50 ms côté serveur** pour une synchro sans changement, **< 150 
 - Index unique `(user_id, rev)` : la requête de réception est un parcours d'index.
 - Une seule transaction, révisions attribuées en une fois, nouvelles notes insérées par paquets (pas d'`upsert`, voir plus haut).
 - Pas de middleware web (session, CSRF, cookies) sur les routes API.
-- Production : `php artisan optimize`, OPcache activé, `APP_DEBUG=false`, compression gzip (Apache `mod_deflate` pour `application/json`).
+- Production : `php artisan optimize`, OPcache activé, `APP_DEBUG=false`, compression gzip (Nginx, `gzip_types application/json`).
 - Chaque réponse porte un en-tête `Server-Timing: app;dur=12.3` (temps passé dans PHP, en ms) : `curl -sI` suffit pour vérifier les objectifs en production.
 - Côté client : `reqwest` avec gzip, un seul `Client` partagé (construit à la première requête) qui garde ses connexions ouvertes (keep-alive).
 - Option ultérieure si besoin : Laravel Octane. Ne pas l'introduire sans mesure qui le justifie.

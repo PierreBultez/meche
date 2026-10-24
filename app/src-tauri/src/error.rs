@@ -44,7 +44,7 @@ pub enum Error {
 
     /// The server answered with an error. `code` is its stable error code (`invalid_credentials`,
     /// `unauthorized`, `rate_limited`…, see server/app/Http/Controllers/Api), or `server` when
-    /// it gave none (an Apache error page, a crash).
+    /// it gave none (an error page of the web server, a crash).
     #[error("server error {status} {code}: {message}")]
     Api {
         status: u16,

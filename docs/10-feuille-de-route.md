@@ -39,7 +39,7 @@ Simplifiée avec Pierre au démarrage de la phase : une mèche à délai uniquem
 
 **État (fin de la phase 3, côté code)** : serveur, synchronisation, interface et CI faits, trois tours de revue critique (chaque constat vérifié par un second relecteur ou par sa reproduction). Scénarios réels passés avec deux instances (données séparées) et le serveur local : synchronisation dans les deux sens ; coupure réseau (nouveaux essais à 5 s, 15 s puis 60 s, pastille grise, reprise immédiate au retour du serveur) ; copie « (conflit du …) » après des modifications hors ligne des deux côtés ; explosion pendant que l'autre instance est fermée (reçue à sa réouverture, `trashed_at = destroy_at`) ; tombstone (note supprimée partout) ; note ouverte modifiée sur l'autre appareil, affichée sur place sans perdre le focus ni le curseur, tableau compris. Reste : le déploiement sur le serveur de Pierre (`09-build-et-deploiement.md`, § 3), mené avec lui.
 
-**Mesures (phase 3)** — conteneur de développement, PHP 8.5 avec OPcache, MariaDB 12.3, serveur intégré de PHP (pas Apache ni PHP-FPM), configuration non mise en cache, compte de 1 000 notes, 50 requêtes par cas :
+**Mesures (phase 3)** — conteneur de développement, PHP 8.5 avec OPcache, MariaDB 12.3, serveur intégré de PHP (pas Nginx ni PHP-FPM), configuration non mise en cache, compte de 1 000 notes, 50 requêtes par cas :
 - synchro sans changement : médiane 14,6 ms dans PHP (p90 17,4 ms) ; objectif < 50 ms ;
 - synchro typique (3 notes envoyées, 5 reçues d'un autre appareil) : médiane 11,7 ms dans PHP (p90 14,9 ms) ; objectif < 150 ms ;
 - démarrage à froid du client (build release final, compte connecté, jusqu'à la fenêtre visible) : 420 à 488 ms sur 6 lancements ; budget 1 s.

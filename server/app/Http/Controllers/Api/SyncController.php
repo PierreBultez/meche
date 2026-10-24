@@ -21,7 +21,7 @@ class SyncController extends Controller
             return ApiError::response('invalid_change', $error->getMessage());
         }
 
-        // Accents and slashes as they are: smaller answers (Apache compresses them with gzip).
+        // Accents and slashes as they are: smaller answers (Nginx compresses them with gzip).
         return response()->json($result, options: JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
     }
 }

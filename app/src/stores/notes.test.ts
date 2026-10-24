@@ -1,6 +1,6 @@
 import { clearMocks } from "@tauri-apps/api/mocks";
 import { createPinia, setActivePinia } from "pinia";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { type FakeCore, installFakeCore } from "../test/fake-core";
 import { useNotesStore } from "./notes";
 
@@ -230,5 +230,55 @@ describe("notes store", () => {
       await opening;
       expect(store.current?.id).toBe(b.id);
     });
+  });
+
+  it("creates a note aside, without opening it", async () => {
+    const store = useNotesStore();
+    const open = await store.create("code");
+    const aside = await store.createAside("code");
+
+    expect(aside.kind).toBe("code");
+    expect(store.current?.id).toBe(open.id);
+    expect(store.summaries.map((summary) => summary.id)).toContain(aside.id);
+  });
+
+  it("a save is not a failure when only the list fails to reload", async () => {
+    const store = useNotesStore();
+    const note = await store.create("rich");
+    const error = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    core.fail("list_notes", { kind: "database", message: "busy" });
+
+    const saved = await store.save(note.id, { title: "Courses" });
+
+    expect(saved.title).toBe("Courses");
+    expect(error).toHaveBeenCalled();
+    error.mockRestore();
+  });
+
+  it("reads a note again when notes changed while it was being opened", async () => {
+    const store = useNotesStore();
+    const opened = await store.create("rich");
+    const other = await store.create("rich");
+    await store.open(opened.id);
+    const held = core.hold("get_note");
+    const opening = store.open(other.id);
+    await Promise.resolve();
+    // The sync changes the note being opened, after it was read.
+    core.notes.find((note) => note.id === other.id)!.content = "Synchronisée";
+    const reloading = store.reload();
+    held.release();
+    await Promise.all([opening, reloading]);
+    expect(store.current?.id).toBe(other.id);
+    expect(store.current?.content).toBe("Synchronisée");
+    const reads = core.calls.filter((call) => call.cmd === "get_note" && call.args.id === other.id);
+    expect(reads).toHaveLength(2);
+  });
+
+  it("reads a note once when nothing changed while it was being opened", async () => {
+    const store = useNotesStore();
+    const note = await store.create("rich");
+    await store.open(note.id);
+    const reads = core.calls.filter((call) => call.cmd === "get_note" && call.args.id === note.id);
+    expect(reads).toHaveLength(1);
   });
 });

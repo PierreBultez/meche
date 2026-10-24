@@ -37,6 +37,8 @@ coverage/
 
 # Logs
 logs/
+# Laravel keeps its empty storage folders in git with a .gitignore inside.
+!server/storage/logs/
 *.log
 npm-debug.log*
 

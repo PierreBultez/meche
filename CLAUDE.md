@@ -56,9 +56,9 @@ meche/
 4. **Pierre apprend Rust** : il est développeur fullstack junior (Laravel, Vue, TypeScript), débutant en Rust et en mobile. Écris un Rust idiomatique mais **simple et lisible** (pas de génériques ou de macros inutiles), commente les points non évidents (ownership, lifetimes, async) et explique brièvement tes choix Rust dans tes réponses.
 5. **Petites étapes** : suis l'ordre de `docs/10-feuille-de-route.md`. Une phase = des commits atomiques, testés, qui compilent.
 6. **Tests** :
-   - Rust : `cargo test` — obligatoire pour la synchro, l'autodestruction, le comptage des cases à cocher, les migrations.
+   - Rust : `cargo test` — obligatoire pour la synchro, la mèche (autodestruction et purge de la corbeille) et les migrations.
    - Frontend : Vitest — obligatoire pour la conversion Markdown (aller-retour) et l'import Standard Notes.
-   - Serveur : Pest — obligatoire pour l'endpoint de synchro (cas nominal, conflits, tombstones).
+   - Serveur : Pest — obligatoire pour l'endpoint de synchro (cas nominal, conflits, tombstones) et `notes:maintenance`.
 7. **Langues** : interface en **français** ; code, noms de variables, commentaires et messages de commit en **anglais** ; documentation dans `docs/` en français.
 8. **Performance** : respecte les budgets de `docs/08-interface.md`. Pas de dépendance lourde sans justification.
 9. **Direction artistique** : aucune couleur en dur dans les composants. Toujours les variables CSS de `docs/11-direction-artistique.md` (jetons d'interface, couleurs de note, thème du code).

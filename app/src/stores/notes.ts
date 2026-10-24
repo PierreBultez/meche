@@ -40,6 +40,8 @@ export const useNotesStore = defineStore("notes", () => {
   /** The note asked by the latest open request (it may still be loading), or null. */
   let wantedId: string | null = null;
   let searchRequest = 0;
+  /** Counts the `notes-changed` events: an opening that saw one start may have read too early. */
+  let changeCount = 0;
 
   /** Ids in the order they are shown (search results first when searching). */
   const visibleIds = computed(() =>
@@ -71,7 +73,15 @@ export const useNotesStore = defineStore("notes", () => {
     }
     let note: Note;
     try {
+      let changes = changeCount;
       note = await getNote(id);
+      // Notes changed while it was read (the sync): reload() could not refresh a note that was
+      // not open yet, so it is read again, to never open an old version. A few times at most:
+      // a later change is then shown in place by the editor.
+      for (let tries = 0; changes !== changeCount && request === openRequest && tries < 3; tries++) {
+        changes = changeCount;
+        note = await getNote(id);
+      }
     } catch (error) {
       // Not opened: the note still open is the one wanted (reload() keeps refreshing it).
       if (request === openRequest) wantedId = current.value?.id ?? null;
@@ -95,13 +105,34 @@ export const useNotesStore = defineStore("notes", () => {
     return note;
   }
 
-  /** Saves a change and returns the saved note. */
+  /**
+   * Saves a change and returns the saved note. The note is saved once Rust answers: a list
+   * that then fails to reload (reported in the console) does not make the save fail.
+   */
   async function save(id: string, patch: NotePatch): Promise<Note> {
     const note = await updateNote(id, patch);
     if (current.value?.id === id) {
       current.value = note;
     }
-    await refresh();
+    await refreshAfterChange();
+    return note;
+  }
+
+  async function refreshAfterChange(): Promise<void> {
+    try {
+      await refresh();
+    } catch (error) {
+      console.error("could not reload the list", error);
+    }
+  }
+
+  /**
+   * A new note of this kind, not opened: it shows at the top of the list. It keeps the text of
+   * a note deleted on another device while it was being typed (docs/04).
+   */
+  async function createAside(kind: NoteKind): Promise<Note> {
+    const note = await createNote(kind, false);
+    await refreshAfterChange();
     return note;
   }
 
@@ -120,6 +151,7 @@ export const useNotesStore = defineStore("notes", () => {
    * Reloads the list and the open note. Returns false when the open note no longer exists.
    */
   async function reload(): Promise<boolean> {
+    changeCount++;
     // Not a new open request: a note opened before or during this reload keeps priority, so
     // its answer is never dropped for the note that was open when the event came.
     const request = openRequest;
@@ -214,6 +246,7 @@ export const useNotesStore = defineStore("notes", () => {
     open,
     create,
     save,
+    createAside,
     setFuse,
     reload,
     trash,

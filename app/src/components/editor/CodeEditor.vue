@@ -1,12 +1,13 @@
 <script setup lang="ts">
 // Editor of code notes (docs/05): CodeMirror 6, language loaded on demand.
-import { Compartment, EditorState } from "@codemirror/state";
+import { Annotation, Compartment, EditorState, Transaction } from "@codemirror/state";
 import { EditorView } from "@codemirror/view";
 import { onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { codeEditorSetup, loadLanguage } from "../../editor/code-mirror";
+import { followCaretInText } from "../../editor/follow-caret";
 
 const props = defineProps<{
-  /** Code of the note, read once when the editor is created. */
+  /** Code of the note, read once when the editor is created (then see `replace`). */
   content: string;
   language: string | null;
   /** Wrap long lines (off by default, toggled from the note menu). */
@@ -22,6 +23,9 @@ let view: EditorView | null = null;
 const languageSlot = new Compartment();
 const wrapSlot = new Compartment();
 const editableSlot = new Compartment();
+
+/** Marks the replacements made by `replace`: they are not changes typed here. */
+const replaced = Annotation.define<boolean>();
 
 const wrapping = (wrap: boolean) => (wrap ? EditorView.lineWrapping : []);
 const editability = (editable: boolean) => [
@@ -49,7 +53,8 @@ onMounted(() => {
         editableSlot.of(editability(props.editable)),
         EditorView.contentAttributes.of({ "aria-label": "Code de la note" }),
         EditorView.updateListener.of((update) => {
-          if (update.docChanged) emit("changed");
+          const typed = !update.transactions.some((tr) => tr.annotation(replaced));
+          if (update.docChanged && typed) emit("changed");
         }),
       ],
     }),
@@ -79,6 +84,52 @@ watch(
 defineExpose({
   getText: (): string => view?.state.doc.toString() ?? props.content,
   focus: () => view?.focus(),
+  /**
+   * Shows another version of the note in place (docs/04: brought by the sync). Only the part
+   * that differs is replaced, so the caret, the selection and the scroll follow the text
+   * around it. Not undoable, and not reported as `changed`. Returns the text as the editor
+   * holds it (CodeMirror keeps "\n" line ends only).
+   */
+  replace: (stored: string): string => {
+    const text = stored.replace(/\r\n?/g, "\n");
+    if (!view) return text;
+    const old = view.state.doc.toString();
+    let start = 0;
+    while (start < old.length && start < text.length && old[start] === text[start]) start++;
+    let end = 0;
+    while (
+      end < old.length - start &&
+      end < text.length - start &&
+      old[old.length - 1 - end] === text[text.length - 1 - end]
+    ) {
+      end++;
+    }
+    const changes = view.state.changes({
+      from: start,
+      to: old.length - end,
+      insert: text.slice(start, text.length - end),
+    });
+    // A caret (not a selection) covered by the change goes back into its line.
+    const { main } = view.state.selection;
+    const replacedPart = { from: start, to: old.length - end, toNew: text.length - end };
+    const caret = main.empty
+      ? {
+          anchor: followCaretInText(
+            old,
+            main.head,
+            text,
+            changes.mapPos(main.head, 1),
+            replacedPart,
+          ),
+        }
+      : undefined;
+    view.dispatch({
+      changes,
+      selection: caret,
+      annotations: [Transaction.addToHistory.of(false), replaced.of(true)],
+    });
+    return text;
+  },
 });
 </script>
 

@@ -7,6 +7,7 @@ import { useUiStore } from "../stores/ui";
 import type { ListFilter, Note } from "../types/note";
 import type { ThemePreference } from "../types/settings";
 import { noteRoute, useNoteActions } from "./useNoteActions";
+import { useSyncNow } from "./useSyncNow";
 
 export function useCommands() {
   const notes = useNotesStore();
@@ -87,6 +88,10 @@ export function useCommands() {
     await router.push("/settings");
   }
 
+  /** « Synchroniser maintenant » (docs/08): waits for the end of the sync, says how it went. */
+  const syncNowAndSay = useSyncNow();
+  const syncNow = () => syncNowAndSay();
+
   return {
     editableNote,
     openNeighbour,
@@ -100,6 +105,7 @@ export function useCommands() {
     showFilter,
     setTheme,
     openSettings,
+    syncNow,
     actions,
   };
 }

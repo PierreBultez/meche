@@ -29,6 +29,16 @@ rusqlite_migration = "2.6"
 thiserror = "2"
 uuid = { version = "1.28", features = ["v7"] }
 tauri-plugin-opener = "2"
+# HTTP client of the sync (docs/04). rustls instead of OpenSSL; certificates are checked with the
+# system's trust store (rustls-platform-verifier). "no-provider": the cryptography is ring,
+# installed at startup (sync/api.rs), which builds with a plain C compiler on every target.
+reqwest = { version = "0.13.5", default-features = false, features = ["rustls-no-provider", "json", "gzip", "system-proxy"] }
+rustls = { version = "0.23.46", default-features = false, features = ["ring", "std", "tls12", "logging"] }
+# Tauri already runs tokio; "time" adds the timers the sync waits with, "sync" the channels
+# the commands talk to the sync engine with.
+tokio = { version = "1.54", features = ["sync", "time"] }
+# Local date and time (the « (conflit du 22/10 14:05) » suffix): the standard library has no time zones.
+chrono = { version = "0.4.45", default-features = false, features = ["clock", "std"] }
 
 
 # Read the optimization guideline for more details: https://tauri.app/concept/size/#cargo-configuration

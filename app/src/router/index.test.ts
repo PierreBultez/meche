@@ -17,4 +17,8 @@ describe("router", () => {
   it("has a settings page", () => {
     expect(router.resolve("/settings").name).toBe("settings");
   });
+
+  it("has a first launch page", () => {
+    expect(router.resolve("/welcome").name).toBe("welcome");
+  });
 });

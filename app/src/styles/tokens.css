@@ -26,6 +26,8 @@
   --danger: #d11f2a;
   --fuse: #a8815b;
   --spark: #da6800;
+  /* Sync dot « à jour » (docs/08): the green of the code theme. */
+  --ok: #2b8100;
   --selection: #7b2ff733;
   /* Left stripe of note cards in the note's color: none in Fugace, 3 px in Feu d'artifice. */
   --note-stripe: 0px;
@@ -110,6 +112,8 @@
   --danger: #ff647f;
   --fuse: #8c7a5b;
   --spark: #ffc93c;
+  /* Monokai green. */
+  --ok: #a6e22e;
   --selection: #ae81ff4d;
   --note-stripe: 3px;
 

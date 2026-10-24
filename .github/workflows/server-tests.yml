@@ -1,0 +1,63 @@
+# Tests of the Laravel server (docs/04), on PHP 8.5 and MariaDB 12.3 as in production.
+# Called by ci.yml on every push, and by deploy-server.yml before deploying.
+name: Server tests
+
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  server:
+    name: Pint, Pest (MariaDB), licenses
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: server
+    services:
+      mariadb:
+        image: mariadb:12.3
+        env:
+          MARIADB_ROOT_PASSWORD: root
+          MARIADB_DATABASE: meche_test
+          MARIADB_USER: meche
+          MARIADB_PASSWORD: meche
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="healthcheck.sh --connect --innodb_initialized"
+          --health-interval=5s --health-timeout=5s --health-retries=20
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: "8.5"
+          extensions: pdo_mysql
+          coverage: none
+          tools: composer:v2
+
+      - name: Cache Composer downloads
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/composer
+          key: composer-${{ hashFiles('server/composer.lock') }}
+          restore-keys: composer-
+
+      - run: composer install --no-interaction --no-progress --prefer-dist
+      - run: cp .env.example .env && php artisan key:generate
+      - run: vendor/bin/pint --test
+      # What the deployment runs (server/deploy/deploy.sh): caching must work.
+      - run: php artisan optimize && php artisan optimize:clear
+      - run: vendor/bin/pest
+        env:
+          DB_CONNECTION: mariadb
+          DB_HOST: 127.0.0.1
+          DB_PORT: 3306
+          DB_DATABASE: meche_test
+          DB_USERNAME: meche
+          DB_PASSWORD: meche
+      - name: Check dependency licenses (CLAUDE.md rule 3)
+        run: node ../scripts/check-licenses.mjs composer

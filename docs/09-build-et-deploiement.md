@@ -34,6 +34,7 @@ Versions minimales (vérifiées en phase 0) :
    rustup target add aarch64-linux-android armv7-linux-androideabi i686-linux-android x86_64-linux-android
    ```
 6. `npm run tauri android init` puis `npm run tauri android dev` (émulateur ou téléphone branché en USB avec le débogage USB activé).
+7. **TLS de la synchro** (relevé en phase 3) : reqwest vérifie les certificats avec `rustls-platform-verifier`, qui doit être initialisé sur Android (appel JNI au démarrage et composant Kotlin ajouté au projet Gradle, voir sa documentation). Sans cela, la première requête HTTPS fait planter l'application. Alternative : sur Android seulement, des racines fournies à reqwest (`tls_certs_only`), en vérifiant leur licence (règle 3).
 
 ## 2. Initialisation du projet
 
@@ -49,11 +50,57 @@ Un nom de paquet Debian ne peut pas contenir d'accent : `app/src-tauri/tauri.lin
 
 ## 3. Serveur (API Laravel)
 
-- Sous-domaine dédié **`meche.pierrebultez.com`** (API sous `/api`, la racine reste libre pour une future page de présentation), vhost Apache + certificat Certbot.
-- Base MySQL dédiée et utilisateur MySQL dédié.
-- Déploiement par GitHub Actions, sur le modèle de ses autres projets : déclenché par un push sur `main` touchant `server/**` → tests Pest → déploiement SSH (`git pull` ou rsync, `composer install --no-dev -o`, `php artisan migrate --force`, `php artisan optimize`, rechargement PHP-FPM).
-- Cron système : `* * * * * cd /chemin/server && php artisan schedule:run >> /dev/null 2>&1` (pour `notes:maintenance`).
-- `mod_deflate` actif pour `application/json`, OPcache actif.
+Mis en place en phase 3. Le VPS de Pierre : Ubuntu 26.04, Nginx, PHP-FPM 8.5, MariaDB 12.3, Certbot, fail2ban, Composer ; déploiement par `git pull` avec l'utilisateur `pierre`. Les fichiers d'exemple sont dans `server/deploy/`. Aucune adresse IP, aucun mot de passe ni aucune clé n'est écrit dans ce dépôt public : ils vivent sur le serveur (`.env`) et dans les secrets GitHub.
+
+### 3.1 Première installation (à la main, une fois)
+
+Chaque étape est faite avec Claude Code, qui explique les commandes avant que Pierre les lance et vérifie le résultat.
+
+1. **DNS** : une entrée `A` `meche.pierrebultez.com` vers l'adresse IPv4 du VPS (et `AAAA` s'il a une IPv6). Vérifier : `dig +short meche.pierrebultez.com`.
+2. **Paquets PHP** : `php8.5-fpm php8.5-cli php8.5-mysql php8.5-mbstring php8.5-xml php8.5-curl php8.5-zip` (Laravel 13 demande PHP ≥ 8.3 ; Composer résout pour 8.4.1 au moins).
+3. **Base MariaDB dédiée et utilisateur dédié**, limité à cette base :
+   ```sql
+   CREATE DATABASE meche CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+   CREATE USER 'meche'@'localhost' IDENTIFIED BY '…mot de passe généré…';
+   GRANT ALL PRIVILEGES ON meche.* TO 'meche'@'localhost';
+   ```
+4. **Le code** : clone public dans `/var/www/meche` (seul `server/` est utile sur le serveur : `git sparse-checkout set server`). `pierre` rejoint le groupe `www-data` (`sudo usermod -aG www-data pierre`, puis se reconnecter). Propriétaire `pierre`, groupe `www-data` ; `storage/` et `bootstrap/cache/` modifiables par le groupe, avec le bit setgid pour que les nouveaux fichiers gardent le groupe (`chmod -R g+rwX` puis `find … -type d -exec chmod g+s {} +`). Les journaux sont créés en `0664` (`config/logging.php`) : `pierre` (déploiement) et `www-data` (PHP-FPM, cron) y écrivent tous les deux. Le cache de l'application (limites d'essais, verrou du planificateur) n'est écrit que par `www-data` : pas de permission imposée (Laravel la donnerait aussi aux dossiers qu'il crée, et `0664` sans bit d'exécution rendrait le cache inutilisable : toutes les routes répondraient 500). Les commandes qui touchent ce cache se lancent donc en `www-data` : `sudo -u www-data php artisan cache:clear`, `sudo -u www-data php artisan schedule:run` (ou `schedule:test`).
+5. **`.env`** : copie de `.env.example` (`APP_ENV=production`, `APP_DEBUG=false`, `DB_CONNECTION=mariadb`, `CACHE_STORE=file`, `SESSION_DRIVER=array`), mot de passe de la base, puis `php artisan key:generate`. `chmod 640`, groupe `www-data`.
+6. `composer install --no-dev --optimize-autoloader`, `php artisan migrate --force`, `(umask 027 && php artisan optimize)` (`bootstrap/cache/config.php` contient le mot de passe de la base et `APP_KEY` : lisible par `pierre` et le groupe `www-data` seulement), puis **le premier compte** : `php artisan notes:create-user` (une phrase de passe générée par le gestionnaire de mots de passe : 12 caractères au moins, 72 octets au plus).
+7. **PHP-FPM** : un pool dédié, pour ne rien changer aux autres sites servis par PHP 8.5 : `server/deploy/php-fpm-pool-meche.conf` → `/etc/php/8.5/fpm/pool.d/meche.conf` (utilisateur `www-data`, socket `/run/php/php8.5-fpm-meche.sock`, processus lancés à la demande, `post_max_size = 16M`, `memory_limit = 256M`, `expose_php` désactivé pour ce pool seulement), puis `sudo php-fpm8.5 -t` (test de la configuration) et `sudo systemctl reload php8.5-fpm`. OPcache reste réglé globalement (actif par défaut sur Ubuntu).
+8. **Nginx** : site `server/deploy/nginx-meche.conf` → `/etc/nginx/sites-available/meche`, lien dans `sites-enabled`, `sudo nginx -t` puis `sudo systemctl reload nginx`. `root` = `server/public` exactement (`.env`, le code et `.git` restent hors d'atteinte ; fichiers cachés refusés, seul `index.php` est exécuté) ; PHP-FPM 8.5 par le socket du pool de Mèche (`/run/php/php8.5-fpm-meche.sock`) ; `client_max_body_size 20m` ; gzip pour `application/json` ; `server_tokens off`. Essayé avec Nginx 1.28 et PHP-FPM 8.5 : routage vers `index.php` avec l'en-tête `Authorization`, réponses compressées, `.env` et `.git` en 403, autre `.php` en 404, requête de 21 Mo refusée (413).
+9. **Certificat** : `sudo certbot --nginx -d meche.pierrebultez.com` (Certbot ajoute HTTPS et la redirection 80 → 443 dans le fichier du site ; il faut le greffon `python3-certbot-nginx`).
+10. **Vérification** : `curl -s https://meche.pierrebultez.com/api/health` répond `{"ok":true,…}` ; `curl -sI` montre l'en-tête `Server-Timing` (temps passé dans PHP).
+11. **Planificateur** (`notes:maintenance` toutes les 10 minutes), dans la crontab de `www-data` (`sudo crontab -u www-data -e`), le même utilisateur que PHP-FPM :
+    ```
+    * * * * * cd /var/www/meche/server && php artisan schedule:run >> /dev/null 2>&1
+    ```
+12. **fail2ban** : d'abord créer le journal, que l'API ne crée qu'au premier échec : `sudo install -m 0664 -o pierre -g www-data /dev/null /var/www/meche/server/storage/logs/auth.log` (fail2ban refuse de démarrer, prison `sshd` comprise, si le fichier d'une de ses prisons manque : ne jamais le supprimer). Puis `server/deploy/fail2ban-filter.conf` → `/etc/fail2ban/filter.d/meche.conf`, `server/deploy/fail2ban-jail.conf` → `/etc/fail2ban/jail.d/meche.conf`, et `sudo fail2ban-client -t` (test de la configuration) avant `sudo systemctl reload fail2ban`. L'API écrit chaque échec de connexion ou de code d'invitation dans `storage/logs/auth.log` (un seul fichier, que fail2ban suit) ; 10 échecs en une heure bannissent l'adresse un jour. La prison impose `backend = auto`, pour lire le fichier quel que soit le réglage par défaut (`systemd` pour toutes les prisons sur Ubuntu 24.04). Vérifier :
+    - le filtre : `fail2ban-regex /var/www/meche/server/storage/logs/auth.log /etc/fail2ban/filter.d/meche.conf` doit compter des lignes « matched » après un mauvais mot de passe ;
+    - la prison : `sudo fail2ban-client status meche` doit citer `auth.log` dans « File list ».
+13. **Rotation du journal des échecs** : `server/deploy/logrotate-meche` → `/etc/logrotate.d/meche` (`auth.log` seulement, chaque semaine, 8 semaines gardées, `su www-data www-data` puisque le dossier est modifiable par ce groupe, `copytruncate` pour que PHP et fail2ban continuent sur le même fichier). Vérifier : `sudo logrotate -d /etc/logrotate.d/meche` (essai à blanc, sans erreur). Les journaux de Laravel sont des fichiers datés qu'il supprime lui-même.
+
+### 3.2 Déploiement automatique (GitHub Actions)
+
+`.github/workflows/deploy-server.yml` : déclenché par un push sur **`master`** touchant `server/**` (ou à la main depuis l'onglet Actions) → tests (Pint, Pest sur PHP 8.5 et MariaDB 12.3, licences Composer) → connexion SSH au serveur.
+
+- **Une clé SSH dédiée au déploiement** (pas la clé personnelle de Pierre), dont la ligne dans `~/.ssh/authorized_keys` impose une commande :
+  ```
+  restrict,command="/home/pierre/bin/meche-deploy" ssh-ed25519 AAAA… meche-deploy
+  ```
+  `/home/pierre/bin/meche-deploy` est une copie de `server/deploy/forced-command.sh` : il lit l'identifiant de commit envoyé par GitHub, vérifie qu'il est déjà sur `origin/master` **et qu'il suit le commit déployé** (jamais de retour en arrière, même en relançant un ancien workflow), attend la fin d'un autre déploiement s'il y en a un (verrou `flock`), puis lance le `server/deploy/deploy.sh` de ce commit (un script illisible ou absent fait échouer le déploiement, au lieu d'un succès sans rien déployer). Une clé volée ne peut donc rien faire d'autre que déployer du code déjà sur `master`, plus récent que celui en place.
+- **`deploy.sh`** : mode maintenance (`artisan down`, les appareils reçoivent 503 et réessaient), `git reset --hard` sur le commit, `composer install --no-dev -o`, effacement des caches de configuration, routes et événements (pas le cache de l'application, écrit par `www-data`), `migrate --force`, `optimize` avec `umask 027` (`bootstrap/cache/config.php` contient le mot de passe de la base et `APP_KEY` : lisible seulement par `pierre` et le groupe `www-data`, comme `.env` ; le déploiement s'arrête si ce fichier n'est pas dans le groupe `www-data`), rechargement de PHP-FPM, `artisan up`. Si une étape échoue, l'API reste en maintenance plutôt que de servir du code neuf sur une base ancienne.
+- **sudo** : une seule commande autorisée sans mot de passe, dans `/etc/sudoers.d/meche-deploy` : `pierre ALL=(root) NOPASSWD: /usr/bin/systemctl reload php8.5-fpm`.
+- **Secrets GitHub** (environnement `production`, limité à la branche `master` dans Settings › Environments) : `DEPLOY_HOST`, `DEPLOY_PORT`, `DEPLOY_USER`, `DEPLOY_SSH_KEY` (clé privée de déploiement), `DEPLOY_KNOWN_HOSTS` (sortie de `ssh-keyscan -p <port> <hôte>`, l'identité du serveur). Le job de déploiement ne tourne de toute façon que sur `master`.
+
+### 3.3 Sauvegardes et restauration
+
+- Sauvegarde quotidienne de la base (`mariadb-dump --single-transaction meche`), hors du serveur. Les notes ne sont pas chiffrées : la sauvegarde non plus.
+- **Après une restauration** : `php artisan notes:rotate-sync-ids`. Les appareils connaissent des révisions que la base restaurée a perdues ; avec une nouvelle identité de synchro, chacun renvoie toutes ses notes et retélécharge tout à sa prochaine synchro (`04-synchronisation.md`, « Identité du serveur »).
+
+### 3.4 Administration
+
+Commandes artisan (`04-synchronisation.md`) : `notes:users`, `notes:devices`, `notes:revoke-device`, `notes:reset-password`, `notes:delete-user`, `notes:create-user`, `notes:rotate-sync-ids`.
 
 ## 4. Releases des applications (GitHub Actions)
 

@@ -10,6 +10,7 @@ const THEME_KEY: &str = "theme";
 const LIST_WIDTH_KEY: &str = "list_width";
 const CODE_LINE_WRAP_KEY: &str = "code_line_wrap";
 const FUSE_DELAY_KEY: &str = "fuse_delay_hours";
+const WELCOME_DONE_KEY: &str = "welcome_done";
 
 /// Width of the note list column in pixels (docs/08: 280 px, resizable).
 pub const DEFAULT_LIST_WIDTH: u32 = 280;
@@ -30,7 +31,7 @@ pub enum Theme {
     Dark,
 }
 
-/// Settings sent to the frontend. Secrets (like the future API token) never go in here.
+/// Settings sent to the frontend. Secrets (the API token, sync/config.rs) never go in here.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Settings {
@@ -41,6 +42,9 @@ pub struct Settings {
     /// Delay of the fuses lit from now on (one of `FUSE_DELAYS_HOURS`). A fuse keeps the delay
     /// it was lit with: changing this setting does not touch the notes already burning.
     pub fuse_delay_hours: i64,
+    /// The first launch screen (« Connecter un serveur » / « Utiliser hors ligne », docs/08)
+    /// was answered.
+    pub welcome_done: bool,
 }
 
 /// Partial update sent by the frontend: only the fields present are changed.
@@ -52,6 +56,7 @@ pub struct SettingsPatch {
     pub list_width: Option<u32>,
     pub code_line_wrap: Option<bool>,
     pub fuse_delay_hours: Option<i64>,
+    pub welcome_done: Option<bool>,
 }
 
 /// Reads all settings, with the default value for each missing one.
@@ -65,6 +70,7 @@ pub fn load(conn: &Connection) -> Result<Settings> {
         fuse_delay_hours: read(conn, FUSE_DELAY_KEY)?
             .filter(|hours| FUSE_DELAYS_HOURS.contains(hours))
             .unwrap_or(DEFAULT_FUSE_DELAY_HOURS),
+        welcome_done: read(conn, WELCOME_DONE_KEY)?.unwrap_or(false),
     })
 }
 
@@ -95,6 +101,9 @@ pub fn apply_patch(conn: &mut Connection, patch: SettingsPatch) -> Result<Settin
     if let Some(hours) = patch.fuse_delay_hours {
         write(&tx, FUSE_DELAY_KEY, &hours)?;
     }
+    if let Some(done) = patch.welcome_done {
+        write(&tx, WELCOME_DONE_KEY, &done)?;
+    }
     tx.commit()?;
     load(conn)
 }
@@ -104,7 +113,7 @@ pub fn apply_patch(conn: &mut Connection, patch: SettingsPatch) -> Result<Settin
 /// `T` is generic so the same function works for every setting type (theme, URL, delays…).
 /// Returns `None` if the key is missing or its value cannot be read (for instance a value
 /// written by a newer version of Mèche): the caller then uses the default value.
-fn read<T: DeserializeOwned>(conn: &Connection, key: &str) -> Result<Option<T>> {
+pub(crate) fn read<T: DeserializeOwned>(conn: &Connection, key: &str) -> Result<Option<T>> {
     let raw: Option<String> = conn
         .query_row("SELECT value FROM settings WHERE key = ?1", [key], |row| {
             row.get(0)
@@ -114,7 +123,7 @@ fn read<T: DeserializeOwned>(conn: &Connection, key: &str) -> Result<Option<T>> 
 }
 
 /// Writes one setting as JSON, replacing any previous value.
-fn write<T: Serialize>(conn: &Connection, key: &str, value: &T) -> Result<()> {
+pub(crate) fn write<T: Serialize>(conn: &Connection, key: &str, value: &T) -> Result<()> {
     let json = serde_json::to_string(value)?;
     conn.execute(
         "INSERT INTO settings (key, value) VALUES (?1, ?2)
@@ -186,6 +195,7 @@ mod tests {
             list_width: 300,
             code_line_wrap: true,
             fuse_delay_hours: 24,
+            welcome_done: true,
         };
         assert_eq!(
             serde_json::to_value(&settings).unwrap(),
@@ -193,7 +203,8 @@ mod tests {
                 "theme": "dark",
                 "listWidth": 300,
                 "codeLineWrap": true,
-                "fuseDelayHours": 24
+                "fuseDelayHours": 24,
+                "welcomeDone": true
             })
         );
 
@@ -275,6 +286,18 @@ mod tests {
         assert!(apply_patch(&mut conn, mixed).is_err());
         assert_eq!(load(&conn).unwrap().theme, Theme::System);
         assert_eq!(load(&conn).unwrap().fuse_delay_hours, 720);
+    }
+
+    #[test]
+    fn the_first_launch_screen_is_shown_until_answered() {
+        let mut conn = open_in_memory().unwrap();
+        assert!(!load(&conn).unwrap().welcome_done);
+        let patch = SettingsPatch {
+            welcome_done: Some(true),
+            ..SettingsPatch::default()
+        };
+        assert!(apply_patch(&mut conn, patch).unwrap().welcome_done);
+        assert!(load(&conn).unwrap().welcome_done);
     }
 
     #[test]

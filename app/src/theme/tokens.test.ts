@@ -29,7 +29,8 @@ const PAIRS: Pair[] = [
     { fg: "brand", bg, min: MIN_LARGE, usage: "+ button, active items, focus ring" },
     { fg: "brand-2", bg, min: MIN_LARGE, usage: "secondary accent" },
     { fg: "fuse", bg, min: MIN_LARGE, usage: "fuse cord" },
-    { fg: "spark", bg, min: MIN_LARGE, usage: "fuse spark" },
+    { fg: "spark", bg, min: MIN_LARGE, usage: "fuse spark, sync dot « en cours »" },
+    { fg: "ok", bg, min: MIN_LARGE, usage: "sync dot « à jour »" },
   ]),
   { fg: "on-brand", bg: "brand", min: MIN_TEXT, usage: "text on a brand button" },
   ...CODE_TOKENS.map((token) => ({

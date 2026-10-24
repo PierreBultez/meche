@@ -7,10 +7,12 @@ import ToastStack from "./components/ui/ToastStack.vue";
 import { flushAllAutosaves, saveFailureSeries } from "./composables/useAutosave";
 import { useGlobalShortcuts } from "./composables/useGlobalShortcuts";
 import { useNotesChanged } from "./composables/useNotesChanged";
+import { useSyncStatus } from "./composables/useSyncStatus";
 import { useToastsStore } from "./stores/toasts";
 
 useGlobalShortcuts();
 useNotesChanged();
+useSyncStatus();
 const toasts = useToastsStore();
 /** The window stays open once per series of failed saves, then closes anyway. */
 let refusedSeries = -1;

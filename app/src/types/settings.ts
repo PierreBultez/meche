@@ -10,6 +10,8 @@ export interface Settings {
   codeLineWrap: boolean;
   /** Delay of the fuses lit from now on, in hours (1, 24, 72, 168 or 720). */
   fuseDelayHours: number;
+  /** The first launch screen was answered (docs/08). */
+  welcomeDone: boolean;
 }
 
 /** Partial update: only the fields present are saved. */

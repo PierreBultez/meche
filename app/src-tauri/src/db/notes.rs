@@ -1,5 +1,6 @@
 //! Notes: the types shared with the frontend and the queries that read and write them (docs/03).
 
+use chrono::{DateTime, Local, NaiveDateTime};
 use rusqlite::types::{FromSql, FromSqlError, FromSqlResult, ToSql, ToSqlOutput, ValueRef};
 use rusqlite::{Connection, OptionalExtension, Row, params};
 use serde::{Deserialize, Serialize};
@@ -10,6 +11,8 @@ use crate::error::{Error, Result};
 /// Limits of docs/03 ("Limites").
 pub const MAX_TITLE_CHARS: usize = 500;
 pub const MAX_CONTENT_BYTES: usize = 2 * 1024 * 1024;
+/// The server refuses a longer language (a refused note would block the sync).
+pub const MAX_CODE_LANGUAGE_CHARS: usize = 50;
 
 /// Characters of content read from the database to build a list preview: `list` never loads
 /// whole notes (docs/08, performance).
@@ -244,6 +247,15 @@ pub struct NotePatch {
     pub code_language: Option<String>,
     pub pinned: Option<bool>,
     pub color: Option<NoteColor>,
+    /// The title the editor believes is stored. When the note holds another one (the sync
+    /// brought another device's version), the new title is not written over it: see `update`.
+    pub expected_title: Option<String>,
+    /// Same for the content.
+    pub expected_content: Option<String>,
+    /// The kind of the editor, and its language for a code note: a conflict copy takes them,
+    /// even when the other device converted the note meanwhile.
+    pub expected_kind: Option<NoteKind>,
+    pub expected_code_language: Option<String>,
 }
 
 // ── Pure helpers (no database: easy to test) ────────────────────────────────────────────────
@@ -461,6 +473,13 @@ fn validate(note: &Note) -> Result<()> {
             "the note is larger than 2 MB".to_string(),
         ));
     }
+    if let Some(language) = &note.code_language
+        && language.chars().count() > MAX_CODE_LANGUAGE_CHARS
+    {
+        return Err(Error::InvalidInput(format!(
+            "the code language is longer than {MAX_CODE_LANGUAGE_CHARS} characters"
+        )));
+    }
     Ok(())
 }
 
@@ -669,8 +688,26 @@ pub fn list(conn: &Connection, filter: ListFilter) -> Result<Vec<NoteSummary>> {
 /// the open note explodes while you type, the last save arrives after the explosion and must
 /// not be lost (docs/06). The fuse and trash columns are never touched here, so the explosion
 /// stays as it was (trashed_at = destroy_at).
+///
+/// The editor sends with its text the one it believes is stored (`expected_title`,
+/// `expected_content`). If the note holds another text, it changed under the editor: the sync
+/// brought another device's version, or another window saved it. That text is not overwritten:
+/// what the editor shows goes to a conflict copy « … (conflit du 22/10 14:05) », and the note is
+/// returned unchanged, so the editor can show it (docs/04). The check and the write happen
+/// under the same database lock: nothing can change in between.
 pub fn update(conn: &Connection, id: &str, patch: NotePatch, now: i64) -> Result<Note> {
     let current = get(conn, id)?;
+    // Read before `patch.title` and `patch.content` are moved into `note` below.
+    let title_sent = patch.title.is_some();
+    let content_sent = patch.content.is_some();
+    // A field sent over a value the editor did not know. `matches!(value, pattern if
+    // condition)`: true when the value fits the pattern and the condition holds. A field the
+    // editor did not change is not checked: a new title from elsewhere and a text typed here
+    // are both kept.
+    let changed_elsewhere = (title_sent
+        && matches!(&patch.expected_title, Some(expected) if *expected != current.title))
+        || (content_sent
+            && matches!(&patch.expected_content, Some(expected) if *expected != current.content));
     // `clone()` makes an independent copy, so `current` stays untouched for the comparison.
     let mut note = current.clone();
 
@@ -707,6 +744,31 @@ pub fn update(conn: &Connection, id: &str, patch: NotePatch, now: i64) -> Result
     if note == current {
         return Ok(current);
     }
+    if changed_elsewhere {
+        // The copy holds the editor's whole version: a field it did not send is the one it
+        // expected, not the one the sync brought. A single copy, even when both changed.
+        let mut mine = note;
+        if !title_sent && let Some(expected) = patch.expected_title {
+            mine.title = expected;
+        }
+        if !content_sent && let Some(expected) = patch.expected_content {
+            mine.content = expected;
+        }
+        if let Some(kind) = patch.expected_kind
+            && kind != mine.kind
+        {
+            mine.kind = kind;
+            mine.code_language = match kind {
+                NoteKind::Code => patch
+                    .expected_code_language
+                    .or_else(|| Some("plaintext".to_string())),
+                NoteKind::Rich => None,
+            };
+        }
+        validate(&mine)?;
+        insert_conflict_copy(conn, &mine, now)?;
+        return Ok(current);
+    }
     validate(&note)?;
     note.updated_at = now;
     conn.execute(
@@ -725,6 +787,73 @@ pub fn update(conn: &Connection, id: &str, patch: NotePatch, now: i64) -> Result
         ],
     )?;
     Ok(note)
+}
+
+/// Local date and time of `ms` (milliseconds since 1970, UTC), for texts shown to the user.
+fn local_time(ms: i64) -> NaiveDateTime {
+    DateTime::from_timestamp_millis(ms)
+        .unwrap_or_default()
+        .with_timezone(&Local)
+        .naive_local()
+}
+
+/// Title of a conflict copy: the title, or the first line of the content when there is none,
+/// followed by « (conflit du 22/10 14:05) », within the limit of a title (docs/04).
+pub fn conflict_title(title: &str, content: &str, kind: NoteKind, at: NaiveDateTime) -> String {
+    let suffix = format!(" (conflit du {})", at.format("%d/%m %H:%M"));
+    let shown = match title.trim() {
+        "" => list_texts("", content, kind).0,
+        title => title.to_string(),
+    };
+    // Neither title nor text: the name the list gives such a note.
+    let shown = if shown.is_empty() {
+        "Nouvelle note".to_string()
+    } else {
+        shown
+    };
+    let room = MAX_TITLE_CHARS - suffix.chars().count();
+    let base: String = shown.chars().take(room).collect();
+    format!("{}{suffix}", base.trim_end())
+}
+
+/// Keeps `note` as a new note, a conflict copy (docs/04): same content, colour, fuse and trash
+/// state, a title suffixed « (conflit du …) », a new id. It has never been synced and is
+/// dirty: it reaches the server at the next sync. Dated now, so it shows at the top.
+pub(crate) fn insert_conflict_copy(conn: &Connection, note: &Note, now: i64) -> Result<Note> {
+    let copy = Note {
+        id: uuid::Uuid::now_v7().to_string(),
+        title: conflict_title(&note.title, &note.content, note.kind, local_time(now)),
+        created_at: now,
+        updated_at: now,
+        // The other fields are those of `note`: `..` copies them (`clone` because `note` is
+        // only borrowed, so its strings cannot be moved out of it).
+        ..note.clone()
+    };
+    conn.execute(
+        "INSERT INTO notes (id, title, content, kind, code_language, pinned, color,
+                            ephemeral_mode, ephemeral_delay_hours, ephemeral_started_at,
+                            destroy_at, trashed_at, trash_reason, created_at, updated_at,
+                            server_rev, dirty)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, 0, 1)",
+        params![
+            copy.id,
+            copy.title,
+            copy.content,
+            copy.kind,
+            copy.code_language,
+            copy.pinned,
+            copy.color,
+            copy.ephemeral_mode,
+            copy.ephemeral_delay_hours,
+            copy.ephemeral_started_at,
+            copy.destroy_at,
+            copy.trashed_at,
+            copy.trash_reason,
+            copy.created_at,
+            copy.updated_at
+        ],
+    )?;
+    Ok(copy)
 }
 
 /// Moves a note to the trash (recoverable, docs/06).
@@ -963,6 +1092,219 @@ mod tests {
             update(&conn, &note.id, huge, 1),
             Err(Error::InvalidInput(_))
         ));
+        let language = NotePatch {
+            code_language: Some("x".repeat(MAX_CODE_LANGUAGE_CHARS + 1)),
+            ..NotePatch::default()
+        };
+        assert!(matches!(
+            update(&conn, &note.id, language, 1),
+            Err(Error::InvalidInput(_))
+        ));
+    }
+
+    /// A patch of the content, sent by an editor that believes `expected` is stored.
+    fn content_patch(content: &str, expected: &str) -> NotePatch {
+        NotePatch {
+            content: Some(content.to_string()),
+            expected_content: Some(expected.to_string()),
+            ..NotePatch::default()
+        }
+    }
+
+    fn count_notes(conn: &Connection) -> i64 {
+        conn.query_row("SELECT COUNT(*) FROM notes", [], |row| row.get(0))
+            .unwrap()
+    }
+
+    #[test]
+    fn update_writes_when_the_note_holds_the_expected_text() {
+        let conn = open_in_memory().unwrap();
+        let note = rich_note(&conn, "Courses", "Lait", 1_000);
+        let updated = update(&conn, &note.id, content_patch("Lait, pain", "Lait"), 2_000).unwrap();
+        assert_eq!(updated.content, "Lait, pain");
+        assert_eq!(count_notes(&conn), 1);
+    }
+
+    #[test]
+    fn update_keeps_a_note_changed_elsewhere_and_copies_what_was_typed() {
+        let conn = open_in_memory().unwrap();
+        let note = rich_note(&conn, "Courses", "Version de l'autre appareil", 1_000);
+        conn.execute(
+            "UPDATE notes SET pinned = 1, color = 'bleu', server_rev = 7, dirty = 0 WHERE id = ?1",
+            [&note.id],
+        )
+        .unwrap();
+        let stored = get(&conn, &note.id).unwrap();
+
+        // The editor was opened on « Lait » and does not know the other version.
+        let returned = update(
+            &conn,
+            &note.id,
+            content_patch("Lait, beurre", "Lait"),
+            2_000,
+        )
+        .unwrap();
+
+        assert_eq!(returned, stored);
+        assert_eq!(get(&conn, &note.id).unwrap(), stored);
+        let (copy_id, title, content, pinned, color, created, dirty, server_rev): (
+            String,
+            String,
+            String,
+            bool,
+            String,
+            i64,
+            i64,
+            i64,
+        ) = conn
+            .query_row(
+                "SELECT id, title, content, pinned, color, created_at, dirty, server_rev
+                 FROM notes WHERE id != ?1",
+                [&note.id],
+                |row| {
+                    Ok((
+                        row.get(0)?,
+                        row.get(1)?,
+                        row.get(2)?,
+                        row.get(3)?,
+                        row.get(4)?,
+                        row.get(5)?,
+                        row.get(6)?,
+                        row.get(7)?,
+                    ))
+                },
+            )
+            .unwrap();
+        assert!(uuid::Uuid::parse_str(&copy_id).is_ok());
+        assert!(title.starts_with("Courses (conflit du "), "{title}");
+        assert_eq!(content, "Lait, beurre");
+        assert!(pinned);
+        assert_eq!(color, "bleu");
+        assert_eq!((created, dirty, server_rev), (2_000, 1, 0));
+    }
+
+    #[test]
+    fn the_copy_holds_the_whole_version_of_the_editor() {
+        let conn = open_in_memory().unwrap();
+        let note = rich_note(&conn, "Titre d'ailleurs", "Texte d'ailleurs", 1_000);
+        // The editor changed the title only; it shows « Lait » as content.
+        let patch = NotePatch {
+            title: Some("Mon titre".to_string()),
+            expected_title: Some("Courses".to_string()),
+            expected_content: Some("Lait".to_string()),
+            ..NotePatch::default()
+        };
+        update(&conn, &note.id, patch, 2_000).unwrap();
+
+        let (title, content): (String, String) = conn
+            .query_row(
+                "SELECT title, content FROM notes WHERE id != ?1",
+                [&note.id],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .unwrap();
+        assert!(title.starts_with("Mon titre (conflit du "), "{title}");
+        assert_eq!(content, "Lait");
+        assert_eq!(count_notes(&conn), 2);
+    }
+
+    #[test]
+    fn a_field_the_editor_did_not_change_is_not_a_conflict() {
+        let conn = open_in_memory().unwrap();
+        // The title was changed on another device; the editor still shows « Courses ».
+        let note = rich_note(&conn, "Courses Lidl", "Lait", 1_000);
+        let patch = NotePatch {
+            content: Some("Lait, pain".to_string()),
+            expected_title: Some("Courses".to_string()),
+            expected_content: Some("Lait".to_string()),
+            ..NotePatch::default()
+        };
+
+        let updated = update(&conn, &note.id, patch, 2_000).unwrap();
+
+        // Both are kept: the other device's title, the text typed here.
+        assert_eq!(
+            (updated.title.as_str(), updated.content.as_str()),
+            ("Courses Lidl", "Lait, pain")
+        );
+        assert_eq!(count_notes(&conn), 1);
+    }
+
+    #[test]
+    fn the_copy_of_a_code_editor_stays_a_code_note() {
+        let conn = open_in_memory().unwrap();
+        // Converted to a rich note on another device, while code was typed here.
+        let note = rich_note(&conn, "Script", "```bash\nmake\n```", 1_000);
+        let patch = NotePatch {
+            content: Some("make && make test".to_string()),
+            expected_title: Some("Script".to_string()),
+            expected_content: Some("make".to_string()),
+            expected_kind: Some(NoteKind::Code),
+            expected_code_language: Some("bash".to_string()),
+            ..NotePatch::default()
+        };
+        update(&conn, &note.id, patch, 2_000).unwrap();
+
+        let (kind, language, content): (NoteKind, Option<String>, String) = conn
+            .query_row(
+                "SELECT kind, code_language, content FROM notes WHERE id != ?1",
+                [&note.id],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+            )
+            .unwrap();
+        assert_eq!(kind, NoteKind::Code);
+        assert_eq!(language.as_deref(), Some("bash"));
+        assert_eq!(content, "make && make test");
+    }
+
+    #[test]
+    fn update_does_not_copy_when_the_stored_text_is_already_the_new_one() {
+        let conn = open_in_memory().unwrap();
+        let note = rich_note(&conn, "Courses", "Lait, pain", 1_000);
+        let returned = update(&conn, &note.id, content_patch("Lait, pain", "Lait"), 2_000).unwrap();
+        assert_eq!(returned.updated_at, 1_000);
+        assert_eq!(count_notes(&conn), 1);
+    }
+
+    #[test]
+    fn update_checks_the_title_on_its_own() {
+        let conn = open_in_memory().unwrap();
+        let note = rich_note(&conn, "Titre d'ailleurs", "Lait", 1_000);
+        let patch = NotePatch {
+            title: Some("Mon titre".to_string()),
+            expected_title: Some("Courses".to_string()),
+            ..NotePatch::default()
+        };
+        update(&conn, &note.id, patch, 2_000).unwrap();
+        assert_eq!(get(&conn, &note.id).unwrap().title, "Titre d'ailleurs");
+        assert_eq!(count_notes(&conn), 2);
+        // The content of the note is fine: its editor keeps saving it.
+        let ok = update(&conn, &note.id, content_patch("Lait, pain", "Lait"), 3_000).unwrap();
+        assert_eq!(ok.content, "Lait, pain");
+    }
+
+    #[test]
+    fn conflict_titles_say_when_and_stay_within_the_limit() {
+        let at = chrono::NaiveDate::from_ymd_opt(2026, 10, 22)
+            .unwrap()
+            .and_hms_opt(14, 5, 0)
+            .unwrap();
+        assert_eq!(
+            conflict_title("Courses", "", NoteKind::Rich, at),
+            "Courses (conflit du 22/10 14:05)"
+        );
+        // No title: the first line of the content, as in the list.
+        assert_eq!(
+            conflict_title("", "# Liste **Lidl**\n- [ ] pain", NoteKind::Rich, at),
+            "Liste Lidl (conflit du 22/10 14:05)"
+        );
+        assert_eq!(
+            conflict_title("", "", NoteKind::Rich, at),
+            "Nouvelle note (conflit du 22/10 14:05)"
+        );
+        let long = conflict_title(&"é".repeat(MAX_TITLE_CHARS), "", NoteKind::Rich, at);
+        assert_eq!(long.chars().count(), MAX_TITLE_CHARS);
+        assert!(long.ends_with(" (conflit du 22/10 14:05)"));
     }
 
     #[test]

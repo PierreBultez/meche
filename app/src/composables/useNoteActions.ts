@@ -86,6 +86,11 @@ export function useNoteActions() {
     const lighting = note.ephemeralMode === null;
     try {
       const saved = await notes.setFuse(note.id, lighting);
+      // Its fuse burnt out just before (docs/06): Rust exploded the note instead.
+      if (saved.trashedAt !== null) {
+        toasts.show("Sa mèche a brûlé : cette note est dans la corbeille.");
+        return;
+      }
       const hours = saved.ephemeralDelayHours;
       toasts.show(
         hours !== null

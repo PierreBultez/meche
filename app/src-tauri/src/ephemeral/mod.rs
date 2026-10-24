@@ -8,7 +8,7 @@ pub mod watcher;
 use rusqlite::{Connection, params};
 
 use crate::db::notes::{TrashReason, remove_or_tombstone};
-use crate::error::Result;
+use crate::error::{Error, Result};
 
 /// Days a note stays in the trash before it is deleted for good (docs/06).
 pub const TRASH_RETENTION_DAYS: i64 = 7;
@@ -85,6 +85,44 @@ pub fn run_maintenance_or_log(conn: &mut Connection, now: i64) -> bool {
             false
         }
     }
+}
+
+/// What `maintenance_before_action` did.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct BeforeAction {
+    /// Notes changed: the interface must be told (`notes-changed`).
+    pub changed: bool,
+    /// The note about to be acted on has just exploded: its fuse had burnt out already.
+    pub exploded: bool,
+}
+
+/// Runs the maintenance before an action on note `id` that depends on its fuse or its trash
+/// state (putting the fuse out, moving to the trash).
+///
+/// Closes the "one minute window" of docs/06: between `destroy_at` and the next maintenance
+/// (60 s at most), a note whose fuse has burnt out still looked alive. Acting on it then could
+/// give a conflict copy if the server had already exploded it. Now the note explodes first,
+/// as it should have, and the action sees it in the trash.
+pub fn maintenance_before_action(
+    conn: &mut Connection,
+    id: &str,
+    now: i64,
+) -> Result<BeforeAction> {
+    let was_in_trash = trashed_at(conn, id)?.is_some();
+    let changed = run_maintenance_or_log(conn, now);
+    let exploded = match trashed_at(conn, id) {
+        Ok(trashed) => !was_in_trash && trashed.is_some(),
+        // Gone: it exploded and was purged by this very maintenance (its fuse burnt out more
+        // than 7 days ago). The maintenance changed notes: the caller must still say so.
+        Err(Error::NotFound(_)) => true,
+        Err(error) => return Err(error),
+    };
+    Ok(BeforeAction { changed, exploded })
+}
+
+/// `trashed_at` of note `id` (`NotFound` when there is no such note).
+fn trashed_at(conn: &Connection, id: &str) -> Result<Option<i64>> {
+    Ok(crate::db::notes::get(conn, id)?.trashed_at)
 }
 
 #[cfg(test)]
@@ -249,6 +287,60 @@ mod tests {
         let mut conn = open_in_memory().unwrap();
         fused_note(&conn, 0, 1);
         assert!(run_maintenance_or_log(&mut conn, HOUR_MS));
+    }
+
+    #[test]
+    fn a_burnt_fuse_explodes_before_an_action_on_its_note() {
+        let mut conn = open_in_memory().unwrap();
+        let due = fused_note(&conn, 0, 1);
+        let alive = fused_note(&conn, 0, 2);
+
+        // The other note is alive: nothing exploded for it, but `due` did.
+        let before = maintenance_before_action(&mut conn, &alive, HOUR_MS).unwrap();
+        assert_eq!(
+            before,
+            BeforeAction {
+                changed: true,
+                exploded: false
+            }
+        );
+        assert_eq!(notes::get(&conn, &due).unwrap().trashed_at, Some(HOUR_MS));
+
+        let later = fused_note(&conn, 0, 3);
+        let before = maintenance_before_action(&mut conn, &later, 3 * HOUR_MS).unwrap();
+        assert_eq!(
+            before,
+            BeforeAction {
+                changed: true,
+                exploded: true
+            }
+        );
+        // Already in the trash before: not "just exploded".
+        let again = maintenance_before_action(&mut conn, &later, 4 * HOUR_MS).unwrap();
+        assert!(!again.exploded);
+        assert!(matches!(
+            maintenance_before_action(&mut conn, "missing", 0),
+            Err(crate::error::Error::NotFound(_))
+        ));
+    }
+
+    #[test]
+    fn a_note_purged_by_the_maintenance_before_an_action_still_says_notes_changed() {
+        let mut conn = open_in_memory().unwrap();
+        // Its fuse burnt out 8 days ago: it explodes and is purged in the same run.
+        let gone = fused_note(&conn, 0, 1);
+        let now = HOUR_MS + 8 * DAY_MS;
+
+        let before = maintenance_before_action(&mut conn, &gone, now).unwrap();
+
+        assert_eq!(
+            before,
+            BeforeAction {
+                changed: true,
+                exploded: true
+            }
+        );
+        assert!(notes::get(&conn, &gone).is_err());
     }
 
     #[test]

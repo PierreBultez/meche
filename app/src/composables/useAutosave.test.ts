@@ -1,7 +1,13 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { defineComponent, h } from "vue";
 import { mount } from "@vue/test-utils";
-import { createAutosave, flushAllAutosaves, saveFailureSeries, useAutosave } from "./useAutosave";
+import {
+  type Autosave,
+  createAutosave,
+  flushAllAutosaves,
+  saveFailureSeries,
+  useAutosave,
+} from "./useAutosave";
 
 describe("autosave", () => {
   let value: string;
@@ -60,6 +66,142 @@ describe("autosave", () => {
     await autosave.flush();
     await flushAllAutosaves();
     expect(written).toEqual([]);
+    autosave.dispose();
+  });
+
+  it("sends with each value the one it believes is stored (docs/04)", async () => {
+    const calls: Array<[string, string]> = [];
+    const autosave = createAutosave({
+      initial: "initial",
+      read: () => value,
+      write: async (next, expected) => {
+        calls.push([next, expected]);
+      },
+    });
+    value = "a";
+    autosave.touch();
+    await autosave.flush();
+    value = "ab";
+    autosave.touch();
+    await autosave.flush();
+    expect(calls).toEqual([
+      ["a", "initial"],
+      ["ab", "a"],
+    ]);
+    autosave.dispose();
+  });
+
+  it("expects the stored text, not the editor's form of it", async () => {
+    const calls: Array<[string, string]> = [];
+    const autosave = createAutosave({
+      initial: "* stored",
+      read: () => value,
+      write: async (next, expected) => {
+        calls.push([next, expected]);
+      },
+    });
+    autosave.rebase("- stored");
+    value = "- stored, edited";
+    autosave.touch();
+    await autosave.flush();
+    expect(calls).toEqual([["- stored, edited", "* stored"]]);
+    autosave.dispose();
+  });
+
+  it("keeps expecting the stored text after a write kept elsewhere", async () => {
+    const calls: Array<[string, string]> = [];
+    const autosave = createAutosave({
+      initial: "initial",
+      read: () => value,
+      // Rust kept the version of another device, and the typed text in a copy.
+      write: async (next, expected) => {
+        calls.push([next, expected]);
+        return false;
+      },
+    });
+    value = "mine";
+    autosave.touch();
+    await autosave.flush();
+    // Nothing new typed: not written again.
+    autosave.touch();
+    await autosave.flush();
+    value = "mine, again";
+    autosave.touch();
+    await autosave.flush();
+    // Still expects what this editor last saw stored: never written over the other version.
+    expect(calls).toEqual([
+      ["mine", "initial"],
+      ["mine, again", "initial"],
+    ]);
+    expect(autosave.knows("mine")).toBe(false);
+    autosave.dispose();
+  });
+
+  it("expects the new version once the editor shows it", async () => {
+    const calls: Array<[string, string]> = [];
+    const autosave = createAutosave({
+      initial: "initial",
+      read: () => value,
+      write: async (next, expected) => {
+        calls.push([next, expected]);
+      },
+    });
+    // The sync brought « theirs »; the editor shows it in its own form.
+    autosave.reset("theirs", "theirs (editor)");
+    expect(autosave.knows("theirs")).toBe(true);
+    value = "theirs (editor)";
+    autosave.touch();
+    expect(autosave.pending()).toBe(true);
+    await autosave.flush();
+    expect(calls).toEqual([]);
+    value = "theirs, edited";
+    autosave.touch();
+    await autosave.flush();
+    expect(calls).toEqual([["theirs, edited", "theirs"]]);
+    autosave.dispose();
+  });
+
+  it("compares values with the given function", async () => {
+    const calls: Array<[{ a: string }, { a: string }]> = [];
+    let shown = { a: "x" };
+    const autosave = createAutosave({
+      initial: { a: "x" },
+      read: () => shown,
+      same: (one, other) => one.a === other.a,
+      write: async (next, expected) => {
+        calls.push([next, expected]);
+      },
+    });
+    autosave.touch();
+    await autosave.flush();
+    expect(calls).toEqual([]);
+    shown = { a: "y" };
+    autosave.touch();
+    await autosave.flush();
+    expect(calls).toEqual([[{ a: "y" }, { a: "x" }]]);
+    expect(autosave.knows({ a: "y" })).toBe(true);
+    autosave.dispose();
+  });
+
+  it("knows the stored value and its writes on the way, nothing else", async () => {
+    let release!: () => void;
+    const autosave = createAutosave({
+      initial: "initial",
+      read: () => value,
+      write: () => new Promise<void>((resolve) => (release = resolve)),
+    });
+    value = "typed";
+    autosave.touch();
+    const flushed = autosave.flush();
+    await Promise.resolve();
+    expect([autosave.knows("initial"), autosave.knows("typed"), autosave.knows("other")]).toEqual([
+      true,
+      true,
+      false,
+    ]);
+    release();
+    await flushed;
+    expect([autosave.knows("typed"), autosave.knows("initial")]).toEqual([true, false]);
     autosave.dispose();
   });
 
@@ -223,7 +365,7 @@ describe("useAutosave in a component", () => {
     const written: string[] = [];
     let release!: () => void;
     const slowWrite = new Promise<void>((resolve) => (release = resolve));
-    let autosave!: ReturnType<typeof useAutosave>;
+    let autosave!: Autosave<string>;
     const Editor = defineComponent({
       setup() {
         autosave = useAutosave({

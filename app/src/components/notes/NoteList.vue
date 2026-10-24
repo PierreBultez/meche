@@ -9,6 +9,7 @@ import { useToastsStore } from "../../stores/toasts";
 import { useUiStore } from "../../stores/ui";
 import type { ListFilter, NoteColor, NoteKind } from "../../types/note";
 import { scrollToShow, visibleRange } from "../../utils/virtual-list";
+import SyncDot from "../sync/SyncDot.vue";
 import ConfirmDialog from "../ui/ConfirmDialog.vue";
 import UiSelect from "../ui/UiSelect.vue";
 import NoteCard from "./NoteCard.vue";
@@ -376,6 +377,7 @@ async function emptyTrash(): Promise<void> {
         <Trash2 :size="15" aria-hidden="true" />
         Vider
       </button>
+      <SyncDot />
       <RouterLink
         to="/settings"
         class="rounded-button p-2 text-muted hover:bg-surface-2 hover:text-text"

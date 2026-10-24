@@ -3,8 +3,9 @@
 # ~/bin/meche-deploy and named in ~/.ssh/authorized_keys:
 #   restrict,command="/home/pierre/bin/meche-deploy" ssh-ed25519 AAAA… meche-deploy
 # GitHub Actions connects with that key and sends a commit id; whatever else it sends is
-# ignored. The commit must already be on origin/master: a stolen key can only redeploy code
-# that is on master, never run a command of its own.
+# ignored. The commit must already be on origin/master and come after the deployed one: a
+# stolen key (or a re-run of an old workflow) can neither run a command of its own nor bring
+# back older code over a newer database.
 set -euo pipefail
 
 repo_dir="${MECHE_REPO:-/var/www/meche}"
@@ -16,11 +17,20 @@ if [[ ! "$commit" =~ ^[0-9a-f]{40}$ ]]; then
 fi
 
 cd "$repo_dir"
+# One deployment at a time: a second one waits for the first (5 minutes at most).
+exec 9>"$HOME/.meche-deploy.lock"
+flock -w 300 9 || { echo "refused: another deployment is running" >&2; exit 4; }
+
 git fetch --quiet origin master
 if ! git merge-base --is-ancestor "$commit" origin/master; then
   echo "refused: $commit is not on origin/master" >&2
   exit 3
 fi
+if ! git merge-base --is-ancestor HEAD "$commit"; then
+  echo "refused: $commit is older than the deployed $(git rev-parse --short HEAD)" >&2
+  exit 5
+fi
 
-# The deployment script of that commit (it is on master, so it was reviewed).
-git show "$commit:server/deploy/deploy.sh" | bash -s -- "$repo_dir" "$commit"
+# The deployment script of that commit (it is on master, so it was reviewed), run from a
+# string rather than through a pipe: a step reading its input cannot swallow the next ones.
+bash -c "$(git show "$commit:server/deploy/deploy.sh")" deploy "$repo_dir" "$commit" < /dev/null

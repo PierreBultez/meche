@@ -162,37 +162,38 @@ final class SyncService
     {
         $maxNotes = config('notes.pull_max_notes');
         $maxBytes = config('notes.pull_max_bytes');
+        // The notes this request has just written: the device has them. They do not count in
+        // the page's limits (else its own notes could fill the page and come back later).
+        $known = [];
+        foreach ($applied as $note) {
+            $known[$note['id'].':'.$note['rev']] = true;
+        }
+        $limit = $maxNotes + count($known) + 1;
         $candidates = DB::table('notes')
             ->where('user_id', $userId)
             ->where('rev', '>', $cursor)
             ->orderBy('rev')
-            ->limit($maxNotes + 1)
+            ->limit($limit)
             ->get(['id', 'rev', DB::raw('LENGTH(title) + LENGTH(content) AS size')]);
         if ($candidates->isEmpty()) {
             return ['changes' => [], 'cursor' => $cursor, 'has_more' => false];
         }
 
-        $hasMore = $candidates->count() > $maxNotes;
-        $page = [];
-        $bytes = 0;
-        foreach ($candidates->take($maxNotes) as $candidate) {
-            if ($page !== [] && $bytes + (int) $candidate->size > $maxBytes) {
-                $hasMore = true;
-                break;
-            }
-            $page[] = $candidate;
-            $bytes += (int) $candidate->size;
-        }
-
-        $known = [];
-        foreach ($applied as $note) {
-            $known[$note['id'].':'.$note['rev']] = true;
-        }
+        // More may follow the last row read when the query was cut by its limit.
+        $hasMore = $candidates->count() === $limit;
         $ids = [];
-        foreach ($page as $candidate) {
+        $bytes = 0;
+        $last = $cursor;
+        foreach ($candidates as $candidate) {
             if (! isset($known[$candidate->id.':'.$candidate->rev])) {
+                if ($ids !== [] && (count($ids) === $maxNotes || $bytes + (int) $candidate->size > $maxBytes)) {
+                    $hasMore = true;
+                    break;
+                }
                 $ids[] = $candidate->id;
+                $bytes += (int) $candidate->size;
             }
+            $last = (int) $candidate->rev;
         }
         $changes = $ids === [] ? [] : DB::table('notes')
             ->where('user_id', $userId)
@@ -202,7 +203,7 @@ final class SyncService
             ->map(fn (object $row) => NoteFields::fromRow($row))
             ->all();
 
-        return ['changes' => $changes, 'cursor' => (int) end($page)->rev, 'has_more' => $hasMore];
+        return ['changes' => $changes, 'cursor' => $last, 'has_more' => $hasMore];
     }
 
     private function answer(string $syncId, array $applied, array $conflicts, array $pull): array

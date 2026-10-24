@@ -14,10 +14,16 @@ class AppServiceProvider extends ServiceProvider
         // Logging in and creating an account: 5 tries per minute per IP address (docs/04), and
         // 30 per hour per e-mail address, whatever the IP. That one is loose on purpose: anyone
         // can use it to block an address for an hour.
-        RateLimiter::for('auth', fn (Request $request) => [
-            Limit::perMinute(5)->by('ip:'.$request->ip()),
-            Limit::perHour(30)->by('email:'.mb_strtolower(trim((string) $request->input('email')))),
-        ]);
+        RateLimiter::for('auth', function (Request $request) {
+            // Not a string (an array…): counted under an empty address rather than failing
+            // here, before any limit.
+            $email = $request->input('email');
+
+            return [
+                Limit::perMinute(5)->by('ip:'.$request->ip()),
+                Limit::perHour(30)->by('email:'.(is_string($email) ? mb_strtolower(trim($email)) : '')),
+            ];
+        });
 
         // A device syncs about once a minute; this only stops a client stuck in a loop.
         RateLimiter::for('sync', fn (Request $request) => Limit::perMinute(300)->by('user:'.$request->user()?->id));

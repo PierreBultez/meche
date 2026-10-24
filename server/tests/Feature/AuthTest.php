@@ -144,6 +144,30 @@ it('limits the attempts on one address to 30 per hour, from any IP', function ()
         ->assertTooManyRequests();
 });
 
+it('does not let an accented spelling of an address get round its limit', function () {
+    account();
+    foreach (range(1, 30) as $i) {
+        $this->postJson('/api/auth/token', ['email' => 'pierre@example.com', 'password' => 'wrong', 'device_name' => 'PC'], [
+            'REMOTE_ADDR' => "203.0.113.{$i}",
+        ]);
+    }
+    // Another address for the database too (compared byte for byte): no account behind it.
+    $this->withServerVariables(['REMOTE_ADDR' => '198.51.100.2'])
+        ->postJson('/api/auth/token', ['email' => 'piérre@example.com', 'password' => PASSWORD, 'device_name' => 'PC'])
+        ->assertUnauthorized()
+        ->assertJson(['error' => 'invalid_credentials']);
+});
+
+it('counts an e-mail sent as something else than text instead of failing', function () {
+    account();
+    $statuses = [];
+    foreach (range(1, 6) as $ignored) {
+        $statuses[] = $this->postJson('/api/auth/token', ['email' => ['x'], 'password' => 'p', 'device_name' => 'PC'])->status();
+    }
+    expect($statuses)->not->toContain(500)
+        ->and(end($statuses))->toBe(429);
+});
+
 it('logs failed logins in the file read by fail2ban', function () {
     account();
     $path = storage_path('logs/auth.log');

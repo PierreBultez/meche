@@ -51,8 +51,9 @@ return [
             'driver' => 'file',
             'path' => storage_path('framework/cache/data'),
             'lock_path' => storage_path('framework/cache/locks'),
-            // Group-writable: the scheduler (cron) and PHP-FPM share these files (docs/09).
-            'permission' => 0664,
+            // No `permission`: Laravel would give it to the folders it creates too, and 0664
+            // has no execute bit, so www-data could no longer go through them (every throttled
+            // route would answer 500). Only www-data writes here: PHP-FPM and the cron (docs/09).
         ],
 
         'storage' => [

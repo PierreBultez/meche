@@ -21,10 +21,16 @@ git reset --quiet --hard "$commit"
 echo "→ Dependencies"
 composer install --no-dev --optimize-autoloader --no-interaction --no-progress
 echo "→ Database"
-php artisan optimize:clear
+# The cached config, routes and events go (the application cache, written by www-data only,
+# stays: it holds the limits of tries and the scheduler's lock).
+php artisan config:clear
+php artisan route:clear
+php artisan event:clear
 php artisan migrate --force
 echo "→ Caches (config, routes, events)"
-php artisan optimize
+# umask 027: bootstrap/cache/config.php holds the database password and APP_KEY; readable by
+# its owner and the www-data group only (setgid folder), like .env.
+(umask 027 && php artisan optimize)
 echo "→ PHP-FPM reload (fresh OPcache)"
 sudo -n systemctl reload "$php_fpm_service"
 php artisan up

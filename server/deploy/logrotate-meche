@@ -1,0 +1,11 @@
+# logrotate for Mèche's logs (docs/09). Copy to /etc/logrotate.d/meche.
+# copytruncate: PHP keeps writing to the same file, fail2ban follows it.
+/var/www/meche/server/storage/logs/*.log {
+    weekly
+    rotate 8
+    compress
+    delaycompress
+    missingok
+    notifempty
+    copytruncate
+}

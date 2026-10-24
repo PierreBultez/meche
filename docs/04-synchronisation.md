@@ -159,7 +159,7 @@ Décidé en phase 3 : plusieurs comptes, **sur invitation**. Le premier compte e
 ```
 → `201`, même réponse que `/auth/token`. Erreurs : `invalid_invitation`, `invalid_email`, `email_taken`, `weak_password` (12 caractères au moins), `invalid_input`. Le code est lu avec indulgence (minuscules, espaces et tirets acceptés, O lu 0, I et L lus 1). La ligne de l'invitation reste verrouillée jusqu'à la création du compte : un code ne peut pas servir deux fois.
 
-`/auth/token` et `/auth/register` partagent une limite de **5 essais par minute et par adresse IP**.
+`/auth/token` et `/auth/register` partagent deux limites : **5 essais par minute et par adresse IP**, et **30 par heure et par adresse e-mail**, quelle que soit l'IP (contre une attaque répartie sur beaucoup d'adresses, IPv6 notamment). La seconde est volontairement large : n'importe qui peut s'en servir pour bloquer une adresse e-mail pendant une heure (la personne se reconnecte plus tard ; les appareils déjà connectés ne sont pas touchés). Les adresses sont comparées octet par octet (`utf8mb4_bin`, enregistrées en minuscules) : une variante accentuée est une autre adresse, sans compte.
 
 ### `DELETE /api/auth/token`
 Révoque le jeton courant (déconnexion de l'appareil).

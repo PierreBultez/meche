@@ -167,6 +167,28 @@ it('sends the changes after the cursor in pages, by count and by size', function
     expect(sync($reader, 5)->json())->toMatchArray(['changes' => [], 'cursor' => 5, 'has_more' => false]);
 });
 
+it('does not count the notes it has just written in the page it sends back', function () {
+    // About one note of 20 bytes per page.
+    config(['notes.pull_max_bytes' => 25]);
+    $other = deviceToken($user = account(), 'Téléphone');
+    $token = deviceToken($user);
+    sync($other, 0, [change(['id' => OTHER_ID, 'title' => 'B1', 'content' => str_repeat('x', 18)])]);
+    $mine = array_map(fn (int $i) => change([
+        'id' => sprintf('0192f1c2-3333-7000-8000-%012d', $i),
+        'title' => "A{$i}",
+        'content' => str_repeat('x', 18),
+    ]), [1, 2, 3]);
+
+    $push = sync($token, 0, $mine)->assertOk()->json();
+
+    // The other device's note fills the page; this device's own notes are not counted, and
+    // the cursor moves past them.
+    expect(array_column($push['changes'], 'title'))->toBe(['B1'])
+        ->and($push['cursor'])->toBe(4)
+        ->and($push['has_more'])->toBeFalse();
+    expect(sync($token, $push['cursor'])->json('changes'))->toBe([]);
+});
+
 it('propagates a tombstone, without the title or the content', function () {
     $user = account();
     $desktop = deviceToken($user, 'PC');

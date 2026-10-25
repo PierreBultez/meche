@@ -3,6 +3,7 @@
 //! The frontend never touches the disk or the network: it calls the commands registered here,
 //! and Rust is the only owner of the data (docs/02-architecture.md, decision D3).
 
+mod backup;
 mod commands;
 mod db;
 mod ephemeral;
@@ -64,6 +65,9 @@ pub fn run() {
     tauri::Builder::default()
         // Opens links in the system browser (Ctrl+click in a note, docs/05).
         .plugin(tauri_plugin_opener::init())
+        // Native file chooser of the import (docs/07). Only Rust opens it: the frontend has no
+        // permission for the plugin's own commands (capabilities/default.json).
+        .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
             // Private data folder of the app, e.g. ~/.local/share/fr.pierrebultez.meche on Linux.
             let data_dir = app.path().app_data_dir()?;
@@ -110,6 +114,7 @@ pub fn run() {
             commands::notes::delete_note_forever,
             commands::notes::empty_trash,
             commands::notes::search,
+            commands::import::read_import_file,
             commands::import::import_notes,
             commands::import::get_triage,
             commands::import::triage_decide,

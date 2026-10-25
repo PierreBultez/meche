@@ -1,15 +1,51 @@
 //! Import commands (docs/07): writing the notes converted from a Standard Notes backup, and the
 //! triage screen that follows.
 
-use tauri::{AppHandle, State};
+use tauri::{AppHandle, State, WebviewWindow};
+use tauri_plugin_dialog::DialogExt;
 
 use crate::AppState;
+use crate::backup::{self, Backup};
 use crate::db::import::{self, ImportResult, ImportedNote};
 use crate::db::settings;
 use crate::db::triage::{self, Decision, Triage, TriageUndo};
 use crate::ephemeral::{self, watcher};
-use crate::error::Result;
+use crate::error::{Error, Result};
 use crate::time::now_ms;
+
+/// Opens the system's file chooser, then reads the chosen backup. `None` when the chooser was
+/// closed without a file.
+///
+/// Rust opens the chooser itself: the frontend never handles a path, and has no permission to
+/// read files. `window` is the window that called the command (Tauri fills it in): the chooser
+/// opens on top of it.
+#[tauri::command]
+pub async fn read_import_file(app: AppHandle, window: WebviewWindow) -> Result<Option<Backup>> {
+    // The chooser answers through a callback, on another thread; the channel brings the answer
+    // back here. `oneshot`: a channel for exactly one value.
+    let (sender, receiver) = tokio::sync::oneshot::channel();
+    app.dialog()
+        .file()
+        .set_parent(&window)
+        .set_title("Importer depuis Standard Notes")
+        .add_filter("Sauvegarde Standard Notes", &["zip", "txt", "json"])
+        .pick_file(move |file| {
+            // `let _ =`: the receiver is only gone if the command was dropped meanwhile.
+            let _ = sender.send(file);
+        });
+    let Some(file) = receiver.await.ok().flatten() else {
+        return Ok(None);
+    };
+    // Android gives `content://` addresses, which have no path (phase 5).
+    let path = file
+        .into_path()
+        .map_err(|_| Error::Backup("backup_location"))?;
+    // Reading and checking a big backup takes a moment: on a thread made for blocking work,
+    // so the async threads (the sync engine…) keep running.
+    tauri::async_runtime::spawn_blocking(move || backup::read(&path).map(Some))
+        .await
+        .map_err(|error| Error::Io(std::io::Error::other(error.to_string())))?
+}
 
 /// Writes the converted notes in one transaction; they leave for the server at the next sync.
 #[tauri::command]

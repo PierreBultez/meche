@@ -53,6 +53,23 @@ En production, l'en-tête `Server-Timing` de chaque réponse (`curl -sI`) permet
 
 **Terminé quand** : les ~100 notes de Pierre sont importées, vérifiées par lui, et triées.
 
+**État (phase 4, côté code)** : sauvegarde réelle de Pierre analysée le 25/10/2026 (une archive `.zip` ; 27 notes, dont 2 dans la corbeille de Standard Notes, donc 25 à importer : le tri avait été fait avant dans Standard Notes), formats confirmés et corrigés dans `07-import-standard-notes.md`. Décisions validées par Pierre : conversion par l'éditeur lui-même (pas de `turndown`), texte brut importé comme du texte, lecture du fichier par Rust (`tauri-plugin-dialog` utilisé depuis Rust, `zip` 9.0), dates de `client_updated_at`, migration 003 (`imported_notes`) ; les comptes du tri sont dans le réglage `triage_counts` plutôt qu'une colonne de `import_triage` (même comportement, sans reconstruire la table). Sur la vraie sauvegarde, les 25 notes sont converties sans aucun avertissement (aller-retour exact, tout le texte gardé), en 0,5 à 0,7 s (mesuré dans les tests, sous Node) ; la vérification de l'import a trouvé trois défauts de l'éditeur, corrigés (`05-editeur.md`). Les fichiers joints de Standard Notes ne sont pas importés (leur contenu n'est pas dans la sauvegarde ; Pierre n'en a plus besoin).
+
+Essais dans la vraie application (build release, conteneur de développement, écran virtuel sans accélération graphique, pilotée par WebDriver), avec une sauvegarde de test construite sur la structure de celle de Pierre (même répartition des types, mêmes formes de HTML, de Lexical et de checklists, copies de conflit, 34 fichiers joints, archive `.zip` avec son dossier `Items/`, contenu inventé, plus un article HTML collé d'environ 140 Ko) et le serveur local (PHP 8.5, base SQLite) :
+- récapitulatif juste (« 25 notes trouvées : 3 textes, 9 textes enrichis, 6 Super, 7 checklists. Tout a été converti à l'identique. ») ; import en 127 ms ;
+- relance avec la même sauvegarde : « Rien de nouveau : ces notes sont déjà dans Mèche. » ;
+- tri complet au clavier (`G`, `E`, `S`, `→`, `←`, `Espace`, deux `Ctrl+Z`) : 12 à 28 ms entre la touche et la carte suivante ; écran final « 9 gardées, 8 mèches allumées, 8 à la corbeille » ;
+- synchro : le serveur a reçu les 25 notes (corbeille, mèches, épinglage, couleurs et dates d'origine compris) ; un second appareil, connecté au même compte, les a reçues identiques champ par champ, sans tri (le tri reste local) ;
+- thèmes clair et sombre vérifiés sur le récapitulatif et l'écran de tri.
+
+**Mesures (phase 4)**, mêmes conditions :
+- démarrage à froid jusqu'à la fenêtre visible (compte connecté, 25 notes) : 506 à 572 ms sur 6 lancements ; budget 1 s ;
+- ouverture d'une note : 42 à 95 ms pour une note courte ; une note de 47 000 caractères s'ouvre en 560 à 650 ms, qu'elle soit importée ou créée dans Mèche : le temps d'ouverture de l'éditeur croît avec la taille de la note (à reprendre en phase 7, « Mesure et optimisation des budgets ») ; la plus grosse note réelle de Pierre fait environ 17 000 caractères une fois convertie ;
+- recherche : 9 à 62 ms aller-retour WebDriver compris ;
+- paquet `.deb` : 5,3 Mo ; le code de l'import est chargé à la demande (rien de plus au démarrage qu'un libellé de la palette).
+
+Reste pour terminer la phase : l'import réel par Pierre dans son application connectée à la production, sa vérification, puis le tri.
+
 ## Phase 5 — Android
 - Accompagner Pierre dans l'installation d'Android Studio, SDK, NDK (voir `09-build-et-deploiement.md`).
 - `tauri android init`, adaptation de l'interface mobile (`08-interface.md`) : navigation liste/note, bouton retour, barre d'outils au-dessus du clavier, gestes, safe areas, synchro à la reprise.

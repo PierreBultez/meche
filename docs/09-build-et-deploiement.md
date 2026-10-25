@@ -123,6 +123,8 @@ Workflow `release.yml` déclenché par un tag `v*` (ex. `v0.3.0`), qui crée une
 - Desktop : action officielle `tauri-apps/tauri-action`.
 - Version unique dans `app/src-tauri/tauri.conf.json`, incrémentée à chaque release (le `versionCode` Android en découle et doit toujours augmenter, sinon la mise à jour est refusée).
 
+**En attendant (ajouté en phase 3)** : `.github/workflows/windows-build.yml` construit l'installateur Windows (NSIS, `-setup.exe`) pour essayer l'application sur un PC. À lancer à la main : Actions › Windows build › Run workflow (sur `master`) ; il tourne aussi à chaque modification du workflow. L'installateur est joint au run (artefact `meche-windows-x64`, un zip gardé 30 jours). Il n'est pas signé : au premier lancement, SmartScreen affiche « Windows a protégé votre ordinateur » → « Informations complémentaires » → « Exécuter quand même ». Installation pour l'utilisateur courant, sans droits d'administrateur ; WebView2 est déjà présent sur Windows 10 et 11. Données de l'application : `%APPDATA%\fr.pierrebultez.meche`. `release.yml` le remplacera en phase 6.
+
 ### Visibilité du dépôt : **public** (décidé)
 - Le code est visible, mais les notes ne sont jamais dans le dépôt. Les mises à jour desktop (`latest.json` dans les GitHub Releases) et Obtainium fonctionnent sans configuration.
 - Conséquence : **aucun secret dans le code**. Clés de signature, mots de passe, `.env` et token de déploiement passent uniquement par les secrets GitHub Actions. Vérifier le `.gitignore` avant le premier push.

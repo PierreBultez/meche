@@ -52,9 +52,20 @@ describe("hand-written Markdown is normalized once, then stays stable", () => {
     ["windows path", "C:\\Users\\pierre"],
     ["loose list", "- un\n\n- deux"],
     ["fence with tildes", "~~~js\nconst a = 1;\n~~~"],
+    ["a line under a sub-list, not indented enough", "- Courses\n  - [ ] Lait\n  entier"],
+    ["a code block after a blank line in a numbered item", "1. a\n\n   ```\n   code\n     plus loin\n   ```"],
+    ["two spaces after a number", "1.  a\n    - [ ] b\n    - [ ] c"],
   ])("%s", (_case, input) => {
-    const once = roundTrip(input);
+    const editor = editorFor(input);
+    // A document the schema refuses would be dropped on the next save.
+    expect(() => editor.schema.nodeFromJSON(editor.getJSON()).check()).not.toThrow();
+    const once = editor.getMarkdown();
     expect(roundTrip(once)).toBe(once);
+  });
+
+  it("keeps the code of a numbered item as typed", () => {
+    expect(roundTrip("1. a\n\n   ```\n   code\n     plus loin\n   ```")).toBe("1. a\n   ```\n   code\n     plus loin\n   ```");
+    expect(roundTrip("1.  a\n    - [ ] b\n    - [ ] c")).toBe("1. a\n   - [ ] b\n   - [ ] c");
   });
 
   it("keeps checked boxes checked whatever the case", () => {
@@ -261,6 +272,111 @@ describe("what the editor writes reads back the same (phase 1 review)", () => {
       ],
     ],
     [
+      "a line break in a task item under a bullet",
+      [
+        {
+          type: "bulletList",
+          content: [
+            item(
+              paragraph(text("Courses")),
+              { type: "taskList", content: [task(false, paragraph(text("Lait"), hardBreak, text("entier"))), task(true, paragraph(text("Pain")))] },
+            ),
+          ],
+        },
+      ],
+    ],
+    [
+      "a line break in a task item under a numbered item",
+      [
+        {
+          type: "orderedList",
+          content: [
+            item(
+              paragraph(text("Courses")),
+              { type: "taskList", content: [task(false, paragraph(text("Lait"), hardBreak, text("entier")))] },
+            ),
+          ],
+        },
+      ],
+    ],
+    [
+      "a line break in a task item under a quote",
+      [{ type: "blockquote", content: [{ type: "taskList", content: [task(false, paragraph(text("Lait"), hardBreak, text("entier")))] }] }],
+    ],
+    [
+      "spaces after a line break in a task item",
+      [{ type: "taskList", content: [task(false, paragraph(text("Lait"), hardBreak, text("  entier")))] }],
+    ],
+    [
+      "a link and bold after a line break in a task item",
+      [
+        {
+          type: "taskList",
+          content: [
+            task(
+              false,
+              paragraph(
+                text("Lait"),
+                hardBreak,
+                text("voir "),
+                link("ici", "https://example.com"),
+                text(" et "),
+                text("gras", [{ type: "bold" }]),
+              ),
+            ),
+          ],
+        },
+      ],
+    ],
+    [
+      "a horizontal rule right under the text of an item",
+      [
+        { type: "bulletList", content: [item(paragraph(text("a")), { type: "horizontalRule" }, paragraph(text("b")))] },
+        { type: "orderedList", content: [item(paragraph(text("c")), { type: "horizontalRule" })] },
+      ],
+    ],
+    [
+      "code under a numbered item",
+      [
+        {
+          type: "orderedList",
+          content: [
+            item(paragraph(text("Installer")), {
+              type: "codeBlock",
+              attrs: { language: "bash" },
+              content: [text("npm ci\n  --quiet")],
+            }),
+            item(paragraph(text("Lancer"))),
+          ],
+        },
+      ],
+    ],
+    [
+      "a checklist under a numbered item",
+      [
+        {
+          type: "orderedList",
+          content: [
+            item(paragraph(text("Courses")), { type: "taskList", content: [task(false, paragraph(text("Lait"))), task(true, paragraph(text("Pain")))] }),
+          ],
+        },
+      ],
+    ],
+    [
+      "a checklist under item 10",
+      [
+        {
+          type: "orderedList",
+          attrs: { start: 10 },
+          content: [item(paragraph(text("Dix")), { type: "taskList", content: [task(false, paragraph(text("a"))), task(false, paragraph(text("b")))] })],
+        },
+      ],
+    ],
+    [
+      "two paragraphs in a numbered item",
+      [{ type: "orderedList", content: [item(paragraph(text("a")), paragraph(text("b"), hardBreak, text("c")))] }],
+    ],
+    [
       "two line breaks in a quote",
       [{ type: "blockquote", content: [paragraph(text("a"), hardBreak, hardBreak, text("b"))] }],
     ],
@@ -326,5 +442,26 @@ describe("what the editor writes reads back the same (phase 1 review)", () => {
     expect(editorFor("- [ ] a").getMarkdown()).toBe(first);
     // The shared default parser is left untouched.
     expect(marked.defaults.extensions).toBeNull();
+  });
+});
+
+describe("a long note is read in a time that grows with its length", () => {
+  // Read by the editor at each opening: TipTap's own readers took a time growing with the
+  // square of the length (3.6 s for 4,000 short checklists, phase 4 review).
+  const blocks: Array<[string, (index: number) => string]> = [
+    ["paragraphs", (index) => `ligne ${index}\n\n`],
+    ["headings", (index) => `## titre ${index}\n`],
+    ["checklists between paragraphs", (index) => `- [x] tâche ${index}\n\ntexte ${index}\n\n`],
+    ["tables", (index) => `| a | b |\n| --- | --- |\n| ${index} | x |\n\n`],
+    ["numbered lists between headings", (index) => `${index + 1}. point\n## titre\n`],
+  ];
+
+  it.each(blocks)("%s", (_case, block) => {
+    const editor = editorFor("");
+    const markdown = Array.from({ length: 8000 }, (_, index) => block(index)).join("");
+    const start = performance.now();
+    editor.markdown?.parse(markdown);
+    // About 0.1 s here; the square of the length would take well over 10 s.
+    expect(performance.now() - start).toBeLessThan(3000);
   });
 });

@@ -56,7 +56,18 @@ Pas de souligné (n'existe pas en Markdown), pas de couleurs, pas d'images en V1
 **Corrigé en phase 4** (trouvé par la vérification de l'import, `07-import-standard-notes.md`) :
 - Une ligne de tirets séparés par des espaces (`- - -`, `-- ------ ----`) était relue comme un séparateur : Markdown prend trois tirets ou plus, espaces permis, pour une ligne horizontale. Son premier tiret est échappé, comme pour une ligne de tirets collés.
 - Des lignes qui ressemblent à un tableau (`| a | b |` puis `|---|---|`, tapées avec des retours à la ligne ou collées) étaient relues comme un tableau. Les barres d'une ligne qui serait lue comme la ligne de séparation sous l'en-tête d'un tableau sont échappées (`\|`).
-- Un retour à la ligne (`Maj+Entrée`) dans une case de checklist cassait la liste à la réouverture : TipTap ne lit que la première ligne d'une case comme son texte, et la ligne suivante, non indentée, terminait la checklist. Les lignes qui suivent un retour à la ligne sont écrites indentées sous la case (`- [ ] Lait  ⏎  demi-écrémé`), et relues dans le même texte (`SafeTaskItem`, `editor/extensions.ts`).
+- Un retour à la ligne (`Maj+Entrée`) dans une case de checklist cassait la liste à la réouverture : TipTap ne lit que la première ligne d'une case comme son texte, et la ligne suivante, non indentée, terminait la checklist. Les lignes qui suivent un retour à la ligne sont écrites indentées sous la case (`- [ ] Lait  ⏎  demi-écrémé`), et relues dans le même texte (`SafeTaskItem`, `editor/extensions.ts`). C'est vrai aussi pour une checklist placée sous une puce, où la ligne suivante revenait en texte nu dans la case : le document devenait invalide et la ligne ne pouvait plus être modifiée.
+
+**Corrigé en phase 4, après les revues** (déjà présent avant la phase 4) :
+- Sous un élément numéroté, chaque ligne gardait une espace de trop : le lecteur de TipTap fait commencer le texte d'un élément juste après `1.` au lieu de l'espace qui suit. Un bloc de code dans une liste numérotée gagnait une espace à chaque ouverture (la note était modifiée sans rien toucher), et une checklist placée sous un élément numéroté se défaisait. Le lecteur reçoit les numéros écrits avec un chiffre de plus par espace (`01. `), ce qui rend son compte juste sans changer le numéro.
+- Le lecteur Markdown mettait un temps qui croît avec le carré de la longueur de la note : les lecteurs de TipTap pour les checklists et les tableaux découpaient tout le reste du texte en lignes au début de chaque bloc (3,6 s pour 4 000 checklists courtes, 1,1 s pour 4 000 paragraphes). Ils ne reçoivent plus que les lignes qui peuvent les concerner : 50 ms et 40 ms. Un test le vérifie sur 8 000 blocs.
+- Une ligne de texte placée sous une sous-liste, pas assez indentée, était lue comme du texte nu dans l'élément (document invalide) : elle devient un paragraphe de l'élément.
+- Un séparateur juste sous le texte d'un élément de liste (`- a⏎  ---`) faisait de ce texte un titre : une ligne vide les sépare.
+- Un simple clic sur un lien d'une note en lecture seule (corbeille, aperçu du tri) l'ouvrait dans le navigateur : seul `Ctrl+clic` ouvre un lien, dans tous les cas.
+
+**Limites connues** (à reprendre en phase 7, avec l'accord de Pierre) :
+- `marked` 17 (utilisé par `@tiptap/markdown`) met un temps qui croît avec le carré du nombre de caractères échappés (`\*`, `\_`, `\[`…) ou de codes en ligne d'un même paragraphe. Une note de texte de 4 000 lignes de journal (un seul paragraphe, des `_` et des `[`) met environ 3 s à s'ouvrir. `marked` 18 lit le même texte en 0,3 s, mais `@tiptap/markdown` déclare `marked` ^17 : la montée de version est à valider et à tester.
+- Un titre qui finit par `#` précédé d'une espace (`## Langage C #`) perd ce `#` à la réouverture (Markdown y voit la fermeture facultative du titre). Le corriger demande d'étendre l'extension `Heading`, donc d'ajouter `@tiptap/extension-heading` (MIT, déjà installée par StarterKit) aux dépendances directes.
 
 ### Sauvegarde
 - À chaque modification : anti-rebond de **400 ms**, puis sérialisation en Markdown.
@@ -77,7 +88,7 @@ Pas de souligné (n'existe pas en Markdown), pas de couleurs, pas d'images en V1
 - **Menu de sélection** (BubbleMenu, desktop) : gras, italique, barré, code, lien.
 - **Barre d'outils mobile** : au-dessus du clavier virtuel, défilante horizontalement : Checklist, Titre, Liste, Code, Gras, Italique, Lien, Annuler/Rétablir.
 - Bloc de code : sélecteur de langage dans le coin du bloc, bouton « Copier ».
-- Clic sur un lien : `Ctrl+clic` (desktop) / appui long (mobile) pour l'ouvrir dans le navigateur système.
+- Clic sur un lien : `Ctrl+clic` (desktop) / appui long (mobile) pour l'ouvrir dans le navigateur système. Un simple clic ne l'ouvre jamais, même dans une note en lecture seule.
 - `Échap` dans l'éditeur ferme d'abord le menu « / », sinon quitte le mode concentration, sinon revient à la carte de la note dans la liste (`08-interface.md`).
 
 ### Comptage des cases à cocher (reporté)

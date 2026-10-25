@@ -17,7 +17,8 @@ const plan = (notes: PlannedNote[], otherItems: Record<string, number> = {}, ski
 describe("summary of an import", () => {
   it("counts the notes by type", () => {
     const notes = [planned("html"), planned("html"), planned("super"), planned("checklist"), planned("text"), planned("text"), planned("code")];
-    expect(foundText(plan(notes))).toBe("7 notes trouvées : 2 textes, 2 textes enrichis, 1 Super, 1 checklist, 1 code.");
+    expect(foundText(plan(notes))).toBe("7 notes trouvées : 2 textes, 2 textes enrichis, 1 Super, 1 checklist, 1 note de code.");
+    expect(foundText(plan([planned("code"), planned("code")]))).toBe("2 notes trouvées : 2 notes de code.");
     expect(foundText(plan([planned("other")]))).toBe("1 note trouvée : 1 autre.");
     expect(foundText(plan([]))).toBe("Aucune note à importer dans cette sauvegarde.");
   });
@@ -25,13 +26,13 @@ describe("summary of an import", () => {
   it("lists the notes to check, with what happened to them", () => {
     const notes = [
       planned("html", "Recette", [{ code: "unsupported", detail: "img" }, { code: "not_exact" }]),
-      planned("super", "", [{ code: "unsupported", detail: "collapsible-container" }]),
+      planned("super", "", [{ code: "unsupported", detail: "layout" }, { code: "unsupported", detail: "youtube" }]),
       planned("text", "Énorme", [{ code: "too_large" }], false),
       planned("text", "Sans souci"),
     ];
     expect(notesToCheck(plan(notes))).toEqual([
       { title: "Recette", details: "images ignorées ; pas tout à fait à l'identique, à vérifier", importable: true },
-      { title: "Sans titre", details: "élément « collapsible-container » ignoré, son texte est gardé", importable: true },
+      { title: "Sans titre", details: "mise en page simplifiée, le texte est gardé ; élément « youtube » ignoré", importable: true },
       { title: "Énorme", details: "plus de 2 Mo : pas importée", importable: false },
     ]);
     expect(warningText({ code: "unknown_type", detail: "spreadsheet" })).toBe("type « spreadsheet » inconnu, importée en note code");

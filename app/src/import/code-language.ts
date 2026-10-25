@@ -34,7 +34,8 @@ const MODE_NAMES: Record<string, string> = {
 export function languageFromName(name: unknown): string | null {
   if (typeof name !== "string" || !name.trim()) return null;
   const lower = name.trim().toLowerCase();
-  return MODE_NAMES[lower] ?? normalizeLanguage(lower);
+  // `hasOwn`: a name like « __proto__ » or « constructor » must not find what every object has.
+  return Object.hasOwn(MODE_NAMES, lower) ? MODE_NAMES[lower] : normalizeLanguage(lower);
 }
 
 /** The language saved in the note's `appData` by its editor (`mode`, `language`…), if any. */
@@ -52,7 +53,11 @@ export function languageFromAppData(appData: unknown): string | null {
   return null;
 }
 
-/** First rule that matches the code wins: the most telling signs first. */
+/**
+ * First rule that matches the code wins: the most telling signs first. Each pattern stays on
+ * one line (`[ \t]*`, not `\s*`, which also crosses line breaks) or is bounded: the code comes
+ * from a file, and a pattern that backtracks would freeze the import (security review, phase 4).
+ */
 const GUESSES: Array<[string, (code: string) => boolean]> = [
   ["php", (code) => /<\?php/.test(code)],
   ["xml", (code) => /^\s*<\?xml/.test(code)],
@@ -64,17 +69,18 @@ const GUESSES: Array<[string, (code: string) => boolean]> = [
   [
     "sql",
     (code) =>
-      /^\s*(select\s[\s\S]+\sfrom\s|insert\s+into\s|update\s+\w+\s+set\s|delete\s+from\s|create\s+(table|index|database|view)\s|alter\s+table\s|drop\s+table\s)/im.test(
+      /^[ \t]*(select\s[\s\S]{0,500}?\sfrom\s|insert\s+into\s|update\s+\w+\s+set\s|delete\s+from\s|create\s+(table|index|database|view)\s|alter\s+table\s|drop\s+table\s)/im.test(
         code,
       ),
   ],
-  ["python", (code) => /^\s*(def\s+\w+\s*\(.*\)\s*:|from\s+[\w.]+\s+import\s|class\s+\w+(\(.*\))?\s*:)/m.test(code)],
+  ["python", (code) => /^[ \t]*(def[ \t]+\w+[ \t]*\([^)\n]*\)[ \t]*:|from[ \t]+[\w.]+[ \t]+import[ \t]|class[ \t]+\w+(\([^)\n]*\))?[ \t]*:)/m.test(code)],
   ["typescript", (code) => /\binterface\s+\w+\s*\{|\bimport\s+type\b|:\s*(string|number|boolean)\b[;,)=]/.test(code)],
   ["javascript", (code) => /\b(const|let|var)\s+\w+\s*=|=>|\bfunction\b|console\.log|require\(/.test(code)],
-  ["css", (code) => /^\s*[.#@:\w][^{}\n]*\{[^{}]*\b[\w-]+\s*:[^;{}]+;[^{}]*\}/m.test(code)],
-  ["bash", (code) => /^\s*(\$\s|sudo\s|apt(-get)?\s|cd\s|echo\s|export\s\w+=|chmod\s|systemctl\s)/m.test(code)],
+  // A line opening a rule ("selector {") and a declaration line ("property: value;").
+  ["css", (code) => /^[^{}\n]*\{[ \t]*$/m.test(code) && /^[ \t]*[\w-]+[ \t]*:[^;{}\n]+;[ \t]*$/m.test(code)],
+  ["bash", (code) => /^[ \t]*(\$\s|sudo\s|apt(-get)?\s|cd\s|echo\s|export\s\w+=|chmod\s|systemctl\s)/m.test(code)],
   ["yaml", isYaml],
-  ["markdown", (code) => /^#{1,6}\s\S/m.test(code) || /^\s*[-*]\s\[[ xX]\]\s/m.test(code)],
+  ["markdown", (code) => /^#{1,6}\s\S/m.test(code) || /^[ \t]*[-*]\s\[[ xX]\]\s/m.test(code)],
 ];
 
 function isJson(code: string): boolean {
@@ -96,7 +102,11 @@ function isYaml(code: string): boolean {
   return yamlish.length / lines.length >= 0.8;
 }
 
+/** Characters of a code note looked at to guess its language: its beginning is enough. */
+const GUESS_CHARS = 20_000;
+
 /** A guess from the code itself; `plaintext` when nothing is sure enough. */
 export function guessLanguage(code: string): string {
-  return GUESSES.find(([, test]) => test(code))?.[0] ?? "plaintext";
+  const start = code.slice(0, GUESS_CHARS);
+  return GUESSES.find(([, test]) => test(start))?.[0] ?? "plaintext";
 }

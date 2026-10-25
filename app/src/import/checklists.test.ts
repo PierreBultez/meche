@@ -53,17 +53,31 @@ describe("Advanced Checklist", () => {
 
 describe("Simple Task Editor", () => {
   it("reads one task per line, checked or not", () => {
-    const doc = simpleTasksToDoc("- [ ] Pain\n- [x] Lait\n- [X] Œufs\n* [ ] Beurre\n[ ] Sans tiret");
-    expect(markdown(doc, "Pain Lait Œufs Beurre Sans tiret").markdown).toBe(
-      "- [ ] Pain\n- [x] Lait\n- [x] Œufs\n- [ ] Beurre\n- [ ] Sans tiret",
-    );
+    const { doc, sourceText } = simpleTasksToDoc("- [ ] Pain\n- [x] Lait\n- [X] Œufs\n* [ ] Beurre\n[ ] Sans tiret");
+    expect(markdown(doc, sourceText)).toEqual({
+      markdown: "- [ ] Pain\n- [x] Lait\n- [x] Œufs\n- [ ] Beurre\n- [ ] Sans tiret",
+      exact: true,
+    });
   });
 
   it("keeps other lines as paragraphs, between the checklists", () => {
-    const doc = simpleTasksToDoc("Courses\n- [ ] Pain\n\nPour samedi\nsans faute\n- [x] Gâteau\n- [ ] ");
-    expect(markdown(doc, "Courses Pain Pour samedi sans faute Gâteau")).toEqual({
+    const { doc, sourceText } = simpleTasksToDoc("Courses\n- [ ] Pain\n\nPour samedi\nsans faute\n- [x] Gâteau\n- [ ] ");
+    expect(markdown(doc, sourceText)).toEqual({
       markdown: "Courses\n\n- [ ] Pain\n\nPour samedi  \nsans faute\n\n- [x] Gâteau",
       exact: true,
     });
+  });
+
+  it("keeps boxes and dashes written inside a task or a line (no false report)", () => {
+    const { doc, sourceText } = simpleTasksToDoc("- [ ] fix [x] coords\n- une ligne avec un tiret");
+    expect(markdown(doc, sourceText)).toEqual({
+      markdown: "- [ ] fix \\[x\\] coords\n\n\\- une ligne avec un tiret",
+      exact: true,
+    });
+  });
+
+  it("keeps a task typed but not added yet", () => {
+    const { doc, sourceText } = simpleTasksToDoc("- [x] Lait", "acheter du pain");
+    expect(markdown(doc, sourceText).markdown).toBe("- [x] Lait\n- [ ] acheter du pain");
   });
 });

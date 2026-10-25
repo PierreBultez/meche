@@ -29,6 +29,7 @@ describe("plain text", () => {
     "---\n***\n___\n- - -\n-- ------ ----",
     "Titre\n===\nSous-titre\n---",
     "| a | b |\n|---|---|\n| 1 | 2 |",
+    "Titre\n|---\nTitre\n:---\nTitre\n---|\nTitre\n:-:",
     "    quatre espaces\n\tune tabulation\n  deux espaces",
     "<script>alert(1)</script> <b>gras ?</b> <!-- commentaire -->",
     "C:\\Users\\pierre\\Documents",

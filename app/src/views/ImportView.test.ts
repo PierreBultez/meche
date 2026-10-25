@@ -9,8 +9,7 @@ import { useToastsStore } from "../stores/toasts";
 import { type FakeCore, installFakeCore } from "../test/fake-core";
 import ImportView from "./ImportView.vue";
 
-async function mountImport() {
-  const pinia = createPinia();
+async function mountImport(pinia = createPinia()) {
   setActivePinia(pinia);
   const router = createRouter({
     history: createMemoryHistory(),
@@ -42,8 +41,9 @@ describe("import screen (docs/07)", () => {
 
   async function chooseBackup(wrapper: Awaited<ReturnType<typeof mountImport>>["wrapper"]) {
     await button(wrapper, "Choisir la sauvegarde").trigger("click");
-    // The converters are loaded on demand (a dynamic import): wait until the step changes.
-    await vi.waitFor(() => expect(wrapper.text()).not.toContain("Lecture de la sauvegarde"));
+    // The converters are loaded on demand (a dynamic import), and pause between notes: wait
+    // until the file is read and converted.
+    await vi.waitFor(() => expect(wrapper.text()).not.toMatch(/Lecture de la sauvegarde|Conversion des notes/));
     await flushPromises();
   }
 
@@ -51,7 +51,7 @@ describe("import screen (docs/07)", () => {
     const { wrapper } = await mountImport();
     await chooseBackup(wrapper);
     const text = wrapper.text();
-    expect(text).toContain("11 notes trouvées : 3 textes, 1 Markdown, 1 texte enrichi, 1 Super, 2 checklists, 2 code, 1 autre.");
+    expect(text).toContain("11 notes trouvées : 3 textes, 1 Markdown, 1 texte enrichi, 1 Super, 2 checklists, 2 notes de code, 1 autre.");
     expect(text).toContain("4 notes non converties parfaitement");
     expect(text).toContain("Recette — images ignorées");
     expect(text).toContain("Pas importés : 1 note de la corbeille de Standard Notes, 1 note supprimée ou illisible, 1 fichier joint (absents de la sauvegarde), 2 réglages et extensions.");
@@ -101,6 +101,28 @@ describe("import screen (docs/07)", () => {
     expect(useToastsStore().toasts.map((toast) => toast.message)).toEqual([
       "Cette sauvegarde est chiffrée. Dans Standard Notes, télécharge une sauvegarde sans chiffrement.",
     ]);
+  });
+
+  it("shows the notes imported even when the triage cannot be reloaded", async () => {
+    const { wrapper } = await mountImport();
+    await chooseBackup(wrapper);
+    core.fail("get_triage", { kind: "database" });
+    await button(wrapper, "Importer 11 notes").trigger("click");
+    await vi.waitFor(() => expect(wrapper.text()).toContain("11 notes importées."));
+    expect(useToastsStore().toasts).toEqual([]);
+  });
+
+  it("forgets a backup still being read when the page is left (Échap)", async () => {
+    const pinia = createPinia();
+    const first = await mountImport(pinia);
+    void button(first.wrapper, "Choisir la sauvegarde").trigger("click");
+    first.wrapper.unmount();
+    // Long enough for the conversion to end, had it gone on.
+    await new Promise((resolve) => setTimeout(resolve, 200));
+    await flushPromises();
+    const again = await mountImport(pinia);
+    expect(button(again.wrapper, "Choisir la sauvegarde").exists()).toBe(true);
+    expect(again.wrapper.text()).not.toContain("notes trouvées");
   });
 
   it("goes back to the choice when the summary is cancelled", async () => {

@@ -61,10 +61,14 @@ export function advancedChecklistToDoc(source: string): { doc: JSONContent; sour
 // "- [ ] task", "- [x] task", also "* [ ]" and "[X]".
 const TASK_LINE = /^\s*(?:[-*+]\s*)?\[([ xX])\]\s?(.*)$/;
 
-/** « Simple Task Editor »: one `- [ ] …` / `- [x] …` line per task. Other lines are kept as
- * paragraphs, and blank lines separate them. */
-export function simpleTasksToDoc(source: string): JSONContent {
+/**
+ * « Simple Task Editor »: one `- [ ] …` / `- [x] …` line per task. Other lines are kept as
+ * paragraphs, and blank lines separate them. `unsaved` is a task typed but not added yet
+ * (`unsavedTask`): it becomes a box to do, like the draft of « Advanced Checklist ».
+ */
+export function simpleTasksToDoc(source: string, unsaved = ""): { doc: JSONContent; sourceText: string } {
   const blocks: JSONContent[] = [];
+  const texts: string[] = [];
   let tasks: JSONContent[] = [];
   let paragraphLines: string[] = [];
   const flush = () => {
@@ -73,18 +77,21 @@ export function simpleTasksToDoc(source: string): JSONContent {
     tasks = [];
     paragraphLines = [];
   };
-  for (const line of lines(source)) {
+  const extra = unsaved.trim() ? [`- [ ] ${unsaved.trim()}`] : [];
+  for (const line of [...lines(source), ...extra]) {
     const task = TASK_LINE.exec(line);
     if (task) {
       if (paragraphLines.length) flush();
       tasks.push(taskItem(task[1] !== " ", [paragraph([text(task[2])])]));
+      texts.push(task[2]);
     } else if (line.trim()) {
       if (tasks.length) flush();
       paragraphLines.push(line);
+      texts.push(line);
     } else {
       flush();
     }
   }
   flush();
-  return doc(blocks);
+  return { doc: doc(blocks), sourceText: texts.join("\n") };
 }

@@ -13,5 +13,5 @@ const MESSAGES: Record<string, string> = {
 
 export function importErrorMessage(error: unknown, fallback: string): string {
   const kind = (error as CommandError | undefined)?.kind;
-  return (kind && MESSAGES[kind]) || fallback;
+  return kind && Object.hasOwn(MESSAGES, kind) ? MESSAGES[kind] : fallback;
 }

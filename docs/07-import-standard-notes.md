@@ -113,9 +113,9 @@ Décidé en phase 4 (validé par Pierre) : **chaque convertisseur produit un doc
 | `noteType` Standard Notes | `kind` Mèche | Conversion de `text` |
 |---|---|---|
 | `plain-text` ou absent | `rich` | **Pas du Markdown** : une ligne vide sépare deux paragraphes, chaque retour à la ligne est gardé, et l'éditeur échappe chaque caractère que Markdown lirait autrement (`*`, `_`, `<`, `#`, `|`, `[`…). Le texte s'affiche exactement comme dans Standard Notes (`plain-text.ts`) |
-| `markdown` | `rich` | Lu par l'éditeur, puis réécrit à sa façon (`*` → `-`, `__` → `**`…). Le HTML brut hors du code n'est pas gardé par l'éditeur (`05-editeur.md`) : son texte reste et la note est signalée |
+| `markdown` | `rich` | Lu par l'éditeur, puis réécrit à sa façon (`*` → `-`, `__` → `**`…). Ce que l'éditeur ne garde pas est signalé (la vérification ne peut pas le voir, puisqu'elle compare avec la lecture de l'éditeur) : le HTML brut hors du code, dont le texte reste (`05-editeur.md`) ; les images, dont la description reste mais pas l'adresse ; les notes de bas de page (`[^1]: …`) |
 | `task` (Advanced Checklist) | `rich` | Un titre `##` par groupe, puis ses tâches à faire, puis ses tâches faites (l'ordre de l'extension). Une tâche tapée mais pas ajoutée (`draft`) devient une case à faire ; une tâche sur plusieurs lignes garde ses retours à la ligne (`checklists.ts`) |
-| `task` (Simple Task Editor) | `rich` | Une case par ligne `- [ ]` / `- [x]` (aussi `*`, `[X]`) ; les autres lignes deviennent des paragraphes |
+| `task` (Simple Task Editor) | `rich` | Une case par ligne `- [ ]` / `- [x]` (aussi `*`, `[X]`) ; les autres lignes deviennent des paragraphes. Une tâche tapée mais pas ajoutée (`unsavedTask`) devient une case à faire |
 | `code` | `code` | Texte tel quel (fins de ligne `\r\n` ramenées à `\n`). Langage : celui que l'éditeur de code a gardé dans `appData` (`mode`, `language`… ; noms CodeMirror et types MIME reconnus), sinon une détection simple (`<?php`, `fn … ->`, `SELECT … FROM`, JSON valide…), à défaut `plaintext` (`code-language.ts`) |
 | `super` | `rich` | État Lexical → document de l'éditeur (ci-dessous). S'il n'est pas du JSON Lexical : importé comme texte brut, et signalé |
 | `rich-text` (éditeur Plus, HTML) | `rich` | HTML → document de l'éditeur, par les règles de lecture HTML de l'éditeur lui-même, après un nettoyage (ci-dessous) |
@@ -129,24 +129,26 @@ Les notes d'avant `noteType` sont reconnues par leur `editorIdentifier` (Plus, B
 |---|---|
 | `paragraph` | paragraphe (les paragraphes vides, qui servaient d'espacement, disparaissent) |
 | `heading` (`tag` h1…h6) | titre 1 à 3 (h4 et plus ramenés à 3) ; un `linebreak` dans un titre devient une espace |
-| `list` (`bullet` / `number` / `check`) + `listitem` | liste à puces / numérotée / checklist (`checked` absent = à faire). La liste imbriquée, que Lexical range dans un élément à part, est rattachée à l'élément précédent (un texte vide lui est donné s'il n'y en a pas) |
+| `list` (`bullet` / `number` / `check`) + `listitem` | liste à puces / numérotée (qui garde son premier numéro, `start`) / checklist (`checked` absent = à faire). La liste imbriquée, que Lexical range dans un élément à part, est rattachée à l'élément précédent (un texte vide lui est donné s'il n'y en a pas) |
 | `quote` | citation |
 | `code` (`language`) + `code-highlight`, `linebreak`, `tab` | bloc de code, langage ramené à la liste V1 (inconnu : sans langage) |
 | `text` (`format` : 1 gras, 2 italique, 4 barré, 16 code) | marques correspondantes ; souligné (8), indice, exposant, surlignage : texte sans mise en forme |
 | `link` / `autolink` (`url`) | lien, seulement `http:`, `https:` et `mailto:` ; sinon le texte seul |
 | `hashtag`, `emoji`, `keyword`… | texte |
 | `table` / `tablerow` / `tablecell` | tableau GFM : la première ligne devient l'en-tête (GFM en exige une, Lexical n'en met pas toujours) |
-| nœud inconnu | son texte est gardé (sections repliables…), et il est signalé ; un nœud sans texte (`snfile`, image…) est ignoré et signalé |
+| nœud inconnu | son texte est gardé (sections repliables…), et la note est signalée une fois (« mise en page simplifiée ») ; un nœud sans texte (`snfile`, image…) est ignoré et signalé par son nom |
 
 ### HTML → document (`html.ts`)
 
 Le HTML est lu par `DOMParser` : un document jamais affiché, dont les scripts ne s'exécutent pas et dont les images ne se chargent pas (la CSP de l'application n'autorise de toute façon aucune adresse extérieure). Avant la lecture par l'éditeur :
 - suppression des scripts, styles, formulaires, boutons, SVG (les boutons « Copier » des blocs de code collés) ;
-- images, vidéos, `iframe`… supprimées et signalées ;
+- images, vidéos, `iframe`, formules (`math`)… supprimées et signalées ;
 - cases à cocher : `<li><input type="checkbox">…` (Markdown rendu) devient une checklist de l'éditeur ; la forme de l'éditeur (`data-type="taskItem"`, `data-checked`) est lue telle quelle ; une liste qui mélange cases et puces garde ses puces, ses cases deviennent le texte `[ ]` / `[x]` ;
 - `h4` à `h6` deviennent des `h3` ; un `<b>` ou `<strong>` de graisse normale (`font-weight: 400`, collé depuis certains éditeurs) n'est pas du gras ;
 - bloc de code : le texte du `<pre>`, avec `<br>` et un élément par ligne comme retours à la ligne ; langage tiré de `class="language-…"` ;
-- cellule de tableau : son contenu devient des paragraphes (sinon une liste dans une cellule sortait du tableau et le coupait en deux).
+- cellule de tableau : son contenu devient des paragraphes (sinon une liste dans une cellule sortait du tableau et le coupait en deux) ; un bloc de code y garde ses lignes, en code en ligne ;
+- un code en ligne dans un lien, ou un lien dans un code en ligne : le code devient du texte, pour que le lien reste (l'éditeur ne met pas de lien sur du code) ;
+- un élément de liste qui commence par un titre : le titre devient son texte ; un élément qui commence par une sous-liste ou un autre bloc reçoit d'abord un texte vide (sinon le titre sortait de la liste, et la sous-liste remontait d'un niveau).
 
 ### Nettoyage commun (`doc.ts`)
 
@@ -154,19 +156,23 @@ Ce que Markdown ne sait pas écrire est retiré, pour que le Markdown se relise 
 - espaces insécables → espaces ; pour le HTML seulement, suites d'espaces réduites à une (comme la page les affichait) ; le texte tapé (texte brut, Lexical, checklists) garde ses espaces, y compris en début de ligne ;
 - espaces sortis des marques (`** b**` n'est pas du gras en Markdown), pas d'espace en fin de ligne ni de retour à la ligne en début ou fin de paragraphe ; deux retours à la ligne de suite (une ligne vide) séparent deux paragraphes ;
 - un code en ligne ne porte pas d'autre marque (avec un lien, le lien l'emporte) ;
-- éléments de liste vides supprimés ; un élément qui ne contient qu'une sous-liste reçoit un texte vide ;
+- une ponctuation au bord d'un gras, d'un italique ou d'un barré, collée à une lettre au dehors, sort de la marque : `**Note:**suite` resterait écrit avec ses étoiles, `**Note**:suite` est bien en gras ;
+- éléments de liste vides supprimés ; un élément qui ne contient qu'une sous-liste reçoit un texte vide ; une liste numérotée garde son premier numéro (une liste d'étapes coupée par un bloc de code reprend à 2) ;
+- un séparateur dans un élément de liste est gardé (`05-editeur.md`) ;
 - blocs de code vides supprimés, lignes vides autour du code retirées ;
-- tableaux : en-tête en première ligne, même nombre de cellules sur chaque ligne, cellules en texte seul.
+- tableaux : en-tête en première ligne, même nombre de cellules sur chaque ligne, cellules en texte seul ; les paragraphes d'une cellule deviennent des lignes (écrites `<br>`), ses lignes vides restent.
 
 ### Vérification de chaque note (`markdown-writer.ts`)
 
 Une seule instance de l'éditeur, sans fenêtre, sert à tout l'import. Pour chaque note riche, le Markdown écrit est relu : il doit redonner **exactement** le document converti, se réécrire à l'identique, et garder **tout le texte** de la note d'origine (espaces mis à part). Sinon la note est importée quand même, et signalée « à vérifier » dans le récapitulatif. Cette vérification a trouvé trois défauts de l'éditeur lui-même, corrigés en phase 4 (`05-editeur.md`) : un sur la vraie sauvegarde de Pierre (une ligne de tirets espacés), deux sur les fixtures. Après correction, les 25 notes de Pierre passent toutes.
 
+Une note que les convertisseurs ne savent pas lire (un champ inattendu) est laissée de côté et comptée parmi les « illisibles » ; les autres notes sont importées. La conversion fait une pause toutes les 40 ms : l'écran affiche « Conversion des notes… 12 / 25 », et quitter l'écran (`Échap`) l'arrête.
+
 ### Dates, épinglage, titres, tailles
 
-- `created_at` ← `created_at` (à défaut `created_at_timestamp`, en microsecondes) ; `updated_at` ← `appData["org.standardnotes.sn"].client_updated_at` (la date qu'affiche Standard Notes), à défaut `updated_at`, puis `updated_at_timestamp`. Sans aucune date : maintenant. Une date dans le futur est ramenée à maintenant par Rust.
+- `created_at` ← `created_at` (à défaut `created_at_timestamp`, en microsecondes) ; `updated_at` ← `appData["org.standardnotes.sn"].client_updated_at` (la date qu'affiche Standard Notes), à défaut `updated_at`, puis `updated_at_timestamp`. Sans aucune date : maintenant. Une date dans le futur est ramenée à maintenant par Rust ; une date au 1er janvier 1970 (une date absente écrite comme une date) ou hors des dates possibles compte comme absente.
 - `pinned` ← `appData["org.standardnotes.sn"].pinned` ou `content.pinned`. Les notes archivées sont importées normalement.
-- Titre sur une seule ligne ; plus de 500 caractères : coupé et signalé.
+- Titre sur une seule ligne ; plus de 500 caractères : coupé et signalé. Un identifiant de plus de 100 caractères (que Rust refuserait, et tout l'import avec lui) : la note est laissée de côté, comptée parmi les illisibles.
 - Plus de 2 Mo une fois convertie : la note n'est pas importée (signalée en rouge dans le récapitulatif).
 - `color` : attribuée par Rust, dans l'ordre des nouvelles notes (`COLOR_ORDER`), en continuant après la couleur de la dernière note, les notes prises de la plus ancienne à la plus récente : deux voisines dans la liste n'ont jamais la même couleur.
 

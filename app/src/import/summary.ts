@@ -8,7 +8,7 @@ const FORMATS: Array<[SourceFormat, string, string]> = [
   ["html", "texte enrichi", "textes enrichis"],
   ["super", "Super", "Super"],
   ["checklist", "checklist", "checklists"],
-  ["code", "code", "code"],
+  ["code", "note de code", "notes de code"],
   ["other", "autre", "autres"],
 ];
 
@@ -37,6 +37,10 @@ const DROPPED: Record<string, string> = {
   embed: "contenus intégrés ignorés",
   canvas: "dessins ignorés",
   snfile: "fichiers joints ignorés",
+  math: "formules ignorées",
+  footnote: "notes de bas de page ignorées",
+  // Lexical nodes holding text Mèche has no block for (collapsible sections…).
+  layout: "mise en page simplifiée, le texte est gardé",
 };
 
 /** What happened to a note, in a few words (« images ignorées »). */
@@ -45,7 +49,9 @@ export function warningText(warning: ImportWarning): string {
     case "not_exact":
       return "pas tout à fait à l'identique, à vérifier";
     case "unsupported": {
-      return DROPPED[warning.detail ?? ""] ?? `élément « ${warning.detail} » ignoré, son texte est gardé`;
+      return Object.hasOwn(DROPPED, warning.detail ?? "")
+        ? DROPPED[warning.detail ?? ""]
+        : `élément « ${warning.detail} » ignoré`;
     }
     case "unreadable":
       return "format inattendu, importée en texte brut";

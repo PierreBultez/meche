@@ -103,17 +103,28 @@ function cleanList(node: JSONContent, options: CleanOptions): JSONContent[] {
       ? [taskItem(item.attrs?.checked === true, content)]
       : [{ type: "listItem", content }];
   });
-  return items.length ? [{ type: node.type, content: items }] : [];
+  if (!items.length) return [];
+  // A numbered list may go on after a code block or a paragraph: its first number is kept.
+  // GFM numbers have 1 to 9 digits.
+  const start = Number(node.attrs?.start);
+  if (node.type === "orderedList" && Number.isInteger(start) && start > 1 && start <= 999_999_999) {
+    return [{ type: node.type, attrs: { start }, content: items }];
+  }
+  return [{ type: node.type, content: items }];
 }
 
 function cleanCodeBlock(node: JSONContent): JSONContent[] {
-  const code = (node.content ?? [])
+  let code = (node.content ?? [])
     .map((child) => (child.type === "hardBreak" ? "\n" : (child.text ?? "")))
     .join("")
     .replace(/\r\n?/g, "\n")
-    .replace(/ /g, " ")
+    .replace(/\u00a0/g, " ")
     // Blank lines around the code carry no meaning, and a final one would not read back.
-    .replace(/^\n+|\s+$/g, "");
+    // (`trimEnd` and a loop rather than a regular expression: see `trimEndSpaces`.)
+    .trimEnd();
+  let first = 0;
+  while (code[first] === "\n") first++;
+  code = code.slice(first);
   if (!code) return [];
   const language = normalizeLanguage(node.attrs?.language as string | undefined);
   return [
@@ -126,13 +137,14 @@ function cleanCodeBlock(node: JSONContent): JSONContent[] {
 }
 
 /** GFM tables: a header row first, the same number of cells on every row, and cells holding
- * text only (docs/05). Anything else in a cell is kept as its text. */
+ * text only (docs/05). Anything else in a cell is kept as its text. A cell is one paragraph:
+ * the editor writes the line breaks of a cell as `<br>`, and reads them back as line breaks. */
 function cleanTable(node: JSONContent, options: CleanOptions): JSONContent[] {
   const rows = (node.content ?? [])
     .map((row) =>
       (row.content ?? []).map((cell) => {
-        const paragraphs = flattenToParagraphs(cell.content ?? [], options);
-        return paragraphs.length ? paragraphs : [paragraph()];
+        const lines = flattenToParagraphs(cell.content ?? [], options);
+        return [paragraph(lines.flatMap((line, index) => (index === 0 ? line : [hardBreak(), ...line])))];
       }),
     )
     .filter((cells) => cells.length > 0);
@@ -152,20 +164,22 @@ function cleanTable(node: JSONContent, options: CleanOptions): JSONContent[] {
   ];
 }
 
-/** The text of any blocks, as paragraphs (lists, headings, code… in a table cell). */
-function flattenToParagraphs(nodes: JSONContent[], options: CleanOptions): JSONContent[] {
+/** The text of any blocks (lists, headings, code… in a table cell), as the inline content of
+ * its lines. */
+function flattenToParagraphs(nodes: JSONContent[], options: CleanOptions): JSONContent[][] {
   return nodes.flatMap((node) => {
     if (node.type === "paragraph" || node.type === "heading") {
-      return cleanBlock({ type: "paragraph", content: node.content }, options);
+      // Not split at empty lines: a cell keeps them (`a<br><br>b`).
+      const content = cleanInline(node.content ?? [], options);
+      return content.length ? [content] : [];
     }
     if (node.type === "codeBlock") {
       const code = (node.content ?? []).map((child) => child.text ?? "").join("");
-      return code.split("\n").flatMap((line) =>
-        line.trim() ? [paragraph([text(line.trim(), [{ type: "code" }])])] : [],
-      );
+      return code.split("\n").flatMap((line) => (line.trim() ? [[text(line.trim(), [{ type: "code" }])]] : []));
     }
     if (node.type === "text" || node.type === "hardBreak") {
-      return cleanBlock(paragraph([node]), options);
+      const content = cleanInline([node], options);
+      return content.length ? [content] : [];
     }
     return flattenToParagraphs(node.content ?? [], options);
   });
@@ -225,21 +239,15 @@ function cleanInline(nodes: JSONContent[], options: CleanOptions): JSONContent[]
       pieces.push(text(value));
       continue;
     }
-    const [, before, middle, after] = /^(\s*)([\s\S]*?)(\s*)$/.exec(value) ?? ["", "", value, ""];
+    const middle = value.trim();
+    const before = value.slice(0, value.length - value.trimStart().length);
+    const after = value.slice(value.trimEnd().length);
     if (before) pieces.push(text(before));
     if (middle) pieces.push(text(middle, marks));
     if (after) pieces.push(text(after));
   }
   // 2. Neighbours with the same marks become one text; spaces around them are collapsed.
-  const merged: JSONContent[] = [];
-  for (const piece of pieces) {
-    const last = merged[merged.length - 1];
-    if (piece.type === "text" && last?.type === "text" && sameMarks(last.marks ?? [], piece.marks ?? [])) {
-      merged[merged.length - 1] = text(last.text + (piece.text ?? ""), piece.marks ?? []);
-    } else {
-      merged.push(piece);
-    }
-  }
+  const merged = mergeNeighbours(pieces);
   if (options.collapseSpaces) {
     for (let index = 1; index < merged.length; index++) {
       const previous = merged[index - 1];
@@ -258,7 +266,7 @@ function cleanInline(nodes: JSONContent[], options: CleanOptions): JSONContent[]
     let value = node.text ?? "";
     const next = merged[index + 1];
     const previous = merged[index - 1];
-    if (!next || next.type === "hardBreak") value = value.replace(/[ \t]+$/, "");
+    if (!next || next.type === "hardBreak") value = trimEndSpaces(value);
     if (options.collapseSpaces && (!previous || previous.type === "hardBreak")) {
       value = value.replace(/^[ \t]+/, "");
     }
@@ -268,7 +276,75 @@ function cleanInline(nodes: JSONContent[], options: CleanOptions): JSONContent[]
   // 4. No line break at the start or the end.
   while (content[0]?.type === "hardBreak") content.shift();
   while (content[content.length - 1]?.type === "hardBreak") content.pop();
-  return content;
+  return mergeNeighbours(readableDelimiters(content));
+}
+
+/** Neighbouring texts with the same marks, as one text. */
+function mergeNeighbours(pieces: JSONContent[]): JSONContent[] {
+  const merged: JSONContent[] = [];
+  for (const piece of pieces) {
+    const last = merged[merged.length - 1];
+    if (piece.type === "text" && last?.type === "text" && sameMarks(last.marks ?? [], piece.marks ?? [])) {
+      merged[merged.length - 1] = text(last.text + (piece.text ?? ""), piece.marks ?? []);
+    } else {
+      merged.push(piece);
+    }
+  }
+  return merged;
+}
+
+/** Marks written with `*`, `_` or `~` around their text. */
+const DELIMITED = new Set(["bold", "italic", "strike"]);
+const PUNCTUATION = /[\p{P}\p{S}]/u;
+/** A letter or a digit: neither a space nor a punctuation mark. */
+const isWordChar = (char: string | undefined) => Boolean(char) && !/\s/u.test(char!) && !PUNCTUATION.test(char!);
+
+/**
+ * Markdown only reads `**…**` as bold when the text inside does not end with a punctuation mark
+ * glued to a letter outside: `**Note:**suite` stays as typed, stars included. The same goes for
+ * the start (`mot**(gras)**`) and for italic and strikethrough. Such punctuation marks move out
+ * of the mark: `**Note**:suite` is bold again, which matters more than the bold colon.
+ */
+function readableDelimiters(content: JSONContent[]): JSONContent[] {
+  const result: JSONContent[] = [];
+  content.forEach((node, index) => {
+    if (node.type !== "text" || !node.text) {
+      result.push(node);
+      return;
+    }
+    const marks = node.marks ?? [];
+    const has = (other: JSONContent | undefined, type: string) => other?.marks?.some((mark) => mark.type === type) ?? false;
+    const previous = content[index - 1];
+    const next = content[index + 1];
+    // The marks that open on this text, and those that close on it.
+    const opening = marks.filter((mark) => DELIMITED.has(mark.type) && !has(previous, mark.type)).map((mark) => mark.type);
+    const closing = marks.filter((mark) => DELIMITED.has(mark.type) && !has(next, mark.type)).map((mark) => mark.type);
+    const chars = Array.from(node.text);
+    let first = 0;
+    let last = chars.length;
+    if (opening.length && isWordChar(Array.from(previous?.type === "text" ? (previous.text ?? "") : "").pop())) {
+      while (first < last && PUNCTUATION.test(chars[first])) first++;
+    }
+    if (closing.length && isWordChar(next?.type === "text" ? Array.from(next.text ?? "")[0] : undefined)) {
+      while (last > first && PUNCTUATION.test(chars[last - 1])) last--;
+    }
+    const without = (types: string[]) => marks.filter((mark) => !types.includes(mark.type));
+    if (first > 0) result.push(text(chars.slice(0, first).join(""), without(opening)));
+    if (last > first) result.push(text(chars.slice(first, last).join(""), marks));
+    if (last < chars.length) result.push(text(chars.slice(Math.max(first, last)).join(""), without(closing)));
+  });
+  return result;
+}
+
+/**
+ * `value` without the spaces and tabs at its end. A loop, not `/[ \t]+$/`: a backup is not
+ * trusted, and that expression takes a time quadratic in a long run of spaces inside the text
+ * (security review, phase 4).
+ */
+export function trimEndSpaces(value: string): string {
+  let end = value.length;
+  while (end > 0 && (value[end - 1] === " " || value[end - 1] === "\t")) end--;
+  return value.slice(0, end);
 }
 
 /** Splits inline content at empty lines (two line breaks in a row, or a line of spaces): an

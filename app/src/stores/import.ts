@@ -16,6 +16,10 @@ export const useImportStore = defineStore("import", () => {
   const triage = ref<Triage | null>(null);
   /** Decisions that « Annuler » can take back, the latest last. */
   const history = ref<TriageUndo[]>([]);
+  /** While a backup is converted: the notes done, out of how many. */
+  const progress = ref<{ done: number; total: number } | null>(null);
+  /** Stops the conversion under way, if any (`forgetPlan`). */
+  let reading: AbortController | null = null;
 
   /** Notes still waiting for the triage (0 before `loadTriage`). */
   const waiting = computed(() => triage.value?.cards.length ?? 0);
@@ -25,12 +29,32 @@ export const useImportStore = defineStore("import", () => {
    * The converters (and the editor they use) are loaded only now: they stay out of the start.
    */
   async function chooseBackup(): Promise<boolean> {
-    const backup = await readImportFile();
-    if (backup === null) return false;
-    const { planImport } = await import("../import/plan");
-    plan.value = planImport(backup);
-    result.value = null;
-    return true;
+    forgetPlan();
+    const controller = new AbortController();
+    reading = controller;
+    try {
+      const backup = await readImportFile();
+      // Left meanwhile (Échap while Rust was reading the file): nothing to show any more.
+      if (backup === null || controller.signal.aborted) return false;
+      const { planImport } = await import("../import/plan");
+      const converted = await planImport(backup, {
+        signal: controller.signal,
+        onProgress: (done, total) => {
+          progress.value = { done, total };
+        },
+      });
+      plan.value = converted;
+      result.value = null;
+      return true;
+    } catch (error) {
+      if (controller.signal.aborted) return false;
+      throw error;
+    } finally {
+      if (reading === controller) {
+        reading = null;
+        progress.value = null;
+      }
+    }
   }
 
   /** Writes the notes of the plan, then shows them in the list and the triage. */
@@ -41,11 +65,16 @@ export const useImportStore = defineStore("import", () => {
     result.value = imported;
     plan.value = null;
     history.value = [];
-    await Promise.all([loadTriage(), notes.refresh().catch((error: unknown) => console.error("could not reload the list", error))]);
+    // The notes are in: a failure to show them is not a failed import.
+    await Promise.all([reloadTriage(), refreshList()]);
     return imported;
   }
 
+  /** Forgets the summary, and stops the conversion under way. */
   function forgetPlan(): void {
+    reading?.abort();
+    reading = null;
+    progress.value = null;
     plan.value = null;
     result.value = null;
   }
@@ -53,6 +82,12 @@ export const useImportStore = defineStore("import", () => {
   async function loadTriage(): Promise<Triage> {
     triage.value = await getTriage();
     return triage.value;
+  }
+
+  /** `loadTriage` after a command that went through: its failure must not look like the
+   * command's own (« Impossible d'appliquer ce choix » for a choice that was applied). */
+  async function reloadTriage(): Promise<void> {
+    await loadTriage().catch((error: unknown) => console.error("could not reload the triage", error));
   }
 
   /** Applies a decision to the note on top of the queue. */
@@ -63,7 +98,7 @@ export const useImportStore = defineStore("import", () => {
       history.value.push(await triageDecide(card.id, decision));
     } finally {
       // Even after a failure: the note may have changed meanwhile (trashed elsewhere…).
-      await loadTriage();
+      await reloadTriage();
     }
     if (decision !== "skip" && decision !== "keep") await refreshList();
   }
@@ -75,7 +110,7 @@ export const useImportStore = defineStore("import", () => {
     try {
       await triageUndo(last);
     } finally {
-      await loadTriage();
+      await reloadTriage();
     }
     if (last.changed) await refreshList();
   }
@@ -84,12 +119,12 @@ export const useImportStore = defineStore("import", () => {
   async function finish(): Promise<void> {
     await finishTriage();
     history.value = [];
-    await loadTriage();
+    await reloadTriage();
   }
 
   async function refreshList(): Promise<void> {
     await notes.refresh().catch((error: unknown) => console.error("could not reload the list", error));
   }
 
-  return { plan, result, triage, history, waiting, chooseBackup, runImport, forgetPlan, loadTriage, decide, undo, finish };
+  return { plan, result, triage, history, progress, waiting, chooseBackup, runImport, forgetPlan, loadTriage, decide, undo, finish };
 });

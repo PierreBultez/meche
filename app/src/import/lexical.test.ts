@@ -45,6 +45,16 @@ describe("lexicalToDoc", () => {
     expect(convert(json).markdown).toBe("1. \n   1. Seul");
   });
 
+  it("keeps the number a list starts at", () => {
+    const json = JSON.stringify({ root: { type: "root", children: [{ ...list("number", item([t("quatre")])), start: 4 }] } });
+    expect(convert(json)).toMatchObject({ markdown: "4. quatre", exact: true });
+  });
+
+  it("skips what is not a node among the children", () => {
+    const json = state(p(t("a"), null as unknown as object, 3 as unknown as object, t("b")), null as unknown as object);
+    expect(convert(json)).toMatchObject({ markdown: "ab", exact: true });
+  });
+
   it("reads checked boxes, a missing `checked` being a box to do", () => {
     const json = state(list("check", item([t("Fait")], { checked: true }), item([t("À faire")], { checked: false }), item([t("Aussi")])));
     expect(convert(json).markdown).toBe("- [x] Fait\n- [ ] À faire\n- [ ] Aussi");
@@ -97,13 +107,7 @@ describe("lexicalToDoc", () => {
     const { markdown, warnings, exact } = convert(json);
     expect(markdown).toBe("Titre\n\nDedans\n\na b");
     expect(exact).toBe(true);
-    expect(warnings.map((warning) => warning.detail)).toEqual([
-      "collapsible-container",
-      "collapsible-title",
-      "collapsible-content",
-      "snfile",
-      "inline-image",
-    ]);
+    expect(warnings.map((warning) => warning.detail)).toEqual(["layout", "layout", "layout", "snfile", "inline-image"]);
   });
 
   it("refuses what is not a Lexical state", () => {

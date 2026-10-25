@@ -12,6 +12,7 @@ interface LexicalNode {
   format?: unknown;
   tag?: unknown;
   listType?: unknown;
+  start?: unknown;
   checked?: unknown;
   url?: unknown;
   language?: unknown;
@@ -29,8 +30,11 @@ const FORMAT_MARKS: Array<[number, string]> = [
 /** Inline nodes: inside a paragraph, a heading, a list item… */
 const INLINE_TYPES = new Set(["text", "linebreak", "link", "autolink", "hashtag", "tab", "code-highlight", "emoji", "keyword", "mention"]);
 
+/** The children of `node` that are nodes: a `null` among them must not stop the import. */
 const childrenOf = (node: LexicalNode): LexicalNode[] =>
-  Array.isArray(node.children) ? (node.children as LexicalNode[]) : [];
+  Array.isArray(node.children)
+    ? (node.children as unknown[]).filter((child): child is LexicalNode => Boolean(child) && typeof child === "object")
+    : [];
 const typeOf = (node: LexicalNode): string => (typeof node.type === "string" ? node.type : "");
 
 /**
@@ -77,10 +81,11 @@ function block(node: LexicalNode, warnings: ImportWarning[]): JSONContent[] {
       return [table(node, warnings)];
     default: {
       if (INLINE_TYPES.has(type)) return [paragraph(inline([node], [], warnings))];
-      // Collapsible sections, layouts…: what they hold is kept. Embedded files, images and
-      // other objects without text are dropped, and reported.
+      // Collapsible sections, layouts…: what they hold is kept, and reported once for all of
+      // them (« layout »). Embedded files, images and other objects without text are dropped,
+      // and reported by their name.
       const children = childrenOf(node);
-      warnings.push({ code: "unsupported", detail: type || "?" });
+      warnings.push({ code: "unsupported", detail: children.length ? "layout" : type || "?" });
       if (!children.length) return [];
       return children.every((child) => INLINE_TYPES.has(typeOf(child)))
         ? [paragraph(inline(children, [], warnings))]
@@ -108,7 +113,10 @@ function list(node: LexicalNode, warnings: ImportWarning[]): JSONContent {
     const content = [paragraph(inline(own, [], warnings)), ...nested];
     items.push(listType === "taskList" ? taskItem(item.checked === true, content) : { type: "listItem", content });
   }
-  return { type: listType, content: items };
+  // A numbered list keeps its first number (checked again by the clean-up).
+  return listType === "orderedList" && typeof node.start === "number"
+    ? { type: listType, attrs: { start: node.start }, content: items }
+    : { type: listType, content: items };
 }
 
 /** A code block: its text is in `code-highlight` and `text` nodes, its lines in `linebreak`

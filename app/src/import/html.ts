@@ -6,9 +6,9 @@ import type { ImportWarning } from "./types";
 
 /** Elements dropped with everything inside: scripts, styles, forms, the « Copier » buttons of
  * pasted code blocks… They hold no text of the note. */
-const DROPPED = "script, style, template, noscript, head, meta, link, button, select, textarea, svg, math";
+const DROPPED = "script, style, template, noscript, head, meta, link, button, select, textarea, svg";
 /** Embedded objects: dropped, and reported (the note may have shown something there). */
-const EMBEDDED = "img, picture, video, audio, iframe, object, embed, canvas";
+const EMBEDDED = "img, picture, video, audio, iframe, object, embed, canvas, math";
 
 /**
  * The document of an HTML note, and its text before conversion (to check that nothing was
@@ -35,6 +35,8 @@ export function htmlToDoc(html: string, schema: Schema, warnings: ImportWarning[
   });
   body.querySelectorAll("pre").forEach(prepareCodeBlock);
   body.querySelectorAll("td, th").forEach(flattenCell);
+  keepLinksOfCode(body);
+  body.querySelectorAll("li").forEach(startItemWithText);
   const sourceText = body.textContent ?? "";
   const doc = SchemaParser.fromSchema(schema).parse(body).toJSON() as JSONContent;
   return { doc, sourceText };
@@ -42,10 +44,57 @@ export function htmlToDoc(html: string, schema: Schema, warnings: ImportWarning[
 
 /** Blocks a table cell cannot hold (docs/05: text only): a list item, a heading… becomes a
  * paragraph of the cell; a list around them is removed. Without this, the editor's reader would
- * take them out of the table, and cut it in two. */
+ * take them out of the table, and cut it in two. A code block keeps its lines, as inline code. */
 function flattenCell(cell: Element): void {
+  const page = cell.ownerDocument;
+  cell.querySelectorAll("pre").forEach((pre) => {
+    const lines = (pre.textContent ?? "").split("\n").filter((line) => line.trim());
+    const replacement = page.createElement("p");
+    lines.forEach((line, index) => {
+      if (index > 0) replacement.append(page.createElement("br"));
+      const code = page.createElement("code");
+      code.textContent = line.trim();
+      replacement.append(code);
+    });
+    pre.replaceWith(replacement);
+  });
   cell.querySelectorAll("ul, ol").forEach((list) => list.replaceWith(...Array.from(list.childNodes)));
-  cell.querySelectorAll("li, h1, h2, h3, h4, h5, h6, pre, blockquote, div, dl, dt, dd").forEach((block) => rename(block, "p"));
+  cell.querySelectorAll("li, h1, h2, h3, h4, h5, h6, blockquote, div, dl, dt, dd").forEach((block) => rename(block, "p"));
+}
+
+/**
+ * Inline code cannot hold a link in the editor, nor be in one: its reader would drop the link.
+ * With a link, the link wins (docs/07): the code around or inside it becomes plain text.
+ */
+function keepLinksOfCode(body: HTMLElement): void {
+  const codes = new Set<Element>(body.querySelectorAll("a[href] code"));
+  body.querySelectorAll("code a[href]").forEach((link) => {
+    const code = link.closest("code");
+    if (code) codes.add(code);
+  });
+  for (const code of codes) {
+    if (!code.closest("pre")) code.replaceWith(...Array.from(code.childNodes));
+  }
+}
+
+/** Blocks that cannot be the first thing in a list item of the editor: the item must start with
+ * its text. */
+const BLOCKS = new Set(["UL", "OL", "PRE", "BLOCKQUOTE", "TABLE", "HR", "DL"]);
+
+/**
+ * A list item starting with a heading or a block: its heading becomes its text, and an item
+ * that starts with a block (a sub-list…) gets an empty text first, as in Lexical notes. Without
+ * this, the editor's reader took the heading out of the list, and the sub-list up a level.
+ */
+function startItemWithText(item: Element): void {
+  if (item.getAttribute("data-type") === "taskItem") return;
+  const first = Array.from(item.childNodes).find(
+    (node) => node.nodeType !== Node.TEXT_NODE || node.textContent?.trim(),
+  );
+  if (!first || first.nodeType !== Node.ELEMENT_NODE) return;
+  const element = first as Element;
+  if (/^H[1-6]$/.test(element.tagName)) rename(element, "p");
+  else if (BLOCKS.has(element.tagName)) element.before(item.ownerDocument.createElement("p"));
 }
 
 /** Replaces `element` by an element named `tag`, with the same children and attributes. */

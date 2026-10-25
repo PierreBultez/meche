@@ -22,6 +22,11 @@ const plan = computed(() => store.plan);
 const toImport = computed(() => plan.value?.notes.filter((note) => note.importable).length ?? 0);
 const toCheck = computed(() => (plan.value ? notesToCheck(plan.value) : []));
 const result = computed(() => store.result);
+const chooseLabel = computed(() => {
+  if (busy.value !== "reading") return "Choisir la sauvegarde…";
+  const progress = store.progress;
+  return progress ? `Conversion des notes… ${progress.done} / ${progress.total}` : "Lecture de la sauvegarde…";
+});
 
 async function choose(): Promise<void> {
   busy.value = "reading";
@@ -179,7 +184,7 @@ async function later(): Promise<void> {
           @click="choose"
         >
           <FileUp :size="18" aria-hidden="true" />
-          {{ busy === "reading" ? "Lecture de la sauvegarde…" : "Choisir la sauvegarde…" }}
+          {{ chooseLabel }}
         </button>
       </section>
     </div>

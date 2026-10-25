@@ -71,6 +71,7 @@ describe("text that looks like Markdown stays text", () => {
     "[ ] pas une case",
     "```js",
     "---",
+    "-- ------ ----",
     'Balise <div class="x"> et a < b > c & d',
   ];
 

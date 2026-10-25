@@ -17,8 +17,9 @@ const BLOCK_STARTS: Array<[RegExp, string]> = [
   [/^(\s*)>/, "$1\\>"],
   // "```" or "~~~" code fences
   [/^(\s*)(`{3,}|~{3,})/, "$1\\$2"],
-  // "---", "--", "=" (thematic break, setext heading underline after a line break)
-  [/^(\s*)([-=])(\2*\s*)$/, "$1\\$2$3"],
+  // "---", "--", "=" (thematic break, setext heading underline after a line break), and dashes
+  // with spaces between them ("- - -", "-- ------ ----"), also a thematic break in Markdown
+  [/^(\s*)([-=])((?:\2|[ \t])*)$/, "$1\\$2$3"],
 ];
 
 /** Rules for the lines of a paragraph outside table cells (a cell is one trimmed line). */

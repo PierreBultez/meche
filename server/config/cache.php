@@ -52,8 +52,8 @@ return [
             'path' => storage_path('framework/cache/data'),
             'lock_path' => storage_path('framework/cache/locks'),
             // No `permission`: Laravel would give it to the folders it creates too, and 0664
-            // has no execute bit, so www-data could no longer go through them (every throttled
-            // route would answer 500). Only www-data writes here: PHP-FPM and the cron (docs/09).
+            // has no execute bit, so meche could no longer go through them (every throttled
+            // route would answer 500). Only meche writes here: PHP-FPM and the cron (docs/09).
         ],
 
         'storage' => [

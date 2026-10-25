@@ -1,10 +1,10 @@
 # logrotate for Mèche's log of failed logins (docs/09). Copy to /etc/logrotate.d/meche.
 # Only auth.log: Laravel's own logs are daily files it deletes itself (LOG_DAILY_DAYS).
-# su: the folder is writable by the www-data group, which logrotate refuses without it.
+# su: the folder is writable by the meche group, which logrotate refuses without it.
 # copytruncate: PHP keeps writing to the same file, and fail2ban follows it (never delete it:
 # fail2ban refuses to start when the file of one of its jails is missing).
 /var/www/meche/server/storage/logs/auth.log {
-    su www-data www-data
+    su meche meche
     weekly
     rotate 8
     compress

@@ -71,8 +71,9 @@ return [
             'level' => env('LOG_LEVEL', 'debug'),
             'max_files' => env('LOG_DAILY_DAYS', 14),
             'replace_placeholders' => true,
-            // Group-writable: the deploy user and PHP-FPM (www-data) both write logs (docs/09).
-            'permission' => 0664,
+            // Group-writable, closed to the other users: the deploy user (pierre) and the API's
+            // PHP-FPM and cron (meche) both write logs (docs/09).
+            'permission' => 0660,
         ],
 
         // Failed logins and invitation codes, one file read by fail2ban (docs/09). A single
@@ -82,7 +83,7 @@ return [
             'path' => storage_path('logs/auth.log'),
             'level' => 'warning',
             'replace_placeholders' => true,
-            'permission' => 0664,
+            'permission' => 0660,
         ],
 
         'monthly' => [

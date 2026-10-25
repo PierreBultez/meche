@@ -214,6 +214,11 @@ describe("what the editor writes reads back the same (phase 1 review)", () => {
     ],
     ["three line breaks in a row", [paragraph(text("a"), hardBreak, hardBreak, hardBreak, text("b"))]],
     [
+      "lines that look like a table",
+      [paragraph(text("| a | b |"), hardBreak, text("|---|---|"), hardBreak, text("| 1 | 2 |"))],
+    ],
+    ["a table delimiter without pipes at the ends", [paragraph(text("a | b"), hardBreak, text("--- | ---"))]],
+    [
       "a line break in a task item",
       [
         {

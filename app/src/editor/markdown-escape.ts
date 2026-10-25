@@ -22,6 +22,10 @@ const BLOCK_STARTS: Array<[RegExp, string]> = [
   [/^(\s*)([-=])((?:\2|[ \t])*)$/, "$1\\$2$3"],
 ];
 
+/** The line under a table's header in GFM ("|---|---|", "--- | :---:"): with it, the line above
+ * would become a table. Its pipes are escaped. */
+const TABLE_DELIMITER_ROW = /^\s*\|?\s*:?-+:?\s*(\|\s*:?-+:?\s*)+\|?\s*$|^\s*\|\s*:?-+:?\s*\|\s*$/;
+
 /** Rules for the lines of a paragraph outside table cells (a cell is one trimmed line). */
 const LINE_STARTS: Array<[RegExp, string]> = [
   // Leading spaces or tabs: read back, they would be dropped, make an indented code block from
@@ -41,7 +45,8 @@ export function escapeBlockStarts(markdown: string, inTableCell = false): string
       // read as a blank line). At the end of the paragraph a backslash would show as text: the
       // spaces are kept, the first one as an entity.
       if (!inTableCell && line === "  ") return lines[index + 1] ? "\\" : "&#32; ";
-      return rules.reduce((text, [pattern, replacement]) => text.replace(pattern, replacement), line);
+      const unpiped = !inTableCell && TABLE_DELIMITER_ROW.test(line) ? line.replace(/\|/g, "\\|") : line;
+      return rules.reduce((text, [pattern, replacement]) => text.replace(pattern, replacement), unpiped);
     })
     .join("\n");
 }

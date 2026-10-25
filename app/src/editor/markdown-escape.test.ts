@@ -18,6 +18,9 @@ describe("escapeBlockStarts", () => {
     ["-- ------ ----", "\\-- ------ ----"],
     ["--  --", "\\--  --"],
     ["= =", "\\= ="],
+    ["|---|---|", "\\|---\\|---\\|"],
+    ["--- | :---:", "--- \\| :---:"],
+    ["| --- |", "\\| --- \\|"],
     ["+", "\\+"],
     ["    indenté", "&#32;   indenté"],
     ["\tindenté", "&#9;indenté"],
@@ -38,6 +41,8 @@ describe("escapeBlockStarts", () => {
     "2026 était une année",
     "\\- déjà échappé",
     "a -- b",
+    "| a | b |",
+    "x | y",
     "Mr.Dupont",
     "Abc. trois lettres",
   ])("leaves %j alone", (input) => {

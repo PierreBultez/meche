@@ -51,7 +51,12 @@ Pas de souligné (n'existe pas en Markdown), pas de couleurs, pas d'images en V1
 - TipTap garde toujours un paragraphe vide en fin de document (pour pouvoir cliquer sous un tableau ou un bloc de code) : les lignes vides finales sont retirées à la sauvegarde. Sans cela, un simple clic dans une note la marquait comme modifiée.
 - Un bloc de code sans langage reste du texte brut (`plaintext`) : pas de détection automatique, qui colorait du texte au hasard.
 - Le Markdown écrit par l'éditeur est la forme canonique. Une note écrite autrement (`*` pour les puces, `__gras__`) n'est réécrite qu'à sa première vraie modification, jamais à la simple ouverture : l'éditeur ne sauvegarde que sur une modification réelle.
-- Le HTML brut présent dans un Markdown n'est pas conservé par TipTap. Les notes créées dans Mèche ne peuvent pas en contenir (le `<` tapé est écrit `&lt;`), mais **l'import Standard Notes (phase 4) devra échapper `<`** dans les notes importées pour ne rien perdre.
+- Le HTML brut présent dans un Markdown n'est pas conservé par TipTap. Les notes créées dans Mèche ne peuvent pas en contenir (le `<` tapé est écrit `&lt;`). L'import Standard Notes (phase 4) fait écrire le Markdown par l'éditeur : un `<` d'une note importée est écrit `&lt;` comme un `<` tapé ; seules les notes Markdown de Standard Notes peuvent contenir du HTML, que l'import signale (`07-import-standard-notes.md`).
+
+**Corrigé en phase 4** (trouvé par la vérification de l'import, `07-import-standard-notes.md`) :
+- Une ligne de tirets séparés par des espaces (`- - -`, `-- ------ ----`) était relue comme un séparateur : Markdown prend trois tirets ou plus, espaces permis, pour une ligne horizontale. Son premier tiret est échappé, comme pour une ligne de tirets collés.
+- Des lignes qui ressemblent à un tableau (`| a | b |` puis `|---|---|`, tapées avec des retours à la ligne ou collées) étaient relues comme un tableau. Les barres d'une ligne qui serait lue comme la ligne de séparation sous l'en-tête d'un tableau sont échappées (`\|`).
+- Un retour à la ligne (`Maj+Entrée`) dans une case de checklist cassait la liste à la réouverture : TipTap ne lit que la première ligne d'une case comme son texte, et la ligne suivante, non indentée, terminait la checklist. Les lignes qui suivent un retour à la ligne sont écrites indentées sous la case (`- [ ] Lait  ⏎  demi-écrémé`), et relues dans le même texte (`SafeTaskItem`, `editor/extensions.ts`).
 
 ### Sauvegarde
 - À chaque modification : anti-rebond de **400 ms**, puis sérialisation en Markdown.

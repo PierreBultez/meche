@@ -85,7 +85,8 @@
 | `chrono` (feature `clock`) | Heure locale du titre « (conflit du 22/10 14:05) » : la bibliothèque standard ne connaît pas les fuseaux horaires |
 | `thiserror` | Erreurs typées |
 | `tauri-plugin-opener` | Ouvrir un lien dans le navigateur du système (`Ctrl+clic`) |
-| `tauri-plugin-dialog` | Sélection du fichier d'import |
+| `tauri-plugin-dialog` 2.8 | Sélection du fichier d'import. Utilisé seulement depuis Rust (`read_import_file`) : l'interface n'a aucune permission du greffon (phase 4) |
+| `zip` 9.0 (sans les fonctions par défaut, lecture deflate seulement) | Lecture de la sauvegarde `.zip` de Standard Notes (phase 4) |
 | `tauri-plugin-updater` | Mises à jour automatiques desktop |
 
 Organisation des modules :
@@ -140,14 +141,16 @@ src-tauri/src/
 | `sync_now()` / `get_sync_status()` | Synchro manuelle (attend la fin et retourne l'état) et état courant |
 | `list_devices()` / `revoke_device(id)` | Appareils connectés au compte, déconnexion d'un autre appareil |
 | `list_invitations()` / `create_invitation()` / `delete_invitation(id)` | Codes d'invitation (le code n'est renvoyé qu'à sa création) |
-| `import_notes(notes[])` | Insertion en lot (import Standard Notes) |
+| `read_import_file()` | Ouvre la fenêtre de choix de fichier (dans Rust), lit la sauvegarde Standard Notes (`.zip`, `.txt` ou `.json`) et renvoie ses notes seulement, avec le compte des autres éléments ; `null` si la fenêtre est fermée (`07-import-standard-notes.md`) |
+| `import_notes(notes[])` | Insertion en une transaction des notes converties, sans doublon, et ajout au tri ; retourne `{ imported, alreadyImported }` |
+| `get_triage()` / `triage_decide(id, decision)` / `triage_undo(undo)` / `finish_triage()` | Écran de tri : notes en attente et comptes ; une décision (`keep`, `fuse`, `trash`, `skip`) retourne de quoi l'annuler ; fin du tri |
 | `get_settings()` / `set_settings(patch)` | Réglages locaux |
 
 Événements émis par Rust :
 - `notes-changed` (sans charge utile) : après une autodestruction ou une purge de la corbeille (fil de maintenance toutes les 60 s, `list_notes`, `set_ephemeral`, `trash_note`), ou une synchro qui a modifié des notes visibles → le frontend recharge la liste et la note ouverte. Une note explosée reste affichée en lecture seule ; une note purgée est fermée ; une note dont le texte a changé sur un autre appareil affiche la nouvelle version sur place (docs/04).
 - `sync-status` : l'état complet de la synchro, à chaque changement : `{ state: idle | syncing | offline | error, errorKind, message, loggedIn, serverUrl, email, deviceName, lastSyncAt, clockSkewMs, conflicts }`. `conflicts` (copies de conflit créées) n'est présent que dans l'événement de la synchro qui vient de finir.
 
-Erreurs : une commande qui échoue renvoie `{ kind, message }`. `kind` est un code stable (`database`, `migration`, `io`, `json`, `not_found`, `invalid_input`, `database_lock` ; depuis la phase 3 : `network`, `server`, et les codes d'erreur de l'API connus du frontend : `invalid_credentials`, `invalid_invitation`, `invalid_email`, `email_taken`, `weak_password`, `too_many_invitations`, `unauthorized`, `rate_limited`, `not_meche_server`) ; le frontend affiche son propre message en français (`utils/sync-messages.ts` pour la synchro) et garde `message` pour la console.
+Erreurs : une commande qui échoue renvoie `{ kind, message }`. `kind` est un code stable (`database`, `migration`, `io`, `json`, `not_found`, `invalid_input`, `database_lock` ; depuis la phase 4 : `backup_invalid`, `backup_encrypted`, `backup_too_large`, `backup_location` ; depuis la phase 3 : `network`, `server`, et les codes d'erreur de l'API connus du frontend : `invalid_credentials`, `invalid_invitation`, `invalid_email`, `email_taken`, `weak_password`, `too_many_invitations`, `unauthorized`, `rate_limited`, `not_meche_server`) ; le frontend affiche son propre message en français (`utils/sync-messages.ts` pour la synchro) et garde `message` pour la console.
 
 Extraits de recherche : les correspondances sont marquées par deux caractères Unicode « à usage privé » (U+E000 au début, U+E001 à la fin) plutôt que par des balises `<mark>`. Le frontend découpe l'extrait sur ces caractères et crée lui-même les éléments surlignés : le texte des notes n'est jamais interprété comme du HTML (aucune injection possible, même si une note contient `<script>`).
 

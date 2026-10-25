@@ -107,7 +107,17 @@ CREATE TABLE import_triage (
   note_id   TEXT PRIMARY KEY REFERENCES notes(id) ON DELETE CASCADE,
   position  INTEGER NOT NULL
 );
+
+-- Migration 003 (phase 4) : chaque note importée, par son identifiant dans la sauvegarde
+-- (local uniquement, sans clé étrangère : la ligne survit à la note purgée de la corbeille)
+CREATE TABLE imported_notes (
+  source_id   TEXT PRIMARY KEY,
+  note_id     TEXT NOT NULL,
+  imported_at INTEGER NOT NULL
+);
 ```
+
+Import Standard Notes (phase 4, `07-import-standard-notes.md`) : `import_triage` ne contient que les notes **en attente** de tri, dans l'ordre de `position` (les plus anciennes d'abord, fixé à l'import ; « Passer » donne la position suivant la dernière). Une décision retire la ligne ; les comptes de l'écran final sont dans le réglage `triage_counts` (`{ "kept": 9, "fused": 8, "trashed": 8 }`, `db/triage.rs`), remis à zéro à la fin du tri. `imported_notes` empêche qu'une relance de l'import duplique une note ou fasse revenir une note supprimée pendant le tri. La migration 003 ne touche pas aux tables existantes.
 
 Réglages de la synchro (phase 3, `sync/config.rs`) : `server_url` (adresse de base, sans `/api`), `api_token` (jeton de l'appareil : il ne quitte jamais Rust, ni `get_settings` ni `get_sync_status` ne le renvoient), `account_email` (gardé après une déconnexion, pour prévenir avant de synchroniser l'appareil avec un autre compte), `device_name`, `sync_cursor`, `last_sync_at`, `server_sync_id` (voir `04-synchronisation.md`, « Identité du serveur »). La phase 3 n'a pas demandé de migration 003 : les colonnes `server_rev`, `dirty` et `deleted` existent depuis la migration 001, les index en place suffisent, et les nouveaux réglages sont des clés de la table `settings`.
 
@@ -115,7 +125,9 @@ Réglage de la mèche (phase 2) : une seule clé, `fuse_delay_hours`. Une valeur
 
 Pourquoi `seq` (décidé en phase 0) : l'index FTS5 « à contenu externe » retrouve ses lignes par un identifiant entier. Avec une clé primaire `TEXT`, cet identifiant serait le `rowid` implicite de SQLite, que la documentation ne garantit pas stable (un `VACUUM` peut le renuméroter). Une colonne `INTEGER PRIMARY KEY` explicite, elle, ne change jamais. L'identifiant de la note reste `id` (UUID), unique et synchronisé ; `seq` n'existe que dans la base locale.
 
-Le schéma exact est dans `app/src-tauri/src/db/sql/001_initial.sql` (migration 001, à ne plus modifier une fois publiée : toute évolution passe par une nouvelle migration).
+Le schéma exact est dans `app/src-tauri/src/db/sql/001_initial.sql` (migration 001, à ne plus modifier une fois publiée : toute évolution passe par une nouvelle migration), puis `002_search_decoded_text.sql` et `003_imported_notes.sql`.
+
+Reconstruire la table `notes` (pour changer une contrainte `CHECK`, par exemple) demande de supprimer la vue `notes_search` avant et de la recréer après, avec les déclencheurs de la recherche : SQLite refuse de renommer une table qu'une vue lit. Le test `rebuilding_the_notes_table_keeps_the_rows_that_reference_it` (`db/migrations.rs`) le montre ; il ne reconstruisait plus rien depuis la migration 002, c'est corrigé en phase 4.
 
 Requêtes de recherche :
 ```sql

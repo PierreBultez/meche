@@ -108,59 +108,104 @@ Un groupe peut ne contenir aucune tâche. Les sections ne sont que l'affichage �
 
 ## 3. Conversion selon le type (`noteType`)
 
+Décidé en phase 4 (validé par Pierre) : **chaque convertisseur produit un document de l'éditeur riche** (JSON TipTap), puis **l'éditeur écrit lui-même le Markdown**, avec les règles de `05-editeur.md` (échappements, tableaux, clôtures de code). Le Markdown d'une note importée est donc exactement celui qu'écrirait l'éditeur : l'aller-retour est stable par construction, et aucune dépendance de conversion n'est ajoutée (pas de `turndown`). Code dans `app/src/import/`.
+
 | `noteType` Standard Notes | `kind` Mèche | Conversion de `text` |
 |---|---|---|
-| `plain-text` ou absent | `rich` | Texte tel quel (c'est du Markdown valide dans la grande majorité des cas) |
-| `markdown` | `rich` | Tel quel |
-| `task` (checklist) | `rich` | Deux formats selon l'éditeur (section 2) : JSON de l'Advanced Checklist, ou lignes `- [ ] …` / `- [x] …` → task list GFM |
-| `code` | `code` | Texte tel quel. Langage : lire `appData` si l'éditeur l'y stocke, sinon détection simple (`<?php`, `fn `, `SELECT`, `{`…), à défaut `plaintext` |
-| `super` | `rich` | `text` contient un **état d'éditeur Lexical sérialisé en JSON** → convertisseur Lexical → Markdown (voir ci-dessous) |
-| `rich-text` (ancien éditeur HTML) | `rich` | HTML → Markdown avec `turndown` + plugin GFM (MIT) |
-| autre (`spreadsheet`, `authentication`…) | `code` | Texte brut, langage `plaintext`, signalé dans le rapport d'import |
+| `plain-text` ou absent | `rich` | **Pas du Markdown** : une ligne vide sépare deux paragraphes, chaque retour à la ligne est gardé, et l'éditeur échappe chaque caractère que Markdown lirait autrement (`*`, `_`, `<`, `#`, `|`, `[`…). Le texte s'affiche exactement comme dans Standard Notes (`plain-text.ts`) |
+| `markdown` | `rich` | Lu par l'éditeur, puis réécrit à sa façon (`*` → `-`, `__` → `**`…). Le HTML brut hors du code n'est pas gardé par l'éditeur (`05-editeur.md`) : son texte reste et la note est signalée |
+| `task` (Advanced Checklist) | `rich` | Un titre `##` par groupe, puis ses tâches à faire, puis ses tâches faites (l'ordre de l'extension). Une tâche tapée mais pas ajoutée (`draft`) devient une case à faire ; une tâche sur plusieurs lignes garde ses retours à la ligne (`checklists.ts`) |
+| `task` (Simple Task Editor) | `rich` | Une case par ligne `- [ ]` / `- [x]` (aussi `*`, `[X]`) ; les autres lignes deviennent des paragraphes |
+| `code` | `code` | Texte tel quel (fins de ligne `\r\n` ramenées à `\n`). Langage : celui que l'éditeur de code a gardé dans `appData` (`mode`, `language`… ; noms CodeMirror et types MIME reconnus), sinon une détection simple (`<?php`, `fn … ->`, `SELECT … FROM`, JSON valide…), à défaut `plaintext` (`code-language.ts`) |
+| `super` | `rich` | État Lexical → document de l'éditeur (ci-dessous). S'il n'est pas du JSON Lexical : importé comme texte brut, et signalé |
+| `rich-text` (éditeur Plus, HTML) | `rich` | HTML → document de l'éditeur, par les règles de lecture HTML de l'éditeur lui-même, après un nettoyage (ci-dessous) |
+| autre (`spreadsheet`, `authentication`…) | `code` | Texte brut, langage `plaintext`, signalé dans le récapitulatif |
 
-### Convertisseur Lexical → Markdown (`app/src/import/lexical-to-markdown.ts`)
-Parcours récursif de `root.children`. Nœuds à gérer :
+Les notes d'avant `noteType` sont reconnues par leur `editorIdentifier` (Plus, Bold, Simple Task, Advanced Checklist, Code Editor, éditeurs Markdown, Token Vault, Standard Sheets).
 
-| Nœud Lexical | Markdown |
+### Lexical → document (`lexical.ts`)
+
+| Nœud Lexical | Document de l'éditeur |
 |---|---|
-| `paragraph` | texte + ligne vide |
-| `heading` (`tag`: h1…h6) | `#` × niveau (h4+ ramenés à `###`) |
-| `list` (`listType`: `bullet` / `number` / `check`) | `-` / `1.` / `- [ ]` |
-| `listitem` (`checked`: bool, listes imbriquées dans `children`) | élément, indentation 2 espaces par niveau |
-| `quote` | `> ` |
-| `code` (`language`) + enfants `code-highlight` / `linebreak` | bloc clôturé ```` ```lang ```` |
-| `text` (`format` = masque de bits : 1 gras, 2 italique, 4 barré, 8 souligné, 16 code) | `**`, `*`, `~~`, (souligné ignoré), `` ` `` |
-| `link` / `autolink` (`url`) | `[texte](url)` |
-| `linebreak` | saut de ligne |
-| `horizontalrule` | `---` |
-| `table` / `tablerow` / `tablecell` | tableau GFM |
-| nœud inconnu | texte brut des descendants + compteur d'avertissement |
+| `paragraph` | paragraphe (les paragraphes vides, qui servaient d'espacement, disparaissent) |
+| `heading` (`tag` h1…h6) | titre 1 à 3 (h4 et plus ramenés à 3) ; un `linebreak` dans un titre devient une espace |
+| `list` (`bullet` / `number` / `check`) + `listitem` | liste à puces / numérotée / checklist (`checked` absent = à faire). La liste imbriquée, que Lexical range dans un élément à part, est rattachée à l'élément précédent (un texte vide lui est donné s'il n'y en a pas) |
+| `quote` | citation |
+| `code` (`language`) + `code-highlight`, `linebreak`, `tab` | bloc de code, langage ramené à la liste V1 (inconnu : sans langage) |
+| `text` (`format` : 1 gras, 2 italique, 4 barré, 16 code) | marques correspondantes ; souligné (8), indice, exposant, surlignage : texte sans mise en forme |
+| `link` / `autolink` (`url`) | lien, seulement `http:`, `https:` et `mailto:` ; sinon le texte seul |
+| `hashtag`, `emoji`, `keyword`… | texte |
+| `table` / `tablerow` / `tablecell` | tableau GFM : la première ligne devient l'en-tête (GFM en exige une, Lexical n'en met pas toujours) |
+| nœud inconnu | son texte est gardé (sections repliables…), et il est signalé ; un nœud sans texte (`snfile`, image…) est ignoré et signalé |
 
-Tests Vitest sur des fixtures anonymisées issues de la vraie sauvegarde. Le Markdown produit doit ensuite s'ouvrir dans TipTap et passer le test d'aller-retour de `05-editeur.md`.
+### HTML → document (`html.ts`)
+
+Le HTML est lu par `DOMParser` : un document jamais affiché, dont les scripts ne s'exécutent pas et dont les images ne se chargent pas (la CSP de l'application n'autorise de toute façon aucune adresse extérieure). Avant la lecture par l'éditeur :
+- suppression des scripts, styles, formulaires, boutons, SVG (les boutons « Copier » des blocs de code collés) ;
+- images, vidéos, `iframe`… supprimées et signalées ;
+- cases à cocher : `<li><input type="checkbox">…` (Markdown rendu) devient une checklist de l'éditeur ; la forme de l'éditeur (`data-type="taskItem"`, `data-checked`) est lue telle quelle ; une liste qui mélange cases et puces garde ses puces, ses cases deviennent le texte `[ ]` / `[x]` ;
+- `h4` à `h6` deviennent des `h3` ; un `<b>` ou `<strong>` de graisse normale (`font-weight: 400`, collé depuis certains éditeurs) n'est pas du gras ;
+- bloc de code : le texte du `<pre>`, avec `<br>` et un élément par ligne comme retours à la ligne ; langage tiré de `class="language-…"` ;
+- cellule de tableau : son contenu devient des paragraphes (sinon une liste dans une cellule sortait du tableau et le coupait en deux).
+
+### Nettoyage commun (`doc.ts`)
+
+Ce que Markdown ne sait pas écrire est retiré, pour que le Markdown se relise en exactement le même document :
+- espaces insécables → espaces ; pour le HTML seulement, suites d'espaces réduites à une (comme la page les affichait) ; le texte tapé (texte brut, Lexical, checklists) garde ses espaces, y compris en début de ligne ;
+- espaces sortis des marques (`** b**` n'est pas du gras en Markdown), pas d'espace en fin de ligne ni de retour à la ligne en début ou fin de paragraphe ; deux retours à la ligne de suite (une ligne vide) séparent deux paragraphes ;
+- un code en ligne ne porte pas d'autre marque (avec un lien, le lien l'emporte) ;
+- éléments de liste vides supprimés ; un élément qui ne contient qu'une sous-liste reçoit un texte vide ;
+- blocs de code vides supprimés, lignes vides autour du code retirées ;
+- tableaux : en-tête en première ligne, même nombre de cellules sur chaque ligne, cellules en texte seul.
+
+### Vérification de chaque note (`markdown-writer.ts`)
+
+Une seule instance de l'éditeur, sans fenêtre, sert à tout l'import. Pour chaque note riche, le Markdown écrit est relu : il doit redonner **exactement** le document converti, se réécrire à l'identique, et garder **tout le texte** de la note d'origine (espaces mis à part). Sinon la note est importée quand même, et signalée « à vérifier » dans le récapitulatif. Cette vérification a trouvé trois défauts de l'éditeur lui-même, corrigés en phase 4 (`05-editeur.md`) : un sur la vraie sauvegarde de Pierre (une ligne de tirets espacés), deux sur les fixtures. Après correction, les 25 notes de Pierre passent toutes.
+
+### Dates, épinglage, titres, tailles
+
+- `created_at` ← `created_at` (à défaut `created_at_timestamp`, en microsecondes) ; `updated_at` ← `appData["org.standardnotes.sn"].client_updated_at` (la date qu'affiche Standard Notes), à défaut `updated_at`, puis `updated_at_timestamp`. Sans aucune date : maintenant. Une date dans le futur est ramenée à maintenant par Rust.
+- `pinned` ← `appData["org.standardnotes.sn"].pinned` ou `content.pinned`. Les notes archivées sont importées normalement.
+- Titre sur une seule ligne ; plus de 500 caractères : coupé et signalé.
+- Plus de 2 Mo une fois convertie : la note n'est pas importée (signalée en rouge dans le récapitulatif).
+- `color` : attribuée par Rust, dans l'ordre des nouvelles notes (`COLOR_ORDER`), en continuant après la couleur de la dernière note, les notes prises de la plus ancienne à la plus récente : deux voisines dans la liste n'ont jamais la même couleur.
 
 ## 4. Déroulement dans l'application
 
-1. Réglages → « Importer depuis Standard Notes » → sélection du fichier (`tauri-plugin-dialog`).
-2. Analyse en TypeScript (frontend) → **récapitulatif** : « 104 notes trouvées : 52 texte, 21 checklists, 9 code, 22 Super. 3 éléments non convertibles parfaitement. »
-3. Bouton « Importer » → commande Rust `import_notes(notes[])` : insertion en une transaction, `dirty = 1` (elles partiront au serveur à la prochaine synchro). Les notes importées sont ajoutées à la table `import_triage`.
-4. Proposition immédiate : « Faire le tri maintenant ? (environ 10 minutes) » → écran de tri. Possible aussi plus tard depuis les réglages.
+1. Réglages › Import › « Importer depuis Standard Notes » (aussi dans la palette `Ctrl+K`) → écran `/import`.
+2. « Choisir la sauvegarde… » → commande Rust `read_import_file` : **Rust ouvre lui-même** la fenêtre de choix de fichier (`tauri-plugin-dialog`, utilisé seulement depuis Rust : l'interface n'a ni chemin ni permission sur les fichiers), lit le `.zip` (`Standard Notes Backup and Import File.txt`, sinon le premier `.txt` / `.json` à la racine qui est une sauvegarde) ou le `.txt` / `.json` choisi, 64 Mo au plus même à l'intérieur d'un zip, reconnaît une sauvegarde chiffrée, et **n'envoie à l'interface que les notes** (les fichiers joints et leurs clés, les extensions et les réglages sont seulement comptés). Erreurs : `backup_invalid`, `backup_encrypted`, `backup_too_large`, `backup_location` (une adresse sans chemin, les `content://` d'Android : phase 5).
+3. Conversion en TypeScript (`plan.ts`, chargé à la demande avec l'éditeur) → **récapitulatif** : « 25 notes trouvées : 3 textes, 9 textes enrichis, 6 Super, 7 checklists. », « Tout a été converti à l'identique. » ou la liste des notes non converties parfaitement et pourquoi, puis ce qui n'est pas importé (notes de la corbeille de Standard Notes, fichiers joints, étiquettes, extensions et réglages). Rien n'est écrit avant « Importer ».
+4. « Importer 25 notes » → commande Rust `import_notes(notes[])` (`db/import.rs`) : chaque note est vérifiée (titre, contenu, langage, dates), puis toutes sont écrites **en une transaction** (toutes ou aucune), `server_rev = 0`, `dirty = 1` (elles partent au serveur à la prochaine synchro), et ajoutées à `import_triage`, les plus anciennes d'abord.
+5. « Faire le tri maintenant ? (environ 3 min) » → écran de tri ; ou « Plus tard » : le tri reste proposé dans les réglages (« Reprendre le tri (n notes) ») et la palette.
 
-Un import relancé avec le même fichier ne doit pas créer de doublons : conserver l'UUID Standard Notes comme `id` s'il est valide, et ignorer les ID déjà présents.
+**Pas de doublons.** L'identifiant Standard Notes devient l'`id` de la note (en minuscules ; un identifiant qui n'est pas un UUID donne un nouvel UUID v7). La table locale `imported_notes` (migration 003) retient chaque note importée par son identifiant dans la sauvegarde : relancer l'import avec le même fichier n'importe que les nouvelles, et **ne fait jamais revenir une note supprimée** pendant le tri. Une note déjà dans Mèche (reçue d'un autre appareil, ou tombstone) est aussi ignorée. Le résultat le dit : « Rien de nouveau : ces notes sont déjà dans Mèche. » Limite connue : sur un autre appareil, qui n'a pas fait l'import, une note supprimée partout puis purgée de la base locale reviendrait si cet appareil importait la même sauvegarde ; le serveur garde alors son tombstone et la synchro en fait une copie « (conflit du …) ».
 
-## 5. Écran de tri
+## 5. Écran de tri (`/tri`)
 
 Objectif : faire le ménage de 100 notes en ~10 minutes.
 
-- Une note à la fois, en **carte** : titre, date de dernière modification (« modifiée il y a 2 ans »), aperçu des premières lignes (repliable / dépliable).
-- Ordre : **les plus anciennes d'abord** (`updated_at` croissant), car ce sont les plus susceptibles d'être jetables.
-- Quatre actions, avec raccourcis clavier (desktop) et gestes (mobile) :
+- Une note à la fois, en **carte** aux couleurs de la note : titre, « Modifiée il y a 2 ans », et la note elle-même en lecture seule (éditeur riche ou CodeMirror, chargés à la demande), repliée sur ses premières lignes, avec « Afficher toute la note » / « Replier » quand elle dépasse.
+- Ordre : **les plus anciennes d'abord** (`updated_at` croissant, fixé à l'import ; une note passée va à la fin).
+- Quatre actions, en boutons et au clavier (desktop), et par glissement sur un écran tactile :
 
-| Action | Clavier | Mobile | Effet |
+| Action | Clavier | Tactile | Effet |
 |---|---|---|---|
 | Garder | `G` ou `→` | glisser à droite | Rien |
 | Mèche | `E` | bouton | Allume la mèche, avec le délai du réglage `fuse_delay_hours` |
 | Supprimer | `S` ou `←` | glisser à gauche | Corbeille (récupérable 7 jours) |
 | Passer | `Espace` | bouton | Repoussée à la fin |
+| Annuler | `Ctrl+Z` | bouton | Reprend le dernier choix, autant de fois que voulu pendant la séance |
 
-- Barre de progression (« 37 / 104 »), bouton **Annuler** la dernière action, et sortie possible à tout moment : la progression est conservée (`import_triage`).
-- Écran final : « 61 gardées, 12 mèches allumées, 31 à la corbeille ».
+- Une touche maintenue ne décide qu'une fois ; `Espace` et `Entrée` sur un bouton qui a le focus le pressent, comme partout. `Échap` quitte le tri.
+- Barre de progression (« 7 / 25 », notes décidées sur le total), et sortie possible à tout moment : la progression est conservée. Les notes en attente sont les lignes de `import_triage` ; les comptes (gardées, mèches, corbeille) sont dans le réglage `triage_counts` (`db/triage.rs`), si bien que l'écran final ne change pas quand une note supprimée est purgée de la corbeille. Une note mise à la corbeille ailleurs pendant le tri compte comme « Supprimer » ; une note supprimée définitivement quitte la file.
+- **Annuler** (`triage_undo`) remet la note à sa place dans la file, mèche éteinte ou hors de la corbeille, avec sa date de modification d'avant (la carte dit toujours « il y a 2 ans »). Refusé si la note a changé depuis (restaurée, modifiée ailleurs) : on n'écrase pas ce changement.
+- Chaque choix est une seule transaction Rust (la note et la file ensemble). Mesuré dans le build release : 12 à 28 ms entre la touche et la carte suivante.
+- Écran final : « 9 gardées, 8 mèches allumées, 8 à la corbeille. » → « Voir mes notes » remet les comptes à zéro (`finish_triage`). Un nouvel import pendant un tri inachevé rejoint la même file.
+
+## 6. Données personnelles et tests
+
+- La sauvegarde reste dans `import-samples/` (ignoré par git). Elle a été analysée par des scripts hors du dépôt, qui n'affichent que des structures et des comptes.
+- Aucun journal ne contient le texte d'une note : les erreurs de Rust donnent l'indice et le champ de la note, jamais son contenu ; les erreurs de conversion ne sont pas journalisées.
+- Fixture anonymisée : `app/src/import/__fixtures__/backup.ts` reproduit la structure de la vraie sauvegarde (HTML collé, états Lexical, checklists des deux éditeurs, copies de conflit, fichiers joints…) avec un contenu inventé, plus les types absents (code, Markdown, tableur).
+- Tests Vitest (`app/src/import/*.test.ts`, `views/ImportView.test.ts`, `views/TriageView.test.ts`) : chaque convertisseur, le récapitulatif, et l'**aller-retour dans TipTap** de chaque note convertie (ouverte puis enregistrée sans changement : Markdown identique). Le texte brut est vérifié caractère par caractère après réouverture.
+- Tests Rust (`db/import.rs`, `db/triage.rs`, `db/migrations.rs`, `backup.rs`) : transaction tout ou rien, pas de doublon à la relance, pas de retour d'une note supprimée, couleurs, ordre du tri, chaque décision et son annulation, comptes qui survivent à la purge, migration 003 sur une base de la phase 3, lecture du zip, sauvegarde chiffrée, limite de taille (même pour un zip qui se décompresse beaucoup).

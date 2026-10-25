@@ -95,6 +95,11 @@ describe("what the editor writes reads back the same (phase 1 review)", () => {
   const hardBreak: JSONContent = { type: "hardBreak" };
   const link = (value: string, href: string) => text(value, [{ type: "link", attrs: { href } }]);
   const item = (...content: JSONContent[]): JSONContent => ({ type: "listItem", content });
+  const task = (checked: boolean, ...content: JSONContent[]): JSONContent => ({
+    type: "taskItem",
+    attrs: { checked },
+    content,
+  });
   const cell = (type: "tableCell" | "tableHeader", value: string): JSONContent => ({
     type,
     content: [paragraph(text(value))],
@@ -208,6 +213,48 @@ describe("what the editor writes reads back the same (phase 1 review)", () => {
       ],
     ],
     ["three line breaks in a row", [paragraph(text("a"), hardBreak, hardBreak, hardBreak, text("b"))]],
+    [
+      "a line break in a task item",
+      [
+        {
+          type: "taskList",
+          content: [
+            task(false, paragraph(text("Lait"), hardBreak, text("demi-écrémé"), hardBreak, text("- bio"))),
+            task(true, paragraph(text("Pain"))),
+          ],
+        },
+      ],
+    ],
+    [
+      "a line break in a nested task item",
+      [
+        {
+          type: "taskList",
+          content: [
+            task(
+              false,
+              paragraph(text("Courses")),
+              { type: "taskList", content: [task(true, paragraph(text("Lait"), hardBreak, text("entier")))] },
+            ),
+          ],
+        },
+      ],
+    ],
+    [
+      "a task item with a line break and sub-items",
+      [
+        {
+          type: "taskList",
+          content: [
+            task(
+              false,
+              paragraph(text("Valise"), hardBreak, text("la grande")),
+              { type: "taskList", content: [task(false, paragraph(text("Pulls")))] },
+            ),
+          ],
+        },
+      ],
+    ],
     [
       "two line breaks in a quote",
       [{ type: "blockquote", content: [paragraph(text("a"), hardBreak, hardBreak, text("b"))] }],

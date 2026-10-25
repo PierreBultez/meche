@@ -101,6 +101,46 @@ const SafeListItem = ListItem.extend({
   },
 });
 
+/** Ends with the mark of a line break: two spaces (the text of a task item is read raw). */
+const ENDS_WITH_BREAK = / {2,}$/;
+
+/**
+ * Task item whose text holds line breaks (Maj+Entrée). TipTap reads only the first line of a task
+ * item as its text: the next lines became another paragraph, or, not indented, ended the
+ * checklist. They are written indented under the box, and read back into the same text.
+ */
+const SafeTaskItem = TaskItem.extend({
+  renderMarkdown(node, helpers, context) {
+    const markdown = this.parent?.(node, helpers, context) ?? "";
+    const text = node.content?.[0];
+    // One line of Markdown per line break of the item's own text, right after its first line.
+    const breaks = text?.type === "paragraph" ? (text.content ?? []).filter((child) => child.type === "hardBreak").length : 0;
+    if (!breaks) return markdown;
+    return markdown
+      .split("\n")
+      .map((line, index) => (index >= 1 && index <= breaks ? `  ${line}` : line))
+      .join("\n");
+  },
+  parseMarkdown(token, helpers) {
+    const parsed = this.parent?.(token, helpers) as JSONContent;
+    const [first, second, ...rest] = parsed.content ?? [];
+    const last = first?.content?.[first.content.length - 1];
+    if (
+      first?.type !== "paragraph" ||
+      second?.type !== "paragraph" ||
+      last?.type !== "text" ||
+      !ENDS_WITH_BREAK.test(last.text ?? "")
+    ) {
+      return parsed;
+    }
+    const firstLine = [...(first.content ?? []).slice(0, -1), { ...last, text: (last.text ?? "").replace(ENDS_WITH_BREAK, "") }];
+    const joined = [...firstLine, { type: "hardBreak" }, ...(second.content ?? [])].filter(
+      (child) => child.type !== "text" || child.text,
+    );
+    return { ...parsed, content: [{ ...first, content: joined }, ...rest] };
+  },
+});
+
 // GFM numbers list items with 1 to 9 digits only.
 const GFM_ORDERED_ITEM = /^[ \t]*\d{1,9}[.)](?:[ \t]|$)/;
 const stockOrderedTokenizer = OrderedList.config.markdownTokenizer;
@@ -192,7 +232,7 @@ export function createRichExtensions(options: RichExtensionOptions = {}): AnyExt
     SafeOrderedList,
     SafeLink.configure({ openOnClick: false, autolink: true, linkOnPaste: true }),
     TaskList,
-    TaskItem.configure({ nested: true }),
+    SafeTaskItem.configure({ nested: true }),
     TableKit.configure({ table: false, tableCell: false, tableHeader: false }),
     TidyTable.configure({ resizable: false }),
     InlineTableCell,

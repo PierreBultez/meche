@@ -66,7 +66,7 @@ Pas de souligné (n'existe pas en Markdown), pas de couleurs, pas d'images en V1
 - Un simple clic sur un lien d'une note en lecture seule (corbeille, aperçu du tri) l'ouvrait dans le navigateur : seul `Ctrl+clic` ouvre un lien, dans tous les cas.
 
 **Limites connues** (à reprendre en phase 7, avec l'accord de Pierre) :
-- `marked` 17 (utilisé par `@tiptap/markdown`) met un temps qui croît avec le carré du nombre de caractères échappés (`\*`, `\_`, `\[`…) ou de codes en ligne d'un même paragraphe. Une note de texte de 4 000 lignes de journal (un seul paragraphe, des `_` et des `[`) met environ 3 s à s'ouvrir. `marked` 18 lit le même texte en 0,3 s, mais `@tiptap/markdown` déclare `marked` ^17 : la montée de version est à valider et à tester.
+- `marked` 17 (utilisé par `@tiptap/markdown`) met un temps qui croît avec le carré du nombre de caractères échappés (`\*`, `\_`, `\[`…), de codes en ligne ou de marques de gras et d'italique d'un même paragraphe. Une note de texte de 4 000 lignes de journal (un seul paragraphe, des `_` et des `[`) met environ 3 s à s'ouvrir. `marked` 18 lit le même texte en 0,3 s, mais `@tiptap/markdown` déclare `marked` ^17 : la montée de version est à valider et à tester.
 - Un titre qui finit par `#` précédé d'une espace (`## Langage C #`) perd ce `#` à la réouverture (Markdown y voit la fermeture facultative du titre). Le corriger demande d'étendre l'extension `Heading`, donc d'ajouter `@tiptap/extension-heading` (MIT, déjà installée par StarterKit) aux dépendances directes.
 
 ### Sauvegarde

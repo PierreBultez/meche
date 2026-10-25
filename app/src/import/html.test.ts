@@ -10,7 +10,7 @@ afterAll(() => writer.destroy());
 function convert(html: string): { markdown: string; exact: boolean; warnings: ImportWarning[] } {
   const warnings: ImportWarning[] = [];
   const { doc, sourceText } = htmlToDoc(html, writer.schema, warnings);
-  return { ...writer.write(cleanDoc(doc, { collapseSpaces: true }), sourceText), warnings };
+  return { ...writer.write(cleanDoc(doc, { collapseSpaces: true, warnings }), sourceText), warnings };
 }
 
 describe("htmlToDoc", () => {
@@ -107,6 +107,15 @@ describe("htmlToDoc", () => {
   it("keeps bold and italic readable next to punctuation", () => {
     const html = '<p><b>Note:</b>suite, <i>"cité"</i>mot, mot<b>(gras)</b> et <b>!</b>a</p>';
     expect(convert(html)).toMatchObject({ markdown: '**Note**:suite, *"cité*"mot, mot(**gras)** et !a', exact: true });
+  });
+
+  it("keeps a table far too wide as lines of text, and says so", () => {
+    const html = `<table><tr>${"<td>a</td>".repeat(70)}</tr><tr><td>b</td></tr></table>`;
+    const { markdown, exact, warnings } = convert(html);
+    expect(markdown).toBe(`${Array(70).fill("a").join(" | ")}\n\nb`);
+    // The « | » added between the cells are not text of the note: it is to be checked too.
+    expect(exact).toBe(false);
+    expect(warnings).toEqual([{ code: "unsupported", detail: "big_table" }]);
   });
 
   it("reports formulas", () => {

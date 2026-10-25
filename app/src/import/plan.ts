@@ -211,7 +211,7 @@ function rich(
   warnings: ImportWarning[],
 ): string {
   try {
-    const written = writer.write(cleanDoc(doc, { collapseSpaces }), sourceText);
+    const written = writer.write(cleanDoc(doc, { collapseSpaces, warnings }), sourceText);
     if (!written.exact) warnings.push({ code: "not_exact" });
     return written.markdown;
   } catch {

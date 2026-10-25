@@ -41,10 +41,13 @@ const codeBlockWithToolbar = baseCodeBlock.extend({
  * link itself, in the browser, at the slightest click.
  */
 function onLinkClick(event: MouseEvent): boolean {
-  const href = (event.target as HTMLElement | null)?.closest("a")?.getAttribute("href");
-  if (!href) return false;
+  const link = (event.target as HTMLElement | null)?.closest("a");
+  if (!link) return false;
+  // Even without an address: TipTap writes `href=""` for a link it does not allow (`file:`…),
+  // and following it would reload the app.
   event.preventDefault();
-  if (event.ctrlKey || event.metaKey) {
+  const href = link.getAttribute("href");
+  if (href && (event.ctrlKey || event.metaKey)) {
     openUrl(href).catch((error: unknown) => toasts.error("Impossible d'ouvrir ce lien.", error));
   }
   return true;

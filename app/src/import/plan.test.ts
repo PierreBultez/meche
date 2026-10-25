@@ -367,6 +367,26 @@ describe("crafted notes do not freeze the import (security review, phase 4)", ()
   });
   // A regular expression that backtracks takes minutes on such texts; a linear one, milliseconds.
   const spaces = "a" + " ".repeat(200_000) + "b";
+  // Round 2: work growing with the square of the note (security review, phase 4).
+  const lexical = (...children: object[]) => JSON.stringify({ root: { type: "root", children } });
+  const text = (value: string) => ({ type: "text", text: value, format: 0 });
+  const cell = (value: string) => ({ type: "tablecell", children: [{ type: "paragraph", children: [text(value)] }] });
+  const wideTable = lexical({
+    type: "table",
+    children: [
+      { type: "tablerow", children: Array.from({ length: 1000 }, () => cell("x")) },
+      ...Array.from({ length: 1000 }, () => ({ type: "tablerow", children: [cell("y")] })),
+    ],
+  });
+  const listItem = (children: object[]) => ({ type: "listitem", children });
+  const nestedLists = lexical({
+    type: "list",
+    listType: "bullet",
+    children: [
+      listItem([text("a")]),
+      ...Array.from({ length: 40_000 }, () => listItem([{ type: "list", listType: "bullet", children: [listItem([text("b")])] }])),
+    ],
+  });
   it.each([
     ["plain text full of spaces", { text: spaces, noteType: "plain-text" }],
     ["a title full of spaces", { title: spaces, text: "x", noteType: "plain-text" }],
@@ -376,6 +396,13 @@ describe("crafted notes do not freeze the import (security review, phase 4)", ()
     ["code full of spaces", { text: spaces, noteType: "code" }],
     ["a checklist full of spaces", { text: `- [ ] ${spaces}`, noteType: "task" }],
     ["a table-like line full of spaces", { text: " ".repeat(100_000) + "|x", noteType: "plain-text" }],
+    ["a Super table far wider than its rows", { text: wideTable, noteType: "super" }],
+    [
+      "an HTML table far wider than its rows",
+      { text: `<table><tr>${"<td>x</td>".repeat(1000)}</tr>${"<tr><td>y</td></tr>".repeat(1000)}</table>`, noteType: "rich-text" },
+    ],
+    ["checkboxes after many elements", { text: `<ul><li>${"<i></i>".repeat(3000)}${'<input type="checkbox">'.repeat(3000)}</li></ul>`, noteType: "rich-text" }],
+    ["items holding only a nested list", { text: nestedLists, noteType: "super" }],
   ])("%s", async (_case, content) => {
     const started = performance.now();
     await planImport(backupFromRust([item(content)]), { now: NOW });

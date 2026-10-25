@@ -39,6 +39,7 @@ const DROPPED: Record<string, string> = {
   snfile: "fichiers joints ignorés",
   math: "formules ignorées",
   footnote: "notes de bas de page ignorées",
+  big_table: "tableau trop grand, gardé en lignes de texte",
   // Lexical nodes holding text Mèche has no block for (collapsible sections…).
   layout: "mise en page simplifiée, le texte est gardé",
 };

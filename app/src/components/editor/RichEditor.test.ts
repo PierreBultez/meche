@@ -21,9 +21,9 @@ describe("links of a rich note", () => {
     document.body.innerHTML = "";
   });
 
-  async function link(editable: boolean): Promise<HTMLAnchorElement> {
+  async function link(editable: boolean, content = "Voir [le site](https://example.com/) ici."): Promise<HTMLAnchorElement> {
     mount(RichEditor, {
-      props: { content: "Voir [le site](https://example.com/) ici.", editable },
+      props: { content, editable },
       attachTo: document.body,
       global: { plugins: [createPinia()] },
     });
@@ -51,5 +51,13 @@ describe("links of a rich note", () => {
     click(anchor, { ctrlKey: true });
     await flushPromises();
     expect(opened).toEqual(["https://example.com/"]);
+  });
+
+  it("never follows a link the editor does not allow (an empty address would reload the app)", async () => {
+    const anchor = await link(false, "Voir [le fichier](file:///etc/hosts) ici.");
+    expect(click(anchor).defaultPrevented).toBe(true);
+    click(anchor, { ctrlKey: true });
+    await flushPromises();
+    expect(opened).toEqual([]);
   });
 });

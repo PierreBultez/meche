@@ -113,13 +113,18 @@ function rename(element: Element, tag: string): void {
  * editor's form. A list mixing both keeps its bullets, and its boxes become « [ ] » text.
  */
 function markTaskLists(body: HTMLElement): void {
-  const lists = new Set<Element>();
+  // Each item once, however many boxes it holds: looking at an item for each of its boxes took
+  // a time growing with the square of its length (security review, phase 4).
+  const items = new Set<Element>();
   body.querySelectorAll('li input[type="checkbox"]').forEach((input) => {
     const item = input.closest("li");
     // The editor's own form already says whether the box is checked (`data-checked`).
-    if (!item || item.getAttribute("data-type") === "taskItem") return;
-    if (leadingCheckbox(item) === input && item.parentElement) lists.add(item.parentElement);
+    if (item && item.getAttribute("data-type") !== "taskItem") items.add(item);
   });
+  const lists = new Set<Element>();
+  for (const item of items) {
+    if (leadingCheckbox(item) && item.parentElement) lists.add(item.parentElement);
+  }
   for (const list of lists) {
     const items = Array.from(list.children).filter((child) => child.tagName === "LI");
     const boxes = items.map(leadingCheckbox);

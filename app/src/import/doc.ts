@@ -6,6 +6,7 @@
 // removes what Markdown cannot keep, so that the Markdown reads back as exactly this document.
 import type { JSONContent } from "@tiptap/core";
 import { normalizeLanguage } from "../editor/languages";
+import type { ImportWarning } from "./types";
 
 export type Mark = NonNullable<JSONContent["marks"]>[number];
 
@@ -44,6 +45,8 @@ export interface CleanOptions {
   /** Collapses runs of spaces, as HTML shows them. Off for typed text (plain text, Lexical,
    * checklists), where several spaces in a row were visible and are kept. */
   collapseSpaces: boolean;
+  /** Receives what the clean-up could not keep as it was (a table too big…). */
+  warnings?: ImportWarning[];
 }
 
 /** The clean-up of a converted document (see the top of this file). */
@@ -136,20 +139,38 @@ function cleanCodeBlock(node: JSONContent): JSONContent[] {
   ];
 }
 
+/**
+ * Beyond these, a table is kept as lines of text. Every row is padded to the widest one: a
+ * crafted table (one row of 1,000 cells, then 1,000 rows of one) would become a million cells,
+ * and freeze the import (security review, phase 4).
+ */
+const MAX_TABLE_COLUMNS = 64;
+const MAX_TABLE_CELLS = 20_000;
+
 /** GFM tables: a header row first, the same number of cells on every row, and cells holding
  * text only (docs/05). Anything else in a cell is kept as its text. A cell is one paragraph:
  * the editor writes the line breaks of a cell as `<br>`, and reads them back as line breaks. */
 function cleanTable(node: JSONContent, options: CleanOptions): JSONContent[] {
+  // The inline content of each cell, row by row.
   const rows = (node.content ?? [])
     .map((row) =>
-      (row.content ?? []).map((cell) => {
-        const lines = flattenToParagraphs(cell.content ?? [], options);
-        return [paragraph(lines.flatMap((line, index) => (index === 0 ? line : [hardBreak(), ...line])))];
-      }),
+      (row.content ?? []).map((cell) =>
+        flattenToParagraphs(cell.content ?? [], options).flatMap((line, index) =>
+          index === 0 ? line : [hardBreak(), ...line],
+        ),
+      ),
     )
     .filter((cells) => cells.length > 0);
-  if (!rows.some((cells) => cells.some((paragraphs) => paragraphs.some(hasText)))) return [];
-  const width = Math.max(...rows.map((cells) => cells.length));
+  if (!rows.some((cells) => cells.some((cell) => cell.some(hasText)))) return [];
+  // A loop rather than `Math.max(...)`, which fails on a very long list of rows.
+  const width = rows.reduce((widest, cells) => Math.max(widest, cells.length), 0);
+  if (width > MAX_TABLE_COLUMNS || width * rows.length > MAX_TABLE_CELLS) {
+    options.warnings?.push({ code: "unsupported", detail: "big_table" });
+    // One paragraph per row, its cells separated by « | »: the text is all there.
+    return rows.map((cells) =>
+      paragraph(cells.flatMap((cell, index) => (index === 0 ? cell : [text(" | "), ...cell]))),
+    );
+  }
   return [
     {
       type: "table",
@@ -157,7 +178,7 @@ function cleanTable(node: JSONContent, options: CleanOptions): JSONContent[] {
         type: "tableRow",
         content: Array.from({ length: width }, (_, index) => ({
           type: rowIndex === 0 ? "tableHeader" : "tableCell",
-          content: cells[index] ?? [paragraph()],
+          content: [paragraph(cells[index] ?? [])],
         })),
       })),
     },

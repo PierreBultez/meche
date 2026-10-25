@@ -3,10 +3,9 @@
 # Personal data: real Standard Notes backups (see docs/07). Kept in import-samples/; the names
 # Standard Notes gives them are ignored too, should one be saved or unzipped anywhere else.
 import-samples/
-Standard Notes Backup*
+Standard Notes*Backup*
 *Backup and Import File*
-**/Items/Note/
-**/Items/SN_*/
+**/Items/*/
 
 # Environment files and secrets (CI receives them through GitHub Actions secrets)
 .env

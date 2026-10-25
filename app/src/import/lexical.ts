@@ -107,7 +107,10 @@ function list(node: LexicalNode, warnings: ImportWarning[]): JSONContent {
     const own = children.filter((child) => typeOf(child) !== "list");
     const previous = items[items.length - 1];
     if (!own.length && nested.length && previous) {
-      previous.content = [...(previous.content ?? []), ...nested];
+      // `push` adds to the item's list: rebuilding it each time took a time growing with the
+      // square of the items (security review, phase 4).
+      previous.content ??= [];
+      for (const sublist of nested) previous.content.push(sublist);
       continue;
     }
     const content = [paragraph(inline(own, [], warnings)), ...nested];

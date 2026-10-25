@@ -5,7 +5,8 @@
 set -euo pipefail
 # The code is written by pierre only: the www-data group (PHP of every site on the server) may
 # read it, never change it. Ubuntu's default umask (002) would make every file group-writable.
-# Only storage/ and bootstrap/cache/ are group-writable (docs/09, step 4).
+# Only storage/ is group-writable; bootstrap/cache/ holds PHP files that every artisan run
+# loads, pierre's included, so www-data only reads it (docs/09, step 4).
 umask 022
 
 repo_dir="$1"

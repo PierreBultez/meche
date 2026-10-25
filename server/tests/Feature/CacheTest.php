@@ -3,7 +3,7 @@
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\File;
 
-// PHP-FPM and the cron (www-data) write the cache in production (docs/09): a folder it creates
+// PHP-FPM and the cron (meche) write the cache in production (docs/09): a folder it creates
 // without the execute bit could no longer be gone through, and every throttled route would
 // answer 500.
 it('creates cache folders that their owner can go through', function () {

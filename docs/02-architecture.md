@@ -161,4 +161,4 @@ Le dépôt est public : la sécurité repose sur des secrets (mots de passe, jet
 - Liste des appareils avec déconnexion à distance ; jetons inutilisés depuis 180 jours supprimés.
 - CSP Tauri stricte : aucune connexion réseau depuis la WebView. CORS fermé côté serveur (aucun navigateur n'appelle l'API).
 - Limitation de débit : 5 essais par minute et par IP pour la connexion et l'inscription, 300 synchros par minute et par compte (contre un client qui boucle).
-- Production : `APP_DEBUG=false`, utilisateur MariaDB limité à sa base, `.env` hors du dossier public, fail2ban sur les refus de connexion (voir `09-build-et-deploiement.md`).
+- Production : `APP_DEBUG=false`, utilisateur MariaDB limité à sa base, `.env` hors du dossier public, PHP sous son propre utilisateur système `meche` (les autres sites du serveur ne lisent ni `.env`, ni le cache, ni les journaux ; OPcache vérifie les droits), code modifiable par l'utilisateur de déploiement seul, fail2ban sur les refus de connexion (voir `09-build-et-deploiement.md`).

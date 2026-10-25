@@ -376,6 +376,147 @@ describe("what the editor writes reads back the same (phase 1 review)", () => {
       "two paragraphs in a numbered item",
       [{ type: "orderedList", content: [item(paragraph(text("a")), paragraph(text("b"), hardBreak, text("c")))] }],
     ],
+    // Round 2 of the phase 4 reviews: Markdown read back as raw text inside list items.
+    [
+      "a formatted paragraph after a checklist in a bullet item",
+      [
+        {
+          type: "bulletList",
+          content: [
+            item(
+              paragraph(text("Courses")),
+              { type: "taskList", content: [task(false, paragraph(text("Lait")))] },
+              paragraph(text("Voir "), link("ici", "https://example.com"), text(" "), text("vite", [{ type: "bold" }]), text(" a < b * c")),
+            ),
+          ],
+        },
+      ],
+    ],
+    [
+      "formatting after a line break in a task item under a bullet",
+      [
+        {
+          type: "bulletList",
+          content: [
+            item(
+              paragraph(text("Courses")),
+              { type: "taskList", content: [task(false, paragraph(text("Lait"), hardBreak, text("bio", [{ type: "bold" }]), text(" < 2 €")))] },
+            ),
+          ],
+        },
+      ],
+    ],
+    [
+      "a code block and paragraphs in a task item under a bullet",
+      [
+        {
+          type: "bulletList",
+          content: [
+            item(
+              paragraph(text("Courses")),
+              {
+                type: "taskList",
+                content: [
+                  task(
+                    false,
+                    paragraph(text("Lait")),
+                    { type: "codeBlock", attrs: { language: null }, content: [text("code")] },
+                    paragraph(text("Voir "), text("ici", [{ type: "bold" }])),
+                    paragraph(text("b")),
+                  ),
+                ],
+              },
+            ),
+          ],
+        },
+      ],
+    ],
+    [
+      "a paragraph after a heading in a bullet item",
+      [{ type: "bulletList", content: [item(paragraph(text("a")), { type: "heading", attrs: { level: 3 }, content: [text("titre")] }, paragraph(text("x", [{ type: "bold" }])))] }],
+    ],
+    // TipTap's own reader of numbered lists misread the editor's output (already before phase 4).
+    [
+      "code with numbered lines in a numbered item",
+      [
+        {
+          type: "orderedList",
+          content: [
+            item(paragraph(text("Installer")), { type: "codeBlock", attrs: { language: null }, content: [text("1. npm ci\n2. npm run build\na) x\n  10. y")] }),
+            item(paragraph(text("Lancer"))),
+          ],
+        },
+      ],
+    ],
+    [
+      "a table in a numbered item",
+      [
+        {
+          type: "orderedList",
+          content: [
+            item(paragraph(text("a")), {
+              type: "table",
+              content: [
+                { type: "tableRow", content: [cell("tableHeader", "h1"), cell("tableHeader", "h2")] },
+                { type: "tableRow", content: [cell("tableCell", "1"), cell("tableCell", "2")] },
+              ],
+            }),
+          ],
+        },
+      ],
+    ],
+    [
+      "a code block after a nested numbered list",
+      [
+        {
+          type: "orderedList",
+          content: [
+            item(
+              paragraph(text("Étape")),
+              { type: "orderedList", content: [item(paragraph(text("sous-étape")))] },
+              { type: "codeBlock", attrs: { language: null }, content: [text("code")] },
+            ),
+          ],
+        },
+      ],
+    ],
+    [
+      "a numbered list under a bullet under a numbered item",
+      [
+        {
+          type: "orderedList",
+          content: [
+            item(paragraph(text("a")), {
+              type: "bulletList",
+              content: [item(paragraph(text("b")), { type: "orderedList", content: [item(paragraph(text("c")))] })],
+            }),
+          ],
+        },
+      ],
+    ],
+    [
+      "code lines made of spaces in a numbered item",
+      [{ type: "orderedList", content: [item(paragraph(text("a")), { type: "codeBlock", attrs: { language: null }, content: [text("x\n   \ny")] })] }],
+    ],
+    [
+      "a hashtag around a line break in list items",
+      [
+        { type: "bulletList", content: [item(paragraph(text("#courses"), hardBreak, text("lait, pain"))), item(paragraph(text("Idée"), hardBreak, text("#projet")))] },
+        { type: "orderedList", content: [item(paragraph(text("Idée"), hardBreak, text("#projet"))), item(paragraph(text("autre")))] },
+      ],
+    ],
+    [
+      "a rule after a second paragraph in list items",
+      [
+        { type: "bulletList", content: [item(paragraph(text("a")), paragraph(text("b")), { type: "horizontalRule" })] },
+        { type: "orderedList", content: [item(paragraph(text("c")), paragraph(text("d")), { type: "horizontalRule" })] },
+        { type: "taskList", content: [task(false, paragraph(text("e")), { type: "horizontalRule" }), task(true, paragraph(text("f")), paragraph(text("g")), { type: "horizontalRule" })] },
+      ],
+    ],
+    [
+      "a sub-item that is just a pipe",
+      [{ type: "bulletList", content: [item(paragraph(text("x")), { type: "bulletList", content: [item(paragraph(text("|")))] })] }],
+    ],
     [
       "two line breaks in a quote",
       [{ type: "blockquote", content: [paragraph(text("a"), hardBreak, hardBreak, text("b"))] }],
@@ -452,6 +593,7 @@ describe("a long note is read in a time that grows with its length", () => {
     ["paragraphs", (index) => `ligne ${index}\n\n`],
     ["headings", (index) => `## titre ${index}\n`],
     ["checklists between paragraphs", (index) => `- [x] tâche ${index}\n\ntexte ${index}\n\n`],
+    ["checklists separated by blank lines", (index) => `- [ ] tâche ${index}\n\n`],
     ["tables", (index) => `| a | b |\n| --- | --- |\n| ${index} | x |\n\n`],
     ["numbered lists between headings", (index) => `${index + 1}. point\n## titre\n`],
   ];

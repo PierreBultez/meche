@@ -34,7 +34,9 @@ const ONE_COLUMN_DELIMITER_ROW = /^\s*(?:\|\s*)?:?-+:?\s*(?:\|\s*)?$/;
 function escapeTableDelimiter(line: string): string {
   const delimiter =
     TABLE_DELIMITER_ROW.test(line) || (ONE_COLUMN_DELIMITER_ROW.test(line) && /[|:]/.test(line));
-  if (!delimiter) return line;
+  // Also a line of pipes, colons and dashes only (the "|" of a sub-item: with its "- " in front,
+  // `- |` is a delimiter row, and the item above became a table).
+  if (!delimiter && !(/^[\s|:-]+$/.test(line) && line.includes("|"))) return line;
   return line.includes("|") ? line.replace(/\|/g, "\\|") : line.replace(":", "\\:");
 }
 

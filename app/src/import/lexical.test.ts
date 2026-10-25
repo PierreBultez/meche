@@ -42,7 +42,7 @@ describe("lexicalToDoc", () => {
 
   it("gives an empty text to a nested list with no item above it", () => {
     const json = state(list("number", item([list("number", item([t("Seul")]))])));
-    expect(convert(json).markdown).toBe("1. \n   1. Seul");
+    expect(convert(json)).toMatchObject({ markdown: "1.\n   1. Seul", exact: true });
   });
 
   it("keeps the number a list starts at", () => {

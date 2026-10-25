@@ -96,7 +96,7 @@ const isInline = (node: JSONContent | undefined) => node?.type === "text" || nod
  *   text right in the item.
  */
 function tidyListItem(item: JSONContent): void {
-  if (item.type !== "listItem") return;
+  if (item.type !== "listItem" && item.type !== "taskItem") return;
   const content: JSONContent[] = [];
   let bare: JSONContent | null = null;
   for (const child of item.content ?? []) {
@@ -113,6 +113,66 @@ function tidyListItem(item: JSONContent): void {
   item.content = content[0]?.type === "paragraph" ? content : [{ type: "paragraph" }, ...content];
 }
 
+/** A token of marked, as much as these readers need of it. */
+interface BlockToken {
+  type: string;
+  tokens?: unknown[];
+}
+
+/**
+ * Inside a list item, marked gives the text of a tight list as `text` tokens, not paragraphs,
+ * and TipTap's Text node keeps such a token as raw text: a link or bold placed after a sub-list
+ * came back as `[ici](…)` and `**vite**`, escaped once more at each save (review, phase 4). They
+ * are read as the paragraphs they are.
+ */
+function textAsParagraphs<T>(tokens: T[] | undefined): T[] | undefined {
+  return tokens?.map((token) => {
+    const block = token as BlockToken;
+    return block.type === "text" && Array.isArray(block.tokens) ? ({ ...block, type: "paragraph" } as T) : token;
+  });
+}
+
+/**
+ * A blank line above each `---` line that comes right under a line of text, outside code blocks:
+ * Markdown would read that text as a heading, underlined by the rule (`- a⏎  ---`). Paragraphs
+ * cannot hold such a line themselves (SafeParagraph writes `\---`).
+ */
+function separateRules(markdown: string): string {
+  const lines = markdown.split("\n");
+  const result: string[] = [];
+  let fence: string | null = null;
+  lines.forEach((line, index) => {
+    const trimmed = line.trim();
+    const marks = /^(`{3,}|~{3,})/.exec(trimmed)?.[1];
+    if (fence) {
+      // A fence closes with the same character, at least as many times, and nothing after.
+      if (marks && marks[0] === fence[0] && marks.length >= fence.length && trimmed === marks) fence = null;
+    } else if (marks) {
+      fence = marks;
+    } else if (trimmed === "---" && index > 0 && lines[index - 1].trim()) {
+      result.push("");
+    }
+    result.push(line);
+  });
+  return result.join("\n");
+}
+
+/**
+ * The lines right after the first line of an item, one per line break of its own text, indented
+ * under its text by `width` spaces. Not indented, such a line can end the item: one starting with
+ * `#` does in a list item, any line does in a checklist (review, phase 4).
+ */
+function indentLineBreaks(markdown: string, item: JSONContent, width: number): string {
+  const text = item.content?.[0];
+  const breaks = text?.type === "paragraph" ? (text.content ?? []).filter((child) => child.type === "hardBreak").length : 0;
+  if (!breaks) return markdown;
+  const indent = " ".repeat(width);
+  return markdown
+    .split("\n")
+    .map((line, index) => (index >= 1 && index <= breaks && line ? `${indent}${line}` : line))
+    .join("\n");
+}
+
 /** A list item whose text is empty but which has sub-items. */
 function isEmptiedParent(item: JSONContent | undefined): boolean {
   return (
@@ -126,26 +186,22 @@ function isEmptiedParent(item: JSONContent | undefined): boolean {
 const SafeListItem = ListItem.extend({
   renderMarkdown(node, helpers, context) {
     let markdown = this.parent?.(node, helpers, context) ?? "";
-    // An emptied bullet with sub-items is written "-" alone on its line: the parser reads "- "
-    // followed by a line break as a paragraph, and the sub-items would move up a level.
-    if (context?.parentType === "bulletList" && markdown.startsWith("- \n")) {
-      markdown = `-${markdown.slice(2)}`;
-    }
-    // Right under this item's text, that "-" would underline it as a heading: a blank line
-    // separates them. The same goes for a horizontal rule ("---") right under it.
+    // An emptied item with sub-items is written "-" or "1." alone on its line: the parser reads
+    // "- " followed by a line break as a paragraph, and the sub-items would move up a level.
+    if (/^(-|\d+\.) \n/.test(markdown)) markdown = markdown.replace(" \n", "\n");
+    // Its line breaks: indented under the text, "- " or "1. " wide.
+    markdown = indentLineBreaks(markdown, node, /^(-|\d+\.) ?/.exec(markdown)?.[0].length ?? 2);
+    // Right under this item's text, an emptied sub-item ("-") would underline it as a heading: a
+    // blank line separates them, as for a horizontal rule.
     const [text, next] = node.content ?? [];
-    if (text?.type === "paragraph" && text.content?.length) {
-      if (next?.type === "bulletList" && isEmptiedParent(next.content?.[0])) {
-        markdown = markdown.replace(/\n([ \t]*-)(?=\n)/, "\n\n$1");
-      } else if (next?.type === "horizontalRule") {
-        // The item's own text cannot hold such a line: SafeParagraph escapes it ("\---").
-        markdown = markdown.replace(/\n([ \t]*---)(?=\n|$)/, "\n\n$1");
-      }
+    if (text?.type === "paragraph" && text.content?.length && next?.type === "bulletList" && isEmptiedParent(next.content?.[0])) {
+      markdown = markdown.replace(/\n([ \t]*-)(?=\n)/, "\n\n$1");
     }
+    if (node.content?.some((child) => child.type === "horizontalRule")) markdown = separateRules(markdown);
     return markdown;
   },
   parseMarkdown(token, helpers) {
-    const parsed = this.parent?.(token, helpers);
+    const parsed = this.parent?.({ ...token, tokens: textAsParagraphs(token.tokens) }, helpers);
     for (const item of Array.isArray(parsed) ? parsed : [parsed]) {
       if (item) tidyListItem(item as JSONContent);
     }
@@ -168,44 +224,23 @@ function trailingSpaces(text: string): number {
  */
 const SafeTaskItem = TaskItem.extend({
   renderMarkdown(node, helpers, context) {
-    const markdown = this.parent?.(node, helpers, context) ?? "";
-    const text = node.content?.[0];
     // One line of Markdown per line break of the item's own text, right after its first line.
-    const breaks = text?.type === "paragraph" ? (text.content ?? []).filter((child) => child.type === "hardBreak").length : 0;
-    if (!breaks) return markdown;
-    return markdown
-      .split("\n")
-      .map((line, index) => (index >= 1 && index <= breaks ? `  ${line}` : line))
-      .join("\n");
+    const markdown = indentLineBreaks(this.parent?.(node, helpers, context) ?? "", node, 2);
+    return node.content?.some((child) => child.type === "horizontalRule") ? separateRules(markdown) : markdown;
   },
   parseMarkdown(token, helpers) {
-    const parsed = this.parent?.(token, helpers) as JSONContent;
-    const [first, ...others] = parsed.content ?? [];
-    if (first?.type !== "paragraph" || !others.length) return parsed;
-    const last = first.content?.[first.content.length - 1];
-    // Two spaces at the end of the first line: the mark of a line break.
+    const parsed = this.parent?.({ ...token, nestedTokens: textAsParagraphs(token.nestedTokens) }, helpers) as JSONContent;
+    tidyListItem(parsed);
+    const [first, second, ...rest] = parsed.content ?? [];
+    const last = first?.content?.[first.content.length - 1];
+    // Two spaces at the end of the first line: the mark of a line break. The next lines come as
+    // a paragraph of their own: they are put back into the first one.
     const spaces = last?.type === "text" ? trailingSpaces(last.text ?? "") : 0;
-    // The next lines of the text come as a paragraph of their own, or, in a checklist nested in
-    // another list, as bare text right in the item, which the schema refuses (the note would be
-    // dropped on the next save): they are put back into the first paragraph in both cases.
-    let next: JSONContent[];
-    let rest: JSONContent[];
-    if (isInline(others[0])) {
-      const end = others.findIndex((node) => !isInline(node));
-      next = end === -1 ? others : others.slice(0, end);
-      rest = end === -1 ? [] : others.slice(end);
-    } else if (others[0].type === "paragraph" && spaces >= 2) {
-      next = others[0].content ?? [];
-      rest = others.slice(1);
-    } else {
-      return parsed;
-    }
-    const firstLine = spaces
-      ? [...(first.content ?? []).slice(0, -1), { ...last, text: (last?.text ?? "").slice(0, -spaces) }]
-      : (first.content ?? []);
-    // Without the two spaces, the lines were joined by a plain line break of Markdown: a space.
-    const separator: JSONContent = spaces >= 2 ? { type: "hardBreak" } : { type: "text", text: " " };
-    const joined = [...firstLine, separator, ...next].filter((child) => child.type !== "text" || child.text);
+    if (first?.type !== "paragraph" || second?.type !== "paragraph" || spaces < 2) return parsed;
+    const firstLine = [...(first.content ?? []).slice(0, -1), { ...last, text: (last?.text ?? "").slice(0, -spaces) }];
+    const joined = [...firstLine, { type: "hardBreak" }, ...(second.content ?? [])].filter(
+      (child) => child.type !== "text" || child.text,
+    );
     return { ...parsed, content: [{ ...first, content: joined }, ...rest] };
   },
 });
@@ -217,20 +252,25 @@ const stockTaskListTokenizer = TaskList.config.markdownTokenizer;
 /**
  * The lines a task list starting at the beginning of `src` can take, or null when it does not
  * start with one (after blank lines, which the stock reader skips). The list never goes past a
- * line that is neither blank, nor indented, nor a task: the text is cut right before it.
+ * line that is not indented and is not a task, nor past a blank line followed by a line that is
+ * not indented: the text is cut right before it.
  */
 function taskListLines(src: string): string | null {
   let start = 0;
   let started = false;
+  let afterBlank = false;
   while (start < src.length) {
     const line = lineAt(src, start);
     if (line.trim()) {
       if (!started) {
         if (!TASK_ITEM_LINE.test(line)) return null;
         started = true;
-      } else if (/^\S/.test(line) && !TASK_ITEM_LINE.test(line)) {
+      } else if (/^\S/.test(line) && (afterBlank || !TASK_ITEM_LINE.test(line))) {
         return src.slice(0, start);
       }
+      afterBlank = false;
+    } else if (started) {
+      afterBlank = true;
     }
     start += line.length + 1;
   }
@@ -247,49 +287,12 @@ const SafeTaskList = TaskList.extend({
   },
 });
 
-// GFM numbers list items with 1 to 9 digits only.
-const GFM_ORDERED_ITEM = /^[ \t]*\d{1,9}[.)](?:[ \t]|$)/;
-// A numbered item: its indentation, number and delimiter, the spaces before its text, the text.
-const NUMBERED_LINE = /^([ \t]*)(\d{1,9}[.)])( +)(.*)$/;
-const stockOrderedTokenizer = OrderedList.config.markdownTokenizer;
-
-/** The first `count` lines of `src`, without the line break after them. */
-function firstLines(src: string, count: number): string {
-  let end = -1;
-  for (let line = 0; line < count; line++) {
-    end = src.indexOf("\n", end + 1);
-    if (end === -1) return src;
-  }
-  return src.slice(0, end);
-}
-
 /**
- * TipTap's reader takes the text of a numbered item to start right after "1." instead of after
- * the space that follows: every line under the item kept one space too many. A code block in a
- * numbered list got one more space at each opening, and a checklist in it fell apart. With one
- * more digit per space ("1. " written "01. "), its count is right; the number stays the same.
- */
-function padNumbers(lines: string): string {
-  return lines
-    .split("\n")
-    .map((line) => {
-      const match = NUMBERED_LINE.exec(line);
-      if (!match) return line;
-      const [, indent, marker, spaces, text] = match;
-      // GFM: after 5 spaces or more, or with no text, the item's text starts after one space.
-      const width = spaces.length >= 5 || !text ? 1 : spaces.length;
-      return `${indent}${"0".repeat(width)}${marker}${spaces}${text}`;
-    })
-    .join("\n");
-}
-
-/**
- * Ordered list read the GFM way.
- * - TipTap's own reader also takes letters and roman numerals as numbers: « M. Dupont »,
- *   « Cf. le document » or « a) option » became list items and lost their first word.
- *   Only digits open a list here.
- * - An item whose text is empty ("2. ", possibly with sub-items) is read back with its empty
- *   paragraph: the stock parser made it invalid, and it was dropped on the next save.
+ * Ordered list read by marked's own GFM list reader, like bullet lists. TipTap's reader took any
+ * line that looks like a number ("1.", "a)", « M. Dupont ») for a new item, even inside a code
+ * block or a sub-list, and started an item's text one space too early: code was lost, a table
+ * became text, blocks moved a level, a word was eaten (reviews, phase 4). GFM only takes 1 to 9
+ * digits.
  */
 const SafeOrderedList = OrderedList.extend({
   // No lettered or roman lists (TipTap makes some from a pasted « a) … b) … »): GFM can only
@@ -299,28 +302,15 @@ const SafeOrderedList = OrderedList.extend({
     delete attributes.type;
     return attributes as ReturnType<NonNullable<typeof this.parent>>;
   },
-  markdownTokenizer: stockOrderedTokenizer && {
-    ...stockOrderedTokenizer,
-    tokenize: (src, tokens, lexer) => {
-      if (!GFM_ORDERED_ITEM.test(src)) return undefined;
-      // Only the lines the list may take are padded: a few more at each try, as the stock
-      // reader does, so a long note is not copied again at each of its lists.
-      for (let count = 64; ; count *= 2) {
-        const lines = firstLines(src, count);
-        const token = stockOrderedTokenizer.tokenize(padNumbers(lines), tokens, lexer);
-        if (!token) return undefined;
-        const used = (token.raw ?? "").split("\n").length;
-        // `raw` tells the reader how far the list goes: the lines as written, without the zeros.
-        if (used < count || lines.length === src.length) return { ...token, raw: firstLines(src, used) };
-      }
-    },
-  },
+  // No reader of its own: the `list` tokens come from marked.
+  markdownTokenizer: { name: "orderedList", level: "block", start: () => -1, tokenize: () => undefined },
   parseMarkdown(token, helpers) {
-    const parsed = this.parent?.(token, helpers);
-    for (const list of Array.isArray(parsed) ? parsed : [parsed]) {
-      for (const item of (list as JSONContent | undefined)?.content ?? []) tidyListItem(item);
-    }
-    return parsed as ReturnType<NonNullable<typeof this.parent>>;
+    if (token.type !== "list" || !token.ordered) return [];
+    // Each item goes through SafeListItem, which reads all of its Markdown (TipTap's own reading
+    // of numbered items also kept raw text).
+    const content = helpers.parseChildren((token.items ?? []) as never[]);
+    const start = typeof token.start === "number" ? token.start : 1;
+    return start === 1 ? { type: "orderedList", content } : { type: "orderedList", attrs: { start }, content };
   },
 });
 

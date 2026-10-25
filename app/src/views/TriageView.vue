@@ -132,7 +132,9 @@ function onKeyDown(event: KeyboardEvent): void {
     arrowleft: "trash",
   };
   const key = event.key.toLowerCase();
-  let decision: TriageDecision | undefined = decisions[key];
+  // Maj+← and Maj+→ select text in the preview: not a decision.
+  if (event.shiftKey && key.startsWith("arrow")) return;
+  let decision: TriageDecision | undefined = Object.hasOwn(decisions, key) ? decisions[key] : undefined;
   if (key === " " && !onButton) decision = "skip";
   if (!decision || !card.value) return;
   event.preventDefault();

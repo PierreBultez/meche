@@ -96,11 +96,14 @@ describe("triage screen (docs/07)", () => {
     ]);
   });
 
-  it("ignores a key held down, and keys typed with Ctrl or Alt", async () => {
+  it("ignores a key held down, keys typed with Ctrl or Alt, and Maj with an arrow", async () => {
     await mountTriage();
     await press("g", { repeat: true });
     await press("s", { ctrlKey: true });
     await press("e", { altKey: true });
+    // Maj+← and Maj+→ select text in the preview.
+    await press("ArrowLeft", { shiftKey: true });
+    await press("ArrowRight", { shiftKey: true });
     expect(decisions()).toEqual([]);
   });
 
@@ -136,15 +139,16 @@ describe("triage screen (docs/07)", () => {
 
   it("swipes right to keep, left to trash, on a touch screen", async () => {
     const { wrapper } = await mountTriage();
-    const swipe = async (distance: number, pointerType = "touch") => {
+    const swipe = async (distance: number, pointerType = "touch", end = "pointerup") => {
       const card = wrapper.find("article");
       await card.trigger("pointerdown", { clientX: 200, pointerId: 1, pointerType });
       await card.trigger("pointermove", { clientX: 200 + distance, pointerId: 1, pointerType });
-      await card.trigger("pointerup", { clientX: 200 + distance, pointerId: 1, pointerType });
+      await card.trigger(end, { clientX: 200 + distance, pointerId: 1, pointerType });
       await flushPromises();
     };
     await swipe(40); // Too short: nothing.
     await swipe(200, "mouse"); // With a mouse, the text stays selectable.
+    await swipe(-200, "touch", "pointercancel"); // Taken over by the system: nothing.
     await swipe(160);
     await swipe(-160);
     expect(decisions()).toEqual([

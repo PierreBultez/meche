@@ -70,6 +70,8 @@ function onPointerEnd(event: PointerEvent): void {
   const moved = offset.value;
   start = null;
   offset.value = 0;
+  // A cancelled gesture (the system took it over: a scroll, a back swipe…) decides nothing.
+  if (event.type === "pointercancel") return;
   if (Math.abs(moved) >= SWIPE_PX) emit("swipe", moved > 0 ? "keep" : "trash");
 }
 

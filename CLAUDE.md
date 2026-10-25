@@ -63,6 +63,7 @@ meche/
 8. **Performance** : respecte les budgets de `docs/08-interface.md`. Pas de dépendance lourde sans justification.
 9. **Direction artistique** : aucune couleur en dur dans les composants. Toujours les variables CSS de `docs/11-direction-artistique.md` (jetons d'interface, couleurs de note, thème du code).
 10. **Données personnelles** : ne jamais committer de vraie sauvegarde Standard Notes. Les échantillons de test vont dans `import-samples/` (ignoré par git) ou sont anonymisés dans les fixtures.
+11. **Pull requests** : Claude ouvre une pull request vers `master` sans attendre qu'on la lui demande, dès que c'est judicieux : un lot cohérent, testé et prêt à relire, ou un correctif dont le déploiement a besoin. Il la mène jusqu'à une CI verte, mais ne la fusionne jamais lui-même : Pierre relit et fusionne.
 
 ## Commandes usuelles
 

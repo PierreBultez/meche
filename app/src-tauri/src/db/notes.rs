@@ -511,8 +511,9 @@ fn note_from_row(row: &Row<'_>) -> rusqlite::Result<Note> {
     })
 }
 
-/// Colors of the 2 most recently created notes, newest first.
-fn recent_colors(conn: &Connection) -> Result<Vec<NoteColor>> {
+/// Colors of the 2 most recently created notes, newest first. `pub(crate)`: the import
+/// (`db::import`) continues the same rotation.
+pub(crate) fn recent_colors(conn: &Connection) -> Result<Vec<NoteColor>> {
     let mut stmt = conn.prepare(
         "SELECT color FROM notes WHERE deleted = 0 ORDER BY created_at DESC, id DESC LIMIT 2",
     )?;

@@ -16,6 +16,7 @@ use crate::error::Result;
 const MIGRATION_LIST: &[M<'static>] = &[
     M::up(include_str!("sql/001_initial.sql")).foreign_key_check(),
     M::up(include_str!("sql/002_search_decoded_text.sql")).foreign_key_check(),
+    M::up(include_str!("sql/003_imported_notes.sql")).foreign_key_check(),
 ];
 
 pub const MIGRATIONS: Migrations<'static> = Migrations::from_slice(MIGRATION_LIST);
@@ -56,17 +57,62 @@ mod tests {
     }
 
     #[test]
+    fn migration_003_adds_the_import_memory_and_keeps_the_notes() {
+        // A database of phase 3 (migrations 001 and 002), with a note waiting for triage.
+        let mut conn = Connection::open_in_memory().unwrap();
+        run(&mut conn, &Migrations::new(MIGRATION_LIST[..2].to_vec())).unwrap();
+        conn.execute_batch(
+            "INSERT INTO notes (id, title, content, created_at, updated_at)
+               VALUES ('a', 'Courses', 'Lait', 1, 2);
+             INSERT INTO import_triage (note_id, position) VALUES ('a', 1);",
+        )
+        .unwrap();
+
+        run(&mut conn, &MIGRATIONS).unwrap();
+        let kept: (String, i64) = conn
+            .query_row(
+                "SELECT n.content, t.position FROM notes n JOIN import_triage t ON t.note_id = n.id",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .unwrap();
+        assert_eq!(kept, ("Lait".to_string(), 1));
+        conn.execute(
+            "INSERT INTO imported_notes (source_id, note_id, imported_at) VALUES ('sn-1', 'a', 3)",
+            [],
+        )
+        .unwrap();
+        // Its rows outlive the notes: no foreign key.
+        conn.execute("DELETE FROM notes WHERE id = 'a'", [])
+            .unwrap();
+        let remembered: i64 = conn
+            .query_row("SELECT COUNT(*) FROM imported_notes", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(remembered, 1);
+    }
+
+    #[test]
     fn rebuilding_the_notes_table_keeps_the_rows_that_reference_it() {
         // What a future migration changing a CHECK constraint of `notes` will have to do.
+        // SQLite refuses to rename a table under a view that reads it: the search view
+        // (migration 002) is dropped first and created again at the end. (A real rebuild would
+        // also create the search triggers again: they go with the old table.)
         const REBUILD_NOTES: &str = "
+            DROP VIEW notes_search;
             CREATE TABLE notes_new (
               seq INTEGER PRIMARY KEY, id TEXT NOT NULL UNIQUE,
+              title TEXT NOT NULL DEFAULT '', content TEXT NOT NULL DEFAULT '',
+              kind TEXT NOT NULL DEFAULT 'rich',
               created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL
             );
-            INSERT INTO notes_new (seq, id, created_at, updated_at)
-              SELECT seq, id, created_at, updated_at FROM notes;
+            INSERT INTO notes_new (seq, id, title, content, kind, created_at, updated_at)
+              SELECT seq, id, title, content, kind, created_at, updated_at FROM notes;
             DROP TABLE notes;
-            ALTER TABLE notes_new RENAME TO notes;";
+            ALTER TABLE notes_new RENAME TO notes;
+            CREATE VIEW notes_search (seq, title, content) AS
+              SELECT seq, title,
+                     CASE WHEN kind = 'rich' THEN rich_search_text(content) ELSE content END
+              FROM notes;";
 
         let mut conn = Connection::open_in_memory().unwrap();
         run(&mut conn, &MIGRATIONS).unwrap();
@@ -76,10 +122,10 @@ mod tests {
         )
         .unwrap();
 
-        let with_rebuild = Migrations::new(vec![
-            M::up(include_str!("sql/001_initial.sql")).foreign_key_check(),
-            M::up(REBUILD_NOTES).foreign_key_check(),
-        ]);
+        // The published migrations, then the rebuild: only the rebuild runs here.
+        let mut list = MIGRATION_LIST.to_vec();
+        list.push(M::up(REBUILD_NOTES).foreign_key_check());
+        let with_rebuild = Migrations::new(list);
         run(&mut conn, &with_rebuild).unwrap();
 
         let triage_rows: i64 = conn

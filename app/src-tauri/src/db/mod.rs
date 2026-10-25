@@ -1,9 +1,11 @@
 //! Local SQLite database: opening, configuration and migrations (docs/03-modele-donnees.md).
 
+pub mod import;
 mod migrations;
 pub mod notes;
 pub mod search;
 pub mod settings;
+pub mod triage;
 
 use std::path::Path;
 use std::time::Duration;
@@ -98,7 +100,13 @@ mod tests {
         assert!(data_dir.join(DB_FILE_NAME).is_file());
         assert_eq!(
             names_of(&conn, "table"),
-            ["import_triage", "notes", "notes_fts", "settings"]
+            [
+                "import_triage",
+                "imported_notes",
+                "notes",
+                "notes_fts",
+                "settings"
+            ]
         );
         assert_eq!(
             names_of(&conn, "index"),
@@ -121,7 +129,7 @@ mod tests {
         let version: i64 = conn
             .query_row("PRAGMA user_version", [], |row| row.get(0))
             .unwrap();
-        assert_eq!(version, 2);
+        assert_eq!(version, 3);
     }
 
     #[test]

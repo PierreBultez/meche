@@ -21,4 +21,9 @@ describe("router", () => {
   it("has a first launch page", () => {
     expect(router.resolve("/welcome").name).toBe("welcome");
   });
+
+  it("has the import and triage pages", () => {
+    expect(router.resolve("/import").name).toBe("import");
+    expect(router.resolve("/tri").name).toBe("triage");
+  });
 });

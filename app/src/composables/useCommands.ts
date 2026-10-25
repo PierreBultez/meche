@@ -88,6 +88,14 @@ export function useCommands() {
     await router.push("/settings");
   }
 
+  async function openImport(): Promise<void> {
+    await router.push("/import");
+  }
+
+  async function openTriage(): Promise<void> {
+    await router.push("/tri");
+  }
+
   /** « Synchroniser maintenant » (docs/08): waits for the end of the sync, says how it went. */
   const syncNowAndSay = useSyncNow();
   const syncNow = () => syncNowAndSay();
@@ -105,6 +113,8 @@ export function useCommands() {
     showFilter,
     setTheme,
     openSettings,
+    openImport,
+    openTriage,
     syncNow,
     actions,
   };

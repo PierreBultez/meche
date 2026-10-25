@@ -4,6 +4,7 @@ import { createPinia, setActivePinia } from "pinia";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { defineComponent, type Ref } from "vue";
 import { createMemoryHistory, createRouter } from "vue-router";
+import { useImportStore } from "../stores/import";
 import { useNotesStore } from "../stores/notes";
 import { useSyncStore } from "../stores/sync";
 import { useToastsStore } from "../stores/toasts";
@@ -110,5 +111,28 @@ describe("palette action of the sync (docs/08)", () => {
     await actions.value.find((action) => action.id === "sync-now")?.run();
     expect(core.calls.map((call) => call.cmd)).toContain("sync_now");
     expect(useToastsStore().toasts.map((toast) => toast.message)).toEqual(["Notes synchronisées."]);
+  });
+});
+
+describe("palette actions of the import (docs/07, docs/08)", () => {
+  let core: FakeCore;
+
+  beforeEach(() => {
+    setActivePinia(createPinia());
+    core = installFakeCore();
+  });
+  afterEach(() => clearMocks());
+
+  it("always offers the import, and the triage while notes wait for it", async () => {
+    const actions = await paletteActions();
+    expect(labels(actions.value)).toContain("Importer depuis Standard Notes");
+    expect(labels(actions.value).some((label) => label.startsWith("Reprendre le tri"))).toBe(false);
+
+    core.notes = [];
+    await useNotesStore().create("rich");
+    await useNotesStore().create("rich");
+    core.triage.waiting = core.notes.map((note) => note.id);
+    await useImportStore().loadTriage();
+    expect(labels(actions.value)).toContain("Reprendre le tri (2 notes)");
   });
 });

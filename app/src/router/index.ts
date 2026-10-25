@@ -8,6 +8,9 @@ export const routes: RouteRecordRaw[] = [
   { path: "/notes/:noteId?", name: "notes", component: NotesView },
   { path: "/settings", name: "settings", component: () => import("../views/SettingsView.vue") },
   { path: "/welcome", name: "welcome", component: () => import("../views/WelcomeView.vue") },
+  // Import from Standard Notes and its triage (docs/07).
+  { path: "/import", name: "import", component: () => import("../views/ImportView.vue") },
+  { path: "/tri", name: "triage", component: () => import("../views/TriageView.vue") },
 ];
 
 // Hash history (`#/…`) never asks the WebView to load another URL, so a reload

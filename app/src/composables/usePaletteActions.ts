@@ -1,7 +1,9 @@
-// Actions of the command palette (docs/08). The Standard Notes import comes with its phase.
+// Actions of the command palette (docs/08).
 import {
   ArrowLeftRight,
   CodeXml,
+  FileUp,
+  ListChecks,
   Maximize2,
   Minimize2,
   Monitor,
@@ -20,6 +22,7 @@ import {
 } from "lucide-vue-next";
 import { type Component, computed, h } from "vue";
 import FuseIcon from "../components/fuse/FuseIcon.vue";
+import { useImportStore } from "../stores/import";
 import { useNotesStore } from "../stores/notes";
 import { useSettingsStore } from "../stores/settings";
 import { useSyncStore } from "../stores/sync";
@@ -63,6 +66,7 @@ export function usePaletteActions() {
   const settings = useSettingsStore();
   const sync = useSyncStore();
   const ui = useUiStore();
+  const imports = useImportStore();
   const commands = useCommands();
   const { actions } = commands;
 
@@ -195,6 +199,24 @@ export function usePaletteActions() {
         icon: ui.focusMode ? Minimize2 : Maximize2,
         run: () => commands.toggleFocusMode(),
       },
+      {
+        id: "import",
+        label: "Importer depuis Standard Notes",
+        keywords: "sauvegarde standardnotes migrer",
+        icon: FileUp,
+        run: () => commands.openImport(),
+      },
+    );
+    if (imports.waiting > 0) {
+      list.push({
+        id: "triage",
+        label: `Reprendre le tri (${imports.waiting} ${imports.waiting > 1 ? "notes" : "note"})`,
+        keywords: "import standard notes trier",
+        icon: ListChecks,
+        run: () => commands.openTriage(),
+      });
+    }
+    list.push(
       {
         id: "settings",
         label: "Réglages",

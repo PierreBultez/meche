@@ -34,3 +34,16 @@ export function agoText(timestamp: number, now: number = Date.now()): string {
   if (elapsed < DAY) return `il y a ${Math.floor(elapsed / HOUR)} h`;
   return `le ${fullDate(timestamp)}`;
 }
+
+/** « il y a 2 ans », « il y a 3 semaines »…: how old a note is, on the triage cards (docs/07). */
+export function longAgoText(timestamp: number, now: number = Date.now()): string {
+  const elapsed = Math.max(0, now - timestamp);
+  if (elapsed < MINUTE) return "à l'instant";
+  const plural = (count: number, word: string) => `il y a ${count} ${word}${count > 1 && !word.endsWith("s") ? "s" : ""}`;
+  if (elapsed < HOUR) return `il y a ${Math.floor(elapsed / MINUTE)} min`;
+  if (elapsed < DAY) return `il y a ${Math.floor(elapsed / HOUR)} h`;
+  if (elapsed < WEEK) return plural(Math.floor(elapsed / DAY), "jour");
+  if (elapsed < MONTH) return plural(Math.floor(elapsed / WEEK), "semaine");
+  if (elapsed < YEAR) return plural(Math.floor(elapsed / MONTH), "mois");
+  return plural(Math.floor(elapsed / YEAR), "an");
+}

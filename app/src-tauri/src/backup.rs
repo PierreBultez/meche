@@ -26,9 +26,6 @@ const MAIN_FILE_NAME: &str = "Standard Notes Backup and Import File.txt";
 /// A crafted zip with thousands of files would otherwise keep the app busy for hours.
 const MAX_CANDIDATES: usize = 3;
 
-/// Largest zip opened, as a multiple of the backup limit: its list of files is read in memory.
-const MAX_ZIP_FACTOR: u64 = 4;
-
 /// What the frontend receives from a backup.
 #[derive(Debug, Clone, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -59,7 +56,10 @@ fn read_with_limit(path: &Path, max_bytes: u64) -> Result<Backup> {
     let is_zip = file.read(&mut start)? == 4 && start == *b"PK\x03\x04";
     file.rewind()?;
     if is_zip {
-        if file.metadata()?.len() > max_bytes * MAX_ZIP_FACTOR {
+        // The zip itself has the same limit: opening it reads its whole list of files in memory
+        // (a crafted zip of 256 MB took about 1 GB). Its backup compresses well, so a real zip of
+        // Standard Notes is smaller than the backup it holds.
+        if file.metadata()?.len() > max_bytes {
             return Err(Error::Backup("backup_too_large"));
         }
         return read_zip(file, max_bytes);
@@ -131,6 +131,7 @@ fn parse(text: &str) -> Result<Backup> {
         return Err(not_a_backup());
     };
     let mut notes = Vec::new();
+    let mut encrypted_notes = 0;
     let mut other_items = BTreeMap::new();
     for mut item in items {
         let content_type = item
@@ -143,9 +144,15 @@ fn parse(text: &str) -> Result<Backup> {
         let encrypted = item.get("content").is_some_and(Value::is_string)
             || item.get("enc_item_key").is_some_and(Value::is_string);
         if content_type == "Note" && encrypted {
-            return Err(Error::Backup("backup_encrypted"));
-        }
-        if content_type == "Note" {
+            // A note left encrypted: only its id goes to the frontend, which counts it as
+            // unreadable. Its encrypted text and key stay here.
+            encrypted_notes += 1;
+            notes.push(serde_json::json!({
+                "uuid": item.get("uuid").cloned().unwrap_or(Value::Null),
+                "content_type": "Note",
+                "errorDecrypting": true,
+            }));
+        } else if content_type == "Note" {
             // The HTML preview is a copy of the beginning of the note: not needed.
             if let Some(content) = item.get_mut("content").and_then(Value::as_object_mut) {
                 content.remove("preview_html");
@@ -155,7 +162,11 @@ fn parse(text: &str) -> Result<Backup> {
             *other_items.entry(content_type).or_insert(0) += 1;
         }
     }
-    if notes.is_empty() && other_items.is_empty() && root.get("keyParams").is_some() {
+    // Every note encrypted: an encrypted backup. An empty one says so with its key parameters.
+    let all_encrypted = encrypted_notes > 0 && encrypted_notes == notes.len();
+    if all_encrypted
+        || (notes.is_empty() && other_items.is_empty() && root.get("keyParams").is_some())
+    {
         return Err(Error::Backup("backup_encrypted"));
     }
     Ok(Backup {
@@ -296,14 +307,39 @@ mod tests {
     }
 
     #[test]
-    fn refuses_a_zip_much_larger_than_the_limit() {
+    fn refuses_a_zip_larger_than_the_limit() {
+        // The backup inside fits, but the zip does not: opening a zip reads its whole list of
+        // files in memory first, about 1 GB for a crafted zip of 256 MB (review, phase 4).
+        let noise: String = (0..20_000u32)
+            .map(|i| char::from(b'a' + (i.wrapping_mul(2_654_435_761) >> 27) as u8 % 26))
+            .collect();
+        let zip = zip_of(&[
+            (MAIN_FILE_NAME, BACKUP),
+            ("Items/Note/x.txt", noise.as_str()),
+        ]);
         let dir = tempfile::tempdir().unwrap();
-        let path = write_file(dir.path(), "big.zip", &zip_of(&[(MAIN_FILE_NAME, BACKUP)]));
-        let size = std::fs::metadata(&path).unwrap().len();
+        let path = write_file(dir.path(), "big.zip", &zip);
+        let limit = zip.len() as u64 - 1;
+        assert!(BACKUP.len() as u64 <= limit);
         assert!(matches!(
-            read_with_limit(&path, size / MAX_ZIP_FACTOR - 1),
+            read_with_limit(&path, limit),
             Err(Error::Backup("backup_too_large"))
         ));
+    }
+
+    #[test]
+    fn one_note_that_could_not_be_decrypted_does_not_refuse_the_backup() {
+        // Only its id goes to the frontend, which counts it as unreadable (review, phase 4).
+        let backup = r#"{ "items": [
+          { "uuid": "a", "content_type": "Note", "content": { "text": "x" } },
+          { "uuid": "b", "content_type": "Note", "content": "004:abc:def", "enc_item_key": "004:ghi",
+            "errorDecrypting": true } ] }"#;
+        let read = parse(backup).unwrap();
+        assert_eq!(read.notes.len(), 2);
+        assert_eq!(
+            read.notes[1],
+            serde_json::json!({ "uuid": "b", "content_type": "Note", "errorDecrypting": true })
+        );
     }
 
     #[test]

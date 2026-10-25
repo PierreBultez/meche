@@ -46,8 +46,8 @@ pub struct ImportResult {
 
 /// Imports `notes` in one transaction and adds them to the triage queue, the oldest first.
 ///
-/// `notes: Vec<ImportedNote>` is taken by value (owned): the notes are sorted and their texts
-/// moved into the database without copying them.
+/// `notes: Vec<ImportedNote>` is taken by value (owned): the list can be sorted in place, and
+/// each note is moved into `insert` once written, instead of being cloned.
 pub fn import_notes(
     conn: &mut Connection,
     mut notes: Vec<ImportedNote>,
@@ -61,11 +61,10 @@ pub fn import_notes(
     }
     // Oldest first: the triage shows them in this order (docs/07), and neighbours in the list
     // (sorted by date) get different colors. The id breaks ties, so the order never varies.
-    // Colors follow this order only, whatever the notes already there: importing the same backup
-    // on two devices before a sync gives the same notes, not conflicts.
-    notes.sort_by(|a, b| {
-        (a.updated_at.min(now), &a.source_id).cmp(&(b.updated_at.min(now), &b.source_id))
-    });
+    // Colors follow this order only, whatever the notes already there or the time of the
+    // import (the dates as written in the backup, not brought back to now): importing the same
+    // backup on two devices before a sync gives the same notes, not conflicts.
+    notes.sort_by(|a, b| (a.updated_at, &a.source_id).cmp(&(b.updated_at, &b.source_id)));
 
     let tx = conn.transaction()?;
     let mut position = triage::next_position(&tx)?;
@@ -163,8 +162,10 @@ fn remember(conn: &Connection, source_id: &str, note_id: &str, now: i64) -> Resu
 }
 
 /// Writes one imported note, never synced yet (`server_rev = 0`, `dirty = 1`).
-/// A date in the future (a wrong clock in the backup) becomes now: such a note would otherwise
-/// stay at the top of the list.
+/// A modification date in the future (a wrong clock in the backup) becomes now: such a note
+/// would otherwise stay at the top of the list. The sync does not compare that date (docs/04);
+/// the creation date, which it compares, is kept as written, so that two devices importing the
+/// same backup at different times hold the same note.
 fn insert(
     conn: &Connection,
     id: &str,
@@ -191,7 +192,7 @@ fn insert(
             code_language,
             note.pinned,
             color,
-            note.created_at.min(now),
+            note.created_at,
             note.updated_at.min(now),
         ],
     )?;
@@ -332,6 +333,33 @@ mod tests {
                 notes::get(&first, id).unwrap().color,
                 notes::get(&second, id).unwrap().color
             );
+        }
+    }
+
+    #[test]
+    fn the_same_backup_gives_the_same_notes_at_any_time() {
+        // Dates later than the first import but earlier than the second (a wrong clock in the
+        // backup): the second device, an hour later, must still give the same notes, or the
+        // sync would see conflicts (review, phase 4).
+        let mut first = open_in_memory().unwrap();
+        let mut second = open_in_memory().unwrap();
+        let backup = || {
+            vec![
+                imported(UUID_A, NOW + 900_000),
+                ImportedNote {
+                    created_at: NOW + 1_800_000,
+                    ..imported(UUID_B, NOW + 1_800_000)
+                },
+            ]
+        };
+        import_notes(&mut first, backup(), NOW).unwrap();
+        import_notes(&mut second, backup(), NOW + 3_600_000).unwrap();
+        for id in [UUID_A, UUID_B] {
+            let (one, two) = (
+                notes::get(&first, id).unwrap(),
+                notes::get(&second, id).unwrap(),
+            );
+            assert_eq!((one.color, one.created_at), (two.color, two.created_at));
         }
     }
 

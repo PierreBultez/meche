@@ -281,10 +281,12 @@ fn resolve_conflict(
             _ => {}
         }
     }
-    // `if let … && …`: a local note exists, is not a tombstone, and differs from the server's.
+    // `if let … && …`: a local note exists, is not a tombstone, differs from the server's, and
+    // is not the same import as the server's.
     if let Some(local) = local
         && !local.note.deleted
         && !local.note.same_as(&server.note)
+        && !same_import(conn, &local, &server.note)?
     {
         insert_conflict_copy(conn, &local.note.to_note(), now)?;
         outcome.conflict_copies += 1;
@@ -292,6 +294,29 @@ fn resolve_conflict(
     store(conn, server)?;
     outcome.changed = true;
     Ok(())
+}
+
+/// The same backup imported here and on another device (docs/07): the local note was imported
+/// here, has never been synced since (`server_rev` 0), and holds the same text as the server's.
+/// Only what the other device's triage changed can differ (fuse, trash, color): the server's
+/// version wins without a copy, which would otherwise bring a note trashed there back alive.
+fn same_import(conn: &Connection, local: &Local, server: &SyncNote) -> Result<bool> {
+    let note = &local.note;
+    let same_text = !server.deleted
+        && note.title == server.title
+        && note.content == server.content
+        && note.kind == server.kind
+        && note.code_language == server.code_language
+        && note.pinned == server.pinned
+        && note.created_at == server.created_at;
+    if local.server_rev != 0 || !same_text {
+        return Ok(false);
+    }
+    Ok(conn.query_row(
+        "SELECT EXISTS (SELECT 1 FROM imported_notes WHERE note_id = ?1)",
+        [&note.id],
+        |row| row.get(0),
+    )?)
 }
 
 /// Whether the server's version is one this device sent and whose answer was lost.
@@ -361,7 +386,8 @@ pub fn reset(conn: &Connection, sync_id: &str) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::db::notes::{self, NoteColor, NoteKind, NotePatch};
+    use crate::db::import::{self, ImportedNote};
+    use crate::db::notes::{self, NoteColor, NoteKind, NotePatch, TrashReason};
     use crate::db::open_in_memory;
     use crate::sync::protocol::Conflict;
 
@@ -699,6 +725,83 @@ mod tests {
 
         assert_eq!(outcome.conflict_copies, 0);
         assert_eq!(state(&conn, &id), Some((5, false)));
+    }
+
+    /// The same backup imported on this device: one note, never synced, as in docs/07.
+    fn imported_note(conn: &mut Connection) -> String {
+        let note = ImportedNote {
+            source_id: "6f1c3a52-9d4e-4b8a-a1f0-2c3d4e5f6a7b".to_string(),
+            title: "Courses".to_string(),
+            content: "- [ ] Lait".to_string(),
+            kind: NoteKind::Rich,
+            code_language: None,
+            pinned: false,
+            created_at: 1_000,
+            updated_at: 2_000,
+        };
+        import::import_notes(conn, vec![note], 5_000).unwrap();
+        "6f1c3a52-9d4e-4b8a-a1f0-2c3d4e5f6a7b".to_string()
+    }
+
+    /// The conflict answered to this device's first sync, the server holding `theirs`.
+    fn first_sync(conn: &mut Connection, theirs: &SyncNote) -> Outcome {
+        let sent = collect_changes(conn, MAX_CHANGES, MAX_CHANGE_BYTES)
+            .unwrap()
+            .changes;
+        let answer = SyncResponse {
+            conflicts: vec![Conflict {
+                id: theirs.id.clone(),
+                server: server(theirs.clone(), 3),
+            }],
+            changes: vec![server(theirs.clone(), 3)],
+            cursor: 3,
+            ..response()
+        };
+        apply_response(conn, &sent, &answer, 9_000, &Unacknowledged::new()).unwrap()
+    }
+
+    #[test]
+    fn the_same_backup_imported_on_another_device_makes_no_copy() {
+        // Another device imported the same backup, trashed the note in its triage, and synced
+        // first (review, phase 4). Same text: only the triage differs, and the server's version
+        // wins without a copy, instead of bringing the trashed note back alive.
+        let mut conn = open_in_memory().unwrap();
+        let id = imported_note(&mut conn);
+        let theirs = SyncNote {
+            trashed_at: Some(4_000),
+            trash_reason: Some(TrashReason::Manual),
+            updated_at: 4_000,
+            ..sync_note(&conn, &id)
+        };
+
+        let outcome = first_sync(&mut conn, &theirs);
+
+        assert_eq!(outcome.conflict_copies, 0);
+        assert_eq!(sync_note(&conn, &id), theirs);
+        assert_eq!(state(&conn, &id), Some((3, false)));
+        assert_eq!(titles(&conn), vec!["Courses"]);
+    }
+
+    #[test]
+    fn an_imported_note_changed_here_before_its_first_sync_keeps_a_copy() {
+        let mut conn = open_in_memory().unwrap();
+        let id = imported_note(&mut conn);
+        let theirs = SyncNote {
+            trashed_at: Some(4_000),
+            trash_reason: Some(TrashReason::Manual),
+            ..sync_note(&conn, &id)
+        };
+        let patch = NotePatch {
+            content: Some("- [ ] Lait\n- [ ] Pain".to_string()),
+            ..NotePatch::default()
+        };
+        notes::update(&conn, &id, patch, 6_000).unwrap();
+
+        let outcome = first_sync(&mut conn, &theirs);
+
+        assert_eq!(outcome.conflict_copies, 1);
+        assert_eq!(sync_note(&conn, &id), theirs);
+        assert_eq!(titles(&conn).len(), 2);
     }
 
     #[test]

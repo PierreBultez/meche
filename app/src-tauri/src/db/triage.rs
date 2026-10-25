@@ -258,7 +258,9 @@ pub fn decide(
 pub fn undo(conn: &mut Connection, undo: &TriageUndo) -> Result<()> {
     let tx = conn.transaction()?;
     let id = undo.note_id.as_str();
-    let note = notes::get(&tx, id)?; // NotFound once deleted for good.
+    // `NotFound` once deleted for good: there is nothing left to put back.
+    notes::get(&tx, id)?;
+    // Only a skipped note is still in the queue; any other decision took it out.
     let waiting = position_of(&tx, id)?.is_some();
     if waiting != (undo.decision == Decision::Skip) {
         return Err(changed_since());
@@ -284,8 +286,10 @@ pub fn undo(conn: &mut Connection, undo: &TriageUndo) -> Result<()> {
         if reverted == 0 {
             return Err(changed_since());
         }
-    } else if undo.decision == Decision::Trash && note.trashed_at.is_none() {
-        // It was in the trash before the decision, and was restored since.
+    } else if undo.decision == Decision::Trash {
+        // It was put in the trash elsewhere before the decision, which only counted it: its card
+        // cannot come back while it is there (the queue drops trashed notes), nor once restored
+        // (it changed since).
         return Err(changed_since());
     }
     if undo.decision == Decision::Skip {
@@ -431,16 +435,22 @@ mod tests {
         let fused = waiting(&conn, 2, 0);
         notes::trash(&conn, &kept, 5).unwrap();
         notes::trash(&conn, &fused, 5).unwrap();
-        decide(&mut conn, &kept, Decision::Keep, DELAY, 10).unwrap();
+        let undo_keep = decide(&mut conn, &kept, Decision::Keep, DELAY, 10).unwrap();
         decide(&mut conn, &fused, Decision::Fuse, DELAY, 10).unwrap();
-        assert_eq!(
-            read_counts(&conn).unwrap(),
-            TriageCounts {
-                kept: 0,
-                fused: 0,
-                trashed: 2
-            }
-        );
+        let counts = TriageCounts {
+            kept: 0,
+            fused: 0,
+            trashed: 2,
+        };
+        assert_eq!(read_counts(&conn).unwrap(), counts);
+        assert!(card_ids(&mut conn).is_empty());
+        // « Annuler » cannot bring its card back while the note is in the trash: it says so,
+        // instead of doing nothing (review, phase 4).
+        assert!(matches!(
+            undo(&mut conn, &undo_keep),
+            Err(Error::InvalidInput(_))
+        ));
+        assert_eq!(read_counts(&conn).unwrap(), counts);
         assert!(card_ids(&mut conn).is_empty());
     }
 

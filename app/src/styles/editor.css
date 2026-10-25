@@ -13,6 +13,11 @@
     padding-bottom: 30vh; /* room to write at the bottom of a long note */
   }
 
+  /* A note shown read-only in a triage card (docs/07): no room to write below it. */
+  .triage-preview .rich-editor {
+    padding-block: 0.75rem;
+  }
+
   .rich-editor > * + * {
     margin-top: 0.75em;
   }

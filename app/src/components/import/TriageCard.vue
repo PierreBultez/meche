@@ -115,7 +115,7 @@ const swipeHint = computed(() => {
       <p v-if="unreadable" class="p-4 text-muted">Impossible d'afficher cette note.</p>
       <div v-else-if="note && note.content.trim() === ''" class="p-4 text-muted">Note vide.</div>
       <template v-else-if="note">
-        <div v-if="note.kind === 'rich'" class="px-4">
+        <div v-if="note.kind === 'rich'" class="triage-preview px-4">
           <RichEditor :key="note.id" :content="note.content" :editable="false" @ready="measure" @escape="emit('escape')" />
         </div>
         <CodeEditor

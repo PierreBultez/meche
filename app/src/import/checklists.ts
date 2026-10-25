@@ -23,8 +23,10 @@ export function isAdvancedChecklist(source: string): boolean {
   }
 }
 
+// A line or paragraph separator (U+2028, U+2029, pasted from some apps) is a space: it is not a
+// line break of the note, and it would stop the reading of a task line.
 const lines = (value: unknown) =>
-  (typeof value === "string" ? value : "").replace(/\r\n?/g, "\n").split("\n");
+  (typeof value === "string" ? value : "").replace(/\r\n?/g, "\n").replace(/[\u2028\u2029]/g, " ").split("\n");
 
 /**
  * « Advanced Checklist »: each group becomes a level 2 heading, followed by its tasks to do,

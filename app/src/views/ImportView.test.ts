@@ -54,7 +54,7 @@ describe("import screen (docs/07)", () => {
     expect(text).toContain("11 notes trouvées : 3 textes, 1 Markdown, 1 texte enrichi, 1 Super, 2 checklists, 2 notes de code, 1 autre.");
     expect(text).toContain("4 notes non converties parfaitement");
     expect(text).toContain("Recette — images ignorées");
-    expect(text).toContain("Pas importés : 1 note de la corbeille de Standard Notes, 1 note supprimée ou illisible, 1 fichier joint (absents de la sauvegarde), 2 réglages et extensions.");
+    expect(text).toContain("Pas importés : 1 note de la corbeille de Standard Notes, 1 note supprimée ou illisible, 1 fichier joint absent de la sauvegarde, 2 réglages et extensions.");
     expect(core.calls.some((call) => call.cmd === "import_notes")).toBe(false);
   });
 

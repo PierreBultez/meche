@@ -85,7 +85,7 @@ export function leftOutText(plan: ImportPlan): string | null {
   if (trashed) parts.push(count(trashed, "note de la corbeille de Standard Notes", "notes de la corbeille de Standard Notes"));
   if (deleted + unreadable) parts.push(count(deleted + unreadable, "note supprimée ou illisible", "notes supprimées ou illisibles"));
   const files = plan.otherItems["SN|File"] ?? 0;
-  if (files) parts.push(`${count(files, "fichier joint", "fichiers joints")} (absents de la sauvegarde)`);
+  if (files) parts.push(`${count(files, "fichier joint absent", "fichiers joints absents")} de la sauvegarde`);
   const tags = (plan.otherItems["Tag"] ?? 0) + (plan.otherItems["SN|SmartTag"] ?? 0);
   if (tags) parts.push(`${count(tags, "étiquette", "étiquettes")} (Mèche n'en a pas)`);
   const rest = Object.entries(plan.otherItems)

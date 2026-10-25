@@ -56,8 +56,24 @@ export function cleanDoc(document: JSONContent, options: CleanOptions): JSONCont
 }
 
 function cleanBlocks(nodes: JSONContent[], options: CleanOptions): JSONContent[] {
-  return nodes.flatMap((node) => cleanBlock(node, options));
+  const blocks: JSONContent[] = [];
+  for (const block of nodes.flatMap((node) => cleanBlock(node, options))) {
+    // Two lists of the same kind one after the other (an empty paragraph between them is gone):
+    // Markdown reads them as one list, so they become one here (review, phase 4).
+    const previous = blocks[blocks.length - 1];
+    if (previous && LISTS.has(block.type ?? "") && previous.type === block.type) {
+      // One item at a time: copying the list at each merge would take a time growing with the
+      // square of a note made of many lists.
+      previous.content ??= [];
+      for (const item of block.content ?? []) previous.content.push(item);
+    } else {
+      blocks.push(block);
+    }
+  }
+  return blocks;
 }
+
+const LISTS = new Set(["bulletList", "orderedList", "taskList"]);
 
 /** One block, cleaned: none (empty, or nothing to keep), one, or several (a paragraph split at
  * an empty line). */
@@ -156,7 +172,7 @@ function cleanTable(node: JSONContent, options: CleanOptions): JSONContent[] {
     .map((row) =>
       (row.content ?? []).map((cell) =>
         flattenToParagraphs(cell.content ?? [], options).flatMap((line, index) =>
-          index === 0 ? line : [hardBreak(), ...line],
+          index === 0 ? withoutLeadingSpaces(line) : [hardBreak(), ...withoutLeadingSpaces(line)],
         ),
       ),
     )
@@ -183,6 +199,14 @@ function cleanTable(node: JSONContent, options: CleanOptions): JSONContent[] {
       })),
     },
   ];
+}
+
+/** A line of a table cell without its leading spaces: GFM trims the text of a cell. */
+function withoutLeadingSpaces(line: JSONContent[]): JSONContent[] {
+  const [first, ...rest] = line;
+  if (first?.type !== "text") return line;
+  const value = (first.text ?? "").replace(/^[ \t]+/, "");
+  return value ? [text(value, first.marks ?? []), ...rest] : rest;
 }
 
 /** The text of any blocks (lists, headings, code… in a table cell), as the inline content of
@@ -253,7 +277,7 @@ function cleanInline(nodes: JSONContent[], options: CleanOptions): JSONContent[]
       pieces.push(...cleanInline(node.content ?? [], options));
       continue;
     }
-    let value = (node.text ?? "").replace(/ /g, " ").replace(/\r\n?|\n/g, " ");
+    let value = (node.text ?? "").replace(/ /g, " ").replace(/\r\n?|[\n\u2028\u2029]/g, " ");
     if (options.collapseSpaces) value = value.replace(/[ \t]+/g, " ");
     const marks = cleanMarks(node.marks);
     if (!marks.length) {
@@ -337,16 +361,19 @@ function readableDelimiters(content: JSONContent[]): JSONContent[] {
     const has = (other: JSONContent | undefined, type: string) => other?.marks?.some((mark) => mark.type === type) ?? false;
     const previous = content[index - 1];
     const next = content[index + 1];
+    // A strikethrough opening or closing next to this text is written `~~`, which marked does not
+    // count as punctuation: as for a letter, the punctuation at that edge moves out (`**!**~~-~~`).
+    const struck = (other: JSONContent | undefined) => has(other, "strike") && !marks.some((mark) => mark.type === "strike");
     // The marks that open on this text, and those that close on it.
     const opening = marks.filter((mark) => DELIMITED.has(mark.type) && !has(previous, mark.type)).map((mark) => mark.type);
     const closing = marks.filter((mark) => DELIMITED.has(mark.type) && !has(next, mark.type)).map((mark) => mark.type);
     const chars = Array.from(node.text);
     let first = 0;
     let last = chars.length;
-    if (opening.length && isWordChar(Array.from(previous?.type === "text" ? (previous.text ?? "") : "").pop())) {
+    if (opening.length && (struck(previous) || isWordChar(Array.from(previous?.type === "text" ? (previous.text ?? "") : "").pop()))) {
       while (first < last && PUNCTUATION.test(chars[first])) first++;
     }
-    if (closing.length && isWordChar(next?.type === "text" ? Array.from(next.text ?? "")[0] : undefined)) {
+    if (closing.length && (struck(next) || isWordChar(next?.type === "text" ? Array.from(next.text ?? "")[0] : undefined))) {
       while (last > first && PUNCTUATION.test(chars[last - 1])) last--;
     }
     const without = (types: string[]) => marks.filter((mark) => !types.includes(mark.type));

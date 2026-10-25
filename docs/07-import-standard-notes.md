@@ -153,14 +153,14 @@ Le HTML est lu par `DOMParser` : un document jamais affiché, dont les scripts n
 ### Nettoyage commun (`doc.ts`)
 
 Ce que Markdown ne sait pas écrire est retiré, pour que le Markdown se relise en exactement le même document :
-- espaces insécables → espaces ; pour le HTML seulement, suites d'espaces réduites à une (comme la page les affichait) ; le texte tapé (texte brut, Lexical, checklists) garde ses espaces, y compris en début de ligne ;
+- espaces insécables → espaces ; séparateurs de ligne Unicode (U+2028, U+2029, collés depuis certaines applications) → espaces ; pour le HTML seulement, suites d'espaces réduites à une (comme la page les affichait) ; le texte tapé (texte brut, Lexical, checklists) garde ses espaces, y compris en début de ligne ;
 - espaces sortis des marques (`** b**` n'est pas du gras en Markdown), pas d'espace en fin de ligne ni de retour à la ligne en début ou fin de paragraphe ; deux retours à la ligne de suite (une ligne vide) séparent deux paragraphes ;
 - un code en ligne ne porte pas d'autre marque (avec un lien, le lien l'emporte) ;
-- une ponctuation au bord d'un gras, d'un italique ou d'un barré, collée à une lettre au dehors, sort de la marque : `**Note:**suite` resterait écrit avec ses étoiles, `**Note**:suite` est bien en gras ;
+- une ponctuation au bord d'un gras, d'un italique ou d'un barré, collée à une lettre au dehors (ou à un barré, que `marked` traite comme une lettre), sort de la marque : `**Note:**suite` resterait écrit avec ses étoiles, `**Note**:suite` est bien en gras ;
 - éléments de liste vides supprimés ; un élément qui ne contient qu'une sous-liste reçoit un texte vide ; une liste numérotée garde son premier numéro (une liste d'étapes coupée par un bloc de code reprend à 2) ;
-- un séparateur dans un élément de liste est gardé (`05-editeur.md`) ;
+- un séparateur dans un élément de liste est gardé (`05-editeur.md`) ; deux listes du même genre qui se suivent (un paragraphe vide entre elles a disparu) n'en font qu'une, comme Markdown les lirait ;
 - blocs de code vides supprimés, lignes vides autour du code retirées ;
-- tableaux : en-tête en première ligne, même nombre de cellules sur chaque ligne, cellules en texte seul ; les paragraphes d'une cellule deviennent des lignes (écrites `<br>`), ses lignes vides restent. Un tableau de plus de 64 colonnes, ou de plus de 20 000 cellules une fois toutes ses lignes complétées, est gardé en lignes de texte (une par ligne du tableau, cellules séparées par « | ») et signalé : compléter un tableau piégé (une ligne de 1 000 cellules, puis 1 000 lignes d'une cellule) en ferait un million de cellules.
+- tableaux : en-tête en première ligne, même nombre de cellules sur chaque ligne, cellules en texte seul ; les paragraphes d'une cellule deviennent des lignes (écrites `<br>`), ses lignes vides restent, ses espaces de début de ligne non (GFM les retire). Un tableau de plus de 64 colonnes, ou de plus de 20 000 cellules une fois toutes ses lignes complétées, est gardé en lignes de texte (une par ligne du tableau, cellules séparées par « | ») et signalé : compléter un tableau piégé (une ligne de 1 000 cellules, puis 1 000 lignes d'une cellule) en ferait un million de cellules.
 
 ### Vérification de chaque note (`markdown-writer.ts`)
 

@@ -92,6 +92,12 @@ describe("lexicalToDoc", () => {
     expect(convert(json)).toMatchObject({ markdown: "| a   | b   |\n| --- | --- |\n| 1   |     |", exact: true });
   });
 
+  it("trims the spaces at the start of a table cell, as GFM does", () => {
+    const cell = (text: string) => ({ type: "tablecell", children: [p(t(text))] });
+    const json = state({ type: "table", children: [{ type: "tablerow", children: [cell("  a")] }, { type: "tablerow", children: [cell("\tb")] }] });
+    expect(convert(json)).toMatchObject({ markdown: "| a   |\n| --- |\n| b   |", exact: true });
+  });
+
   it("keeps web and e-mail links only", () => {
     const link = (url: string, text: string) => ({ type: "link", url, children: [t(text)] });
     const json = state(p(link("https://example.com", "site"), t(" "), link("mailto:a@example.com", "écrire"), t(" "), link("file:///etc/passwd", "fichier")));

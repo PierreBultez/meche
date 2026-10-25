@@ -118,6 +118,15 @@ describe("htmlToDoc", () => {
     expect(warnings).toEqual([{ code: "unsupported", detail: "big_table" }]);
   });
 
+  it("joins two lists of the same kind, which Markdown would read as one", () => {
+    const html = '<ul><li>a</li></ul><ul><li>b</li></ul><ol><li>c</li></ol><ol start="3"><li>d</li></ol>';
+    expect(convert(html)).toMatchObject({ markdown: "- a\n- b\n\n1. c\n2. d", exact: true });
+  });
+
+  it("keeps bold readable next to a strikethrough", () => {
+    expect(convert("<p>a <b>!</b><s>-</s> b</p>")).toMatchObject({ markdown: "a !~~-~~ b", exact: true });
+  });
+
   it("reports formulas", () => {
     expect(convert("<p>x <math><mi>y</mi></math></p>").warnings).toEqual([{ code: "unsupported", detail: "math" }]);
   });

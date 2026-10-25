@@ -76,6 +76,11 @@ describe("Simple Task Editor", () => {
     });
   });
 
+  it("turns a line separator pasted in a task into a space", () => {
+    const { doc, sourceText } = simpleTasksToDoc("- [x] a\u2028b\u2029c");
+    expect(markdown(doc, sourceText)).toEqual({ markdown: "- [x] a b c", exact: true });
+  });
+
   it("keeps a task typed but not added yet", () => {
     const { doc, sourceText } = simpleTasksToDoc("- [x] Lait", "acheter du pain");
     expect(markdown(doc, sourceText).markdown).toBe("- [x] Lait\n- [ ] acheter du pain");

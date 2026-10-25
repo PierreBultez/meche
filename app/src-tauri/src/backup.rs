@@ -22,6 +22,13 @@ pub const MAX_BACKUP_BYTES: u64 = 64 * 1024 * 1024;
 /// Name of the backup inside the zip of Standard Notes.
 const MAIN_FILE_NAME: &str = "Standard Notes Backup and Import File.txt";
 
+/// Files of a zip tried as the backup, the main file first: Standard Notes puts one at the root.
+/// A crafted zip with thousands of files would otherwise keep the app busy for hours.
+const MAX_CANDIDATES: usize = 3;
+
+/// Largest zip opened, as a multiple of the backup limit: its list of files is read in memory.
+const MAX_ZIP_FACTOR: u64 = 4;
+
 /// What the frontend receives from a backup.
 #[derive(Debug, Clone, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -52,6 +59,9 @@ fn read_with_limit(path: &Path, max_bytes: u64) -> Result<Backup> {
     let is_zip = file.read(&mut start)? == 4 && start == *b"PK\x03\x04";
     file.rewind()?;
     if is_zip {
+        if file.metadata()?.len() > max_bytes * MAX_ZIP_FACTOR {
+            return Err(Error::Backup("backup_too_large"));
+        }
         return read_zip(file, max_bytes);
     }
     let text = read_limited(file, max_bytes)?;
@@ -66,13 +76,18 @@ fn read_limited(reader: impl Read, max_bytes: u64) -> Result<String> {
     if bytes.len() as u64 > max_bytes {
         return Err(Error::Backup("backup_too_large"));
     }
+    // `from_utf8` takes the bytes without copying them (a backup can weigh 64 MB).
+    let mut text = String::from_utf8(bytes).map_err(|_| not_a_backup())?;
     // A byte order mark (some editors add one) is not part of the JSON.
-    let bytes = bytes.strip_prefix(b"\xEF\xBB\xBF").unwrap_or(&bytes);
-    String::from_utf8(bytes.to_vec()).map_err(|_| not_a_backup())
+    if text.starts_with('\u{feff}') {
+        text.drain(..'\u{feff}'.len_utf8());
+    }
+    Ok(text)
 }
 
 /// The backup inside a zip: the file named like Standard Notes names it, otherwise the first
-/// `.txt` or `.json` at the root of the archive that is a backup.
+/// `.txt` or `.json` at the root of the archive that is a backup. At most `MAX_CANDIDATES`
+/// files are read, `max_bytes` for all of them.
 ///
 /// `impl Read + Seek`: any source that can be read and moved in (a file here, bytes in memory
 /// in the tests). `zip` needs to seek, because the list of files is at the end of an archive.
@@ -91,9 +106,11 @@ fn read_zip(source: impl Read + Seek, max_bytes: u64) -> Result<Backup> {
         .collect();
     // `sort_by_key` with a bool: `false` sorts first, so the main file comes first.
     candidates.sort_by_key(|name| name != MAIN_FILE_NAME);
-    for name in candidates {
+    let mut budget = max_bytes;
+    for name in candidates.into_iter().take(MAX_CANDIDATES) {
         let entry = archive.by_name(&name).map_err(|_| not_a_backup())?;
-        let text = read_limited(entry, max_bytes)?;
+        let text = read_limited(entry, budget)?;
+        budget -= text.len() as u64;
         match parse(&text) {
             Err(Error::Backup("backup_invalid")) => continue,
             other => return other,
@@ -116,15 +133,18 @@ fn parse(text: &str) -> Result<Backup> {
     let mut notes = Vec::new();
     let mut other_items = BTreeMap::new();
     for mut item in items {
-        // An encrypted backup keeps every content as an encrypted string ("004:…").
-        if item.get("content").is_some_and(Value::is_string) || item.get("enc_item_key").is_some() {
-            return Err(Error::Backup("backup_encrypted"));
-        }
         let content_type = item
             .get("content_type")
             .and_then(Value::as_str)
             .unwrap_or("?")
             .to_string();
+        // An encrypted backup keeps the content of its notes as an encrypted string ("004:…").
+        // Another item left encrypted (a key, an item that could not be decrypted) is counted.
+        let encrypted = item.get("content").is_some_and(Value::is_string)
+            || item.get("enc_item_key").is_some_and(Value::is_string);
+        if content_type == "Note" && encrypted {
+            return Err(Error::Backup("backup_encrypted"));
+        }
         if content_type == "Note" {
             // The HTML preview is a copy of the beginning of the note: not needed.
             if let Some(content) = item.get_mut("content").and_then(Value::as_object_mut) {
@@ -262,6 +282,45 @@ mod tests {
             parse(encrypted),
             Err(Error::Backup("backup_encrypted"))
         ));
+    }
+
+    #[test]
+    fn only_encrypted_notes_make_an_encrypted_backup() {
+        // `enc_item_key: null`, or another item that could not be decrypted: not encrypted.
+        let backup = r#"{ "items": [
+          { "uuid": "a", "content_type": "Note", "enc_item_key": null, "content": { "text": "x" } },
+          { "uuid": "b", "content_type": "SN|ItemsKey", "content": "004:abc", "enc_item_key": "004:d" } ] }"#;
+        let read = parse(backup).unwrap();
+        assert_eq!(read.notes.len(), 1);
+        assert_eq!(read.other_items["SN|ItemsKey"], 1);
+    }
+
+    #[test]
+    fn refuses_a_zip_much_larger_than_the_limit() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = write_file(dir.path(), "big.zip", &zip_of(&[(MAIN_FILE_NAME, BACKUP)]));
+        let size = std::fs::metadata(&path).unwrap().len();
+        assert!(matches!(
+            read_with_limit(&path, size / MAX_ZIP_FACTOR - 1),
+            Err(Error::Backup("backup_too_large"))
+        ));
+    }
+
+    #[test]
+    fn a_zip_full_of_files_that_are_not_backups_stops_early() {
+        // Many root files that are not backups, each within the limit: only a few are read,
+        // within one budget for all (review, phase 4).
+        let junk = "x".repeat(1000);
+        let mut entries: Vec<(String, &str)> = (0..20)
+            .map(|i| (format!("{i:02}.txt"), junk.as_str()))
+            .collect();
+        entries.push(("zz.json".to_string(), BACKUP));
+        let named: Vec<(&str, &str)> = entries
+            .iter()
+            .map(|(name, text)| (name.as_str(), *text))
+            .collect();
+        let result = read_zip(Cursor::new(zip_of(&named)), 4_000);
+        assert!(matches!(result, Err(Error::Backup(_))));
     }
 
     #[test]

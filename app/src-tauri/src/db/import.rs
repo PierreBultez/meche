@@ -61,20 +61,20 @@ pub fn import_notes(
     }
     // Oldest first: the triage shows them in this order (docs/07), and neighbours in the list
     // (sorted by date) get different colors. The id breaks ties, so the order never varies.
+    // Colors follow this order only, whatever the notes already there: importing the same backup
+    // on two devices before a sync gives the same notes, not conflicts.
     notes.sort_by(|a, b| {
         (a.updated_at.min(now), &a.source_id).cmp(&(b.updated_at.min(now), &b.source_id))
     });
 
     let tx = conn.transaction()?;
-    triage::reset_if_finished(&tx)?;
     let mut position = triage::next_position(&tx)?;
-    // The 2 latest colors, newest first: each note continues the rotation of new notes.
-    let mut recent: Vec<NoteColor> = notes::recent_colors(&tx)?;
     let mut result = ImportResult {
         imported: 0,
         already_imported: 0,
     };
-    for note in notes {
+    // `enumerate` gives each note its index in the sorted list, skipped notes included.
+    for (index, note) in notes.into_iter().enumerate() {
         if already_imported(&tx, &note.source_id)? {
             result.already_imported += 1;
             continue;
@@ -85,10 +85,12 @@ pub fn import_notes(
             result.already_imported += 1;
             continue;
         }
-        let color = notes::next_color(&recent);
-        recent.insert(0, color);
-        recent.truncate(2);
-        insert(&tx, &id, note, color, now)?;
+        if result.imported == 0 {
+            // A new triage starts with the first new note: importing nothing new leaves the
+            // counts of a finished triage (its final screen) as they are.
+            triage::reset_if_finished(&tx)?;
+        }
+        insert(&tx, &id, note, notes::color_in_turn(index), now)?;
         tx.execute(
             "INSERT INTO import_triage (note_id, position) VALUES (?1, ?2)",
             params![id, position],
@@ -287,28 +289,62 @@ mod tests {
     }
 
     #[test]
-    fn colors_rotate_after_the_latest_note() {
+    fn colors_follow_the_order_of_the_backup() {
         let mut conn = open_in_memory().unwrap();
-        let existing = notes::create(&conn, NoteKind::Rich, 0).unwrap();
         let notes: Vec<ImportedNote> = (0..9)
             .map(|i| imported(&format!("note-{i}"), 1_000 + i))
             .collect();
         import_notes(&mut conn, notes, NOW).unwrap();
         let mut stmt = conn
-            .prepare("SELECT color FROM notes WHERE id != ?1 ORDER BY updated_at")
+            .prepare("SELECT color FROM notes ORDER BY updated_at")
             .unwrap();
         let colors: Vec<NoteColor> = stmt
-            .query_map([&existing.id], |row| row.get(0))
+            .query_map([], |row| row.get(0))
             .unwrap()
             .collect::<rusqlite::Result<_>>()
             .unwrap();
-        assert_ne!(colors[0], existing.color);
-        // Each note differs from the two before it: the 8 colors in turn.
-        for window in colors.windows(3) {
-            assert_ne!(window[2], window[1]);
-            assert_ne!(window[2], window[0]);
+        // The 8 colors in turn, in the order of new notes: neighbours always differ.
+        let expected: Vec<NoteColor> = (0..9).map(notes::color_in_turn).collect();
+        assert_eq!(colors, expected);
+        for pair in colors.windows(2) {
+            assert_ne!(pair[0], pair[1]);
         }
-        assert_eq!(colors[8], colors[0]);
+    }
+
+    #[test]
+    fn the_same_backup_gets_the_same_colors_on_any_device() {
+        // Two devices, one already holding a note: importing the same backup on both before a
+        // sync must give the same notes, or the sync would see conflicts (review, phase 4).
+        let mut first = open_in_memory().unwrap();
+        let mut second = open_in_memory().unwrap();
+        notes::create(&second, NoteKind::Rich, 0).unwrap();
+        let backup = || {
+            vec![
+                imported(UUID_A, 1_000),
+                imported(UUID_B, 2_000),
+                imported(UUID_C, 3_000),
+            ]
+        };
+        import_notes(&mut first, backup(), NOW).unwrap();
+        import_notes(&mut second, backup(), NOW).unwrap();
+        for id in [UUID_A, UUID_B, UUID_C] {
+            assert_eq!(
+                notes::get(&first, id).unwrap().color,
+                notes::get(&second, id).unwrap().color
+            );
+        }
+    }
+
+    #[test]
+    fn importing_nothing_new_keeps_the_counts_of_a_finished_triage() {
+        let mut conn = open_in_memory().unwrap();
+        import_notes(&mut conn, vec![imported(UUID_A, 1_000)], NOW).unwrap();
+        triage::decide(&mut conn, UUID_A, Decision::Keep, 168, NOW).unwrap();
+        // The final screen was left open; the same backup is imported again.
+        let result = import_notes(&mut conn, vec![imported(UUID_A, 1_000)], NOW).unwrap();
+        assert_eq!(result.imported, 0);
+        let state = triage::get(&mut conn).unwrap();
+        assert_eq!((state.counts.kept, state.total), (1, 1));
     }
 
     #[test]

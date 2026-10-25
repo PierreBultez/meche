@@ -203,6 +203,13 @@ pub fn decide(
     let position = position_of(&tx, id)?
         .ok_or_else(|| Error::InvalidInput("this note is not waiting for triage".to_string()))?;
     let note = notes::get(&tx, id)?;
+    // Put in the trash elsewhere since its card was shown (a sync, another window): it counts as
+    // « Supprimer », whatever the button, like in `get`.
+    let decision = if note.trashed_at.is_some() {
+        Decision::Trash
+    } else {
+        decision
+    };
     let changed = match decision {
         Decision::Keep | Decision::Skip => false,
         Decision::Fuse => {
@@ -417,12 +424,37 @@ mod tests {
     }
 
     #[test]
+    fn a_note_trashed_elsewhere_meanwhile_counts_as_trashed_whatever_the_button() {
+        // Trashed by a sync between the display of its card and the key press (review, phase 4).
+        let mut conn = open_in_memory().unwrap();
+        let kept = waiting(&conn, 1, 0);
+        let fused = waiting(&conn, 2, 0);
+        notes::trash(&conn, &kept, 5).unwrap();
+        notes::trash(&conn, &fused, 5).unwrap();
+        decide(&mut conn, &kept, Decision::Keep, DELAY, 10).unwrap();
+        decide(&mut conn, &fused, Decision::Fuse, DELAY, 10).unwrap();
+        assert_eq!(
+            read_counts(&conn).unwrap(),
+            TriageCounts {
+                kept: 0,
+                fused: 0,
+                trashed: 2
+            }
+        );
+        assert!(card_ids(&mut conn).is_empty());
+    }
+
+    #[test]
     fn a_failed_decision_changes_nothing() {
         let mut conn = open_in_memory().unwrap();
         let id = waiting(&conn, 1, 0);
-        notes::trash(&conn, &id, 5).unwrap();
-        // The fuse of a note in the trash cannot be lit: the note stays in the queue.
-        assert!(decide(&mut conn, &id, Decision::Fuse, DELAY, 10).is_err());
+        // Deleted for good on another device (a tombstone) while its card was shown.
+        conn.execute("UPDATE notes SET deleted = 1 WHERE id = ?1", [&id])
+            .unwrap();
+        assert!(matches!(
+            decide(&mut conn, &id, Decision::Keep, DELAY, 10),
+            Err(Error::NotFound(_))
+        ));
         assert_eq!(read_counts(&conn).unwrap(), TriageCounts::default());
         assert_eq!(position_of(&conn, &id).unwrap(), Some(1));
     }

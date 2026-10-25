@@ -85,7 +85,7 @@
 | `chrono` (feature `clock`) | Heure locale du titre « (conflit du 22/10 14:05) » : la bibliothèque standard ne connaît pas les fuseaux horaires |
 | `thiserror` | Erreurs typées |
 | `tauri-plugin-opener` | Ouvrir un lien dans le navigateur du système (`Ctrl+clic`) |
-| `tauri-plugin-dialog` 2.8 | Sélection du fichier d'import. Utilisé seulement depuis Rust (`read_import_file`) : l'interface n'a aucune permission du greffon (phase 4) |
+| `tauri-plugin-dialog` 2.8 | Sélection du fichier d'import. Utilisé seulement depuis Rust (`read_import_file`) : l'interface n'a aucune permission du greffon (phase 4). Attention : sur desktop, le greffon remplace `window.alert` et `window.confirm` ; `confirm()` y rend une promesse, toujours vraie. Ne jamais les utiliser : les confirmations passent par les boîtes de dialogue de l'interface |
 | `zip` 9.0 (sans les fonctions par défaut, lecture deflate seulement) | Lecture de la sauvegarde `.zip` de Standard Notes (phase 4) |
 | `tauri-plugin-updater` | Mises à jour automatiques desktop |
 

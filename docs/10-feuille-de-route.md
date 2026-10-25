@@ -68,6 +68,10 @@ Essais dans la vraie application (build release, conteneur de développement, é
 - recherche : 9 à 62 ms aller-retour WebDriver compris ;
 - paquet `.deb` : 5,3 Mo ; le code de l'import est chargé à la demande (rien de plus au démarrage qu'un libellé de la palette).
 
+**Revues (phase 4)** : trois relectures indépendantes (interface, Rust, sécurité et données personnelles). Chaque constat a été reproduit (un test qui échoue avant la correction, ou un essai dans l'application) avant d'être corrigé.
+- Premier tour, corrigé : couleurs des notes importées qui ne dépendent que de la sauvegarde (deux appareils qui importent la même sauvegarde ne créent plus de copies de conflit) ; comptes du tri gardés quand un import n'apporte rien ; zip lu dans un budget unique (trois fichiers au plus) ; expressions régulières en temps linéaire sur un texte piégé ; une note malformée n'arrête plus l'import ; numéros de liste, liens sur du code, éléments de liste qui commencent par un titre, lignes des cellules, ponctuation au bord du gras gardés ; images et notes de bas de page des notes Markdown signalées ; conversion qui fait des pauses, affiche sa progression et s'arrête quand on quitte l'écran ; `Maj+←` / `Maj+→` et un geste annulé ne décident plus rien ; noms de sauvegarde Standard Notes ignorés par git partout dans le dépôt. Dans l'éditeur (défauts antérieurs à la phase 4, `05-editeur.md`) : espace de trop sous un élément numéroté, lecteur Markdown quadratique, checklist imbriquée invalide, séparateur sous un élément de liste, lien ouvert par un simple clic dans une note en lecture seule.
+- Laissé pour plus tard, à valider par Pierre : `marked` 18 (lecture linéaire des paragraphes pleins de caractères échappés) et `@tiptap/extension-heading` en dépendance directe (titre qui finit par ` #`), voir les limites connues de `05-editeur.md` ; lecture de la sauvegarde moins gourmande en mémoire pour Android (phase 5).
+
 Reste pour terminer la phase : l'import réel par Pierre dans son application connectée à la production, sa vérification, puis le tri.
 
 ## Phase 5 — Android
@@ -75,6 +79,7 @@ Reste pour terminer la phase : l'import réel par Pierre dans son application co
 - `tauri android init`, adaptation de l'interface mobile (`08-interface.md`) : navigation liste/note, bouton retour, barre d'outils au-dessus du clavier, gestes, safe areas, synchro à la reprise.
 - Génération de la clé de signature, APK signé, installation sur le téléphone de Pierre (USB puis Obtainium).
 - Vérifier la règle Google de vérification des développeurs à ce moment-là.
+- Import Standard Notes sur Android : choisir le fichier par le sélecteur d'Android (adresses `content://`, aujourd'hui refusées avec `backup_location`), et lire la sauvegarde avec moins de mémoire (une sauvegarde de 64 Mo faite de milliers de petites valeurs occupe environ 1 Go une fois lue en `serde_json::Value`) : limite plus basse ou lecture typée qui ignore ce qui n'est pas une note.
 
 **Terminé quand** : l'application tourne sur le téléphone de Pierre, synchronisée avec le PC, et les budgets de performance mobile sont tenus.
 
@@ -88,7 +93,7 @@ Reste pour terminer la phase : l'import réel par Pierre dans son application co
 **Terminé quand** : pousser un tag `v1.0.0` produit les trois installeurs, et les appareils existants se mettent à jour.
 
 ## Phase 7 — Finitions
-- Mesure et optimisation des budgets de performance.
+- Mesure et optimisation des budgets de performance, dont les limites connues de l'éditeur (`05-editeur.md` : `marked` 18, titre qui finit par ` #`).
 - Accessibilité de base (contrastes, focus visibles, navigation clavier complète).
 - États vides, messages d'erreur clairs en français.
 - Sauvegarde : export de toutes les notes en fichiers `.md` dans un `.zip` (filet de sécurité supplémentaire).

@@ -35,6 +35,8 @@ jobs:
       - run: npm run test
       - name: Check dependency licenses (CLAUDE.md rule 3)
         run: node ../scripts/check-licenses.mjs npm
+      - name: Check the version is the same everywhere (docs/09, section 4)
+        run: node ../scripts/version.mjs
 
   rust:
     name: Rust (fmt, clippy, tests)

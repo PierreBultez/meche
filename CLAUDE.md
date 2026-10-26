@@ -64,6 +64,7 @@ meche/
 9. **Direction artistique** : aucune couleur en dur dans les composants. Toujours les variables CSS de `docs/11-direction-artistique.md` (jetons d'interface, couleurs de note, thème du code).
 10. **Données personnelles** : ne jamais committer de vraie sauvegarde Standard Notes. Les échantillons de test vont dans `import-samples/` (ignoré par git) ou sont anonymisés dans les fixtures.
 11. **Pull requests** : Claude ouvre une pull request vers `master` sans attendre qu'on la lui demande, dès que c'est judicieux : un lot cohérent, testé et prêt à relire, ou un correctif dont le déploiement a besoin. Il la mène jusqu'à une CI verte, mais ne la fusionne jamais lui-même : Pierre relit et fusionne.
+12. **Version** : toute PR qui change l'application livrée (code de `app/`, hors tests et documentation) incrémente la version avec `node scripts/version.mjs x.y.z` : `0.<phase>.<correctif>` avant la V1, `0.N.0` quand la phase N est terminée (`docs/09-build-et-deploiement.md`, « Numéro de version »). La CI vérifie que les cinq endroits où elle est écrite concordent.
 
 ## Commandes usuelles
 
@@ -77,6 +78,7 @@ npm run tauri android build -- --apk
 cargo test --manifest-path src-tauri/Cargo.toml
 npm run test                      # Vitest
 npm run typecheck                 # vue-tsc
+node ../scripts/version.mjs 0.4.1  # nouvelle version, partout (règle 12)
 
 # Serveur (depuis server/, à partir de la phase 3 : avant, server/ ne contient qu'un README)
 composer install

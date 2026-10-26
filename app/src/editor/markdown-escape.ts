@@ -17,9 +17,28 @@ const BLOCK_STARTS: Array<[RegExp, string]> = [
   [/^(\s*)>/, "$1\\>"],
   // "```" or "~~~" code fences
   [/^(\s*)(`{3,}|~{3,})/, "$1\\$2"],
-  // "---", "--", "=" (thematic break, setext heading underline after a line break)
-  [/^(\s*)([-=])(\2*\s*)$/, "$1\\$2$3"],
+  // "---", "--", "=" (thematic break, setext heading underline after a line break), and dashes
+  // with spaces between them ("- - -", "-- ------ ----"), also a thematic break in Markdown
+  [/^(\s*)([-=])((?:\2|[ \t])*)$/, "$1\\$2$3"],
 ];
+
+/**
+ * The line under a table's header in GFM ("|---|---|", "--- | :---:", and for one column "|---",
+ * ":---", "---|", ":-:"): with it, the line above would become a table. Its pipes are escaped, or
+ * its first colon when it has no pipe. Each pattern can only go forward, never back: a long line
+ * of spaces costs a time proportional to its length (security review, phase 4).
+ */
+const TABLE_DELIMITER_ROW = /^\s*(?:\|\s*)?:?-+:?\s*(?:\|\s*:?-+:?\s*)+(?:\|\s*)?$/;
+const ONE_COLUMN_DELIMITER_ROW = /^\s*(?:\|\s*)?:?-+:?\s*(?:\|\s*)?$/;
+
+function escapeTableDelimiter(line: string): string {
+  const delimiter =
+    TABLE_DELIMITER_ROW.test(line) || (ONE_COLUMN_DELIMITER_ROW.test(line) && /[|:]/.test(line));
+  // Also a line of pipes, colons and dashes only (the "|" of a sub-item: with its "- " in front,
+  // `- |` is a delimiter row, and the item above became a table).
+  if (!delimiter && !(/^[\s|:-]+$/.test(line) && line.includes("|"))) return line;
+  return line.includes("|") ? line.replace(/\|/g, "\\|") : line.replace(":", "\\:");
+}
 
 /** Rules for the lines of a paragraph outside table cells (a cell is one trimmed line). */
 const LINE_STARTS: Array<[RegExp, string]> = [
@@ -40,7 +59,8 @@ export function escapeBlockStarts(markdown: string, inTableCell = false): string
       // read as a blank line). At the end of the paragraph a backslash would show as text: the
       // spaces are kept, the first one as an entity.
       if (!inTableCell && line === "  ") return lines[index + 1] ? "\\" : "&#32; ";
-      return rules.reduce((text, [pattern, replacement]) => text.replace(pattern, replacement), line);
+      const unpiped = inTableCell ? line : escapeTableDelimiter(line);
+      return rules.reduce((text, [pattern, replacement]) => text.replace(pattern, replacement), unpiped);
     })
     .join("\n");
 }

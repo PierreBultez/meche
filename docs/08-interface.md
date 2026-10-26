@@ -64,6 +64,7 @@ Fonctionnement (phase 1) :
 - Palette vide : les 5 premières notes de la liste, puis toutes les actions.
 - En tapant : d'abord les actions dont chaque mot tapé commence un mot (« nouv code » → « Nouvelle note code »), puis les notes (recherche plein texte, 8 au plus, avec l'extrait surligné). Les actions trouvées seulement en recherche floue (« nvnote ») ne s'affichent que si rien d'autre ne correspond : sinon elles noient les résultats.
 - `↑` `↓` pour choisir, `Entrée` pour lancer, `Échap` ou un clic à côté pour fermer, `Ctrl+K` pour rouvrir ou fermer.
+- Phase 4 : « Importer depuis Standard Notes » (toujours) et « Reprendre le tri (n notes) » quand des notes importées attendent le tri.
 - Actions de la phase 1 : nouvelle note, nouvelle note code ; pour la note ouverte : épingler / désépingler, les 7 autres couleurs, convertir riche ↔ code, mettre à la corbeille (ou restaurer si elle y est) ; afficher toutes / épinglées / mèches allumées / corbeille ; thème clair / sombre / système ; masquer ou afficher la liste ; mode concentration ; réglages. Phase 2 : « Nouvelle note à mèche » (toujours) et « Allumer / Éteindre la mèche » (note ouverte, hors corbeille). Phase 3 : « Synchroniser maintenant » (quand un serveur est connecté ; une notification dit si la synchro a réussi). L'import arrive avec sa phase.
 
 ## Raccourcis desktop
@@ -86,13 +87,15 @@ Précisions (phase 1) :
 - Les raccourcis `Ctrl` sont pris avant les éditeurs : `Ctrl+Suppr` met la note à la corbeille même dans le texte (la notification « Annuler » permet de revenir en arrière), `Ctrl+↑` / `Ctrl+↓` changent de note.
 - Exception : dans une note code, `Ctrl+F` ouvre la recherche de CodeMirror dans la note.
 - Ils ne font rien quand une fenêtre de confirmation est ouverte. `Ctrl+P`, `Ctrl+Maj+E`, `Ctrl+Suppr` et `Ctrl+↑` / `Ctrl+↓` n'agissent que sur l'écran des notes, et jamais sur une note de la corbeille (lecture seule). Garder les touches enfoncées ne répète que `Ctrl+↑` / `Ctrl+↓`.
-- `Échap`, dans l'ordre : ferme le menu ouvert (menu ⋯, menu `/`, recherche de CodeMirror, palette, confirmation) ; sinon quitte le mode concentration ; sinon, depuis la note, remet le focus sur sa carte dans la liste ; sinon, depuis les réglages, revient à la note ouverte. Dans le champ de recherche, `Échap` efface la recherche.
+- `Échap`, dans l'ordre : ferme le menu ouvert (menu ⋯, menu `/`, recherche de CodeMirror, palette, confirmation) ; sinon quitte le mode concentration ; sinon, depuis la note, remet le focus sur sa carte dans la liste ; sinon, depuis les réglages ou l'écran de tri, revient à la note ouverte (le tri garde sa progression) ; depuis l'écran d'import, revient aux réglages. Dans le champ de recherche, `Échap` efface la recherche.
+- Écran de tri (phase 4, `07-import-standard-notes.md`) : `G` ou `→` garder, `E` mèche, `S` ou `←` supprimer, `Espace` passer, `Ctrl+Z` annuler. Ces lettres seules n'agissent que sur cet écran.
 
 ## Écrans secondaires
 
 - **Réglages** : serveur (URL, test de connexion, connexion / déconnexion, nom de l'appareil, dernière synchro), mèche (un seul délai : 1 h, 24 h, 3 j, 7 j ou 30 j ; 7 j par défaut ; ne change pas les mèches déjà allumées), apparence (thème, taille du texte), import Standard Notes, à propos (version, mises à jour).
   En phase 1 : thème, retour à la ligne des notes code, version. Phase 2 : section « Mèche ». Les autres sections arrivent avec leur phase ; la taille du texte n'est pas encore proposée.
   Phase 3 : section « Serveur » en tête (`components/settings/ServerSettings.vue`). Sans compte : « J'ai un compte » / « Créer un compte » (avec un code d'invitation), adresse du serveur (`https://meche.pierrebultez.com` proposée) avec « Tester », e-mail, mot de passe, nom de l'appareil (le nom de l'ordinateur par défaut). Se connecter à un autre compte que le précédent demande d'abord une confirmation (ses notes y seront envoyées). Une fois connecté : serveur, compte, appareil, état de la synchro, écart d'horloge éventuel, « Synchroniser maintenant », « Se déconnecter » ; puis « Appareils connectés » (déconnecter un appareil perdu) et « Inviter quelqu'un » (codes d'invitation, affichés une seule fois, avec « Copier » et « Retirer »).
+- **Import et tri** (phase 4, `views/ImportView.vue`, `views/TriageView.vue`) : section « Import » des réglages (« Importer depuis Standard Notes », « Reprendre le tri »), écran du récapitulatif (`/import`), écran de tri (`/tri`). Voir `07-import-standard-notes.md`.
 - **Premier lancement** (phase 3, `views/WelcomeView.vue`) : écran simple « Connecter un serveur » ou « Utiliser hors ligne pour l'instant », affiché au démarrage tant qu'aucun serveur n'est connecté et que la question n'a pas reçu de réponse (réglage `welcome_done`).
 - **États vides** : liste vide, recherche sans résultat, corbeille vide. Textes : voir « Ton des textes » dans `11-direction-artistique.md`.
 

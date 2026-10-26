@@ -4,6 +4,7 @@ import { mockIPC } from "@tauri-apps/api/mocks";
 import type { Note, NoteKind, NotePatch, NoteSummary, SearchResult } from "../types/note";
 import { MATCH_END, MATCH_START } from "../types/note";
 import type { Device, Invitation, SyncStatus } from "../types/sync";
+import type { Backup, ImportedNote, TriageCounts, TriageDecision, TriageUndo } from "../import/types";
 
 export interface FakeCore {
   notes: Note[];
@@ -18,6 +19,10 @@ export interface FakeCore {
   fuseDelayHours: number;
   /** Delays the answer of the next call of `cmd` until `release()` is called. */
   hold(cmd: string): { release: () => void };
+  /** What read_import_file returns (null: the file chooser was closed). */
+  backup: Backup | null;
+  /** The triage of db/triage.rs: ids waiting, oldest first, and the counts. */
+  triage: { waiting: string[]; counts: TriageCounts };
 }
 
 export function installFakeCore(): FakeCore {
@@ -41,6 +46,8 @@ export function installFakeCore(): FakeCore {
     },
     devices: [],
     invitations: [],
+    backup: null,
+    triage: { waiting: [], counts: { kept: 0, fused: 0, trashed: 0 } },
   };
   const held = new Map<string, Promise<void>>();
   const failures = new Map<string, { kind: string; message?: string }>();
@@ -245,6 +252,92 @@ export function installFakeCore(): FakeCore {
     },
     delete_invitation: ({ id }) => {
       core.invitations = core.invitations.filter((invitation) => invitation.id !== id);
+    },
+    // ── Import and triage (db/import.rs, db/triage.rs), simplified ──
+    read_import_file: () => core.backup,
+    import_notes: ({ notes }) => {
+      let imported = 0;
+      let alreadyImported = 0;
+      if (core.triage.waiting.length === 0) core.triage.counts = { kept: 0, fused: 0, trashed: 0 };
+      for (const incoming of [...(notes as ImportedNote[])].sort((a, b) => a.updatedAt - b.updatedAt)) {
+        if (core.notes.some((note) => note.id === incoming.sourceId)) {
+          alreadyImported++;
+          continue;
+        }
+        core.notes.push({
+          id: incoming.sourceId,
+          title: incoming.title,
+          content: incoming.content,
+          kind: incoming.kind,
+          codeLanguage: incoming.kind === "code" ? (incoming.codeLanguage ?? "plaintext") : null,
+          pinned: incoming.pinned,
+          color: "violet",
+          ephemeralMode: null,
+          ephemeralDelayHours: null,
+          ephemeralStartedAt: null,
+          destroyAt: null,
+          trashedAt: null,
+          trashReason: null,
+          createdAt: incoming.createdAt,
+          updatedAt: incoming.updatedAt,
+        });
+        core.triage.waiting.push(incoming.sourceId);
+        imported++;
+      }
+      return { imported, alreadyImported };
+    },
+    get_triage: () => {
+      const { kept, fused, trashed } = core.triage.counts;
+      const cards = core.triage.waiting.map((id) => {
+        const note = find(id);
+        return { id, title: summary(note).title, kind: note.kind, color: note.color, updatedAt: note.updatedAt };
+      });
+      return { cards, counts: { ...core.triage.counts }, total: cards.length + kept + fused + trashed };
+    },
+    triage_decide: ({ id, decision }): TriageUndo => {
+      const position = core.triage.waiting.indexOf(id as string);
+      if (position === -1) throw { kind: "invalid_input", message: "not waiting" };
+      const note = find(id as string);
+      const now = ++clock;
+      const before = note.updatedAt;
+      let changed = false;
+      core.triage.waiting.splice(position, 1);
+      switch (decision as TriageDecision) {
+        case "skip":
+          core.triage.waiting.push(id as string);
+          break;
+        case "keep":
+          core.triage.counts.kept++;
+          break;
+        case "fuse":
+          changed = note.ephemeralMode === null;
+          if (changed) lightFuse(note, now);
+          core.triage.counts.fused++;
+          break;
+        case "trash":
+          changed = note.trashedAt === null;
+          if (changed) Object.assign(note, { trashedAt: now, trashReason: "manual", updatedAt: now });
+          core.triage.counts.trashed++;
+          break;
+      }
+      return { noteId: id as string, decision: decision as TriageDecision, position, updatedAt: before, decidedAt: now, changed };
+    },
+    triage_undo: ({ undo }) => {
+      const { noteId, decision, position, updatedAt, changed } = undo as TriageUndo;
+      const note = find(noteId);
+      if (changed && decision === "fuse") {
+        putFuseOut(note);
+        note.updatedAt = updatedAt;
+      }
+      if (changed && decision === "trash") Object.assign(note, { trashedAt: null, trashReason: null, updatedAt });
+      core.triage.waiting = core.triage.waiting.filter((id) => id !== noteId);
+      core.triage.waiting.splice(position, 0, noteId);
+      const counter = { keep: "kept", fuse: "fused", trash: "trashed", skip: null }[decision] as keyof TriageCounts | null;
+      if (counter) core.triage.counts[counter] = Math.max(0, core.triage.counts[counter] - 1);
+    },
+    finish_triage: () => {
+      if (core.triage.waiting.length) throw { kind: "invalid_input", message: "notes are waiting" };
+      core.triage.counts = { kept: 0, fused: 0, trashed: 0 };
     },
     search: ({ query }): SearchResult[] => {
       const word = String(query).trim().toLowerCase();

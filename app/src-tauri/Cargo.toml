@@ -39,6 +39,12 @@ rustls = { version = "0.23.46", default-features = false, features = ["ring", "s
 tokio = { version = "1.54", features = ["sync", "time"] }
 # Local date and time (the « (conflit du 22/10 14:05) » suffix): the standard library has no time zones.
 chrono = { version = "0.4.45", default-features = false, features = ["clock", "std"] }
+# File chooser of the Standard Notes import (docs/07), opened by Rust only.
+tauri-plugin-dialog = "2.8.3"
+# Standard Notes saves its backup as a zip. Reading deflate only (what it uses): no encryption,
+# no other compression. The deflate code is flate2 with its zlib-rs backend, both already in the
+# build (reqwest's gzip); naming the backend keeps the crate building without them.
+zip = { version = "9.0.5", default-features = false, features = ["deflate-flate2-zlib-rs"] }
 
 
 # Read the optimization guideline for more details: https://tauri.app/concept/size/#cargo-configuration

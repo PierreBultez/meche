@@ -288,6 +288,12 @@ pub fn next_color(recent: &[NoteColor]) -> NoteColor {
         .unwrap_or(COLOR_ORDER[0])
 }
 
+/// The color of the note at `index` in a list colored in turn (the import, docs/07). It only
+/// depends on `index`: the same backup gets the same colors on every device.
+pub(crate) fn color_in_turn(index: usize) -> NoteColor {
+    COLOR_ORDER[index % COLOR_ORDER.len()]
+}
+
 /// Title and preview shown in the list for a note whose content starts with `content_start`.
 pub fn list_texts(title: &str, content_start: &str, kind: NoteKind) -> (String, String) {
     let mut lines = content_start

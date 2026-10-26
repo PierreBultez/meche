@@ -1,6 +1,6 @@
 // Keyboard shortcuts of docs/08, listened to on the whole window.
 import { onBeforeUnmount, onMounted } from "vue";
-import { useRoute } from "vue-router";
+import { useRoute, useRouter } from "vue-router";
 import { useUiStore } from "../stores/ui";
 import { type ShortcutAction, shortcutFor } from "../utils/shortcuts";
 import { useCommands } from "./useCommands";
@@ -22,6 +22,7 @@ const closest = (target: EventTarget | null, selector: string): Element | null =
 export function useGlobalShortcuts(): void {
   const ui = useUiStore();
   const route = useRoute();
+  const router = useRouter();
   const commands = useCommands();
 
   async function run(action: ShortcutAction): Promise<void> {
@@ -91,8 +92,11 @@ export function useGlobalShortcuts(): void {
     if (closest(event.target, "dialog")) return;
     if (ui.focusMode || closest(event.target, "[data-note-pane]")) {
       ui.escapeFromNote();
-    } else if (route.name === "settings") {
+    } else if (route.name === "settings" || route.name === "triage") {
+      // Leaving the triage keeps its progress (docs/07).
       void commands.backToNotes();
+    } else if (route.name === "import") {
+      void router.push("/settings");
     } else {
       return;
     }

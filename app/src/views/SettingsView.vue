@@ -1,11 +1,12 @@
 <script setup lang="ts">
-// Settings (docs/08, "Écrans secondaires"): server, appearance, the fuse, code notes.
+// Settings (docs/08, "Écrans secondaires"): server, appearance, the fuse, code notes, import.
 import { getVersion } from "@tauri-apps/api/app";
 import { ArrowLeft } from "lucide-vue-next";
 import { nextTick, onMounted, ref } from "vue";
 import { useRoute } from "vue-router";
 import DeviceList from "../components/settings/DeviceList.vue";
 import InvitationList from "../components/settings/InvitationList.vue";
+import ImportSettings from "../components/settings/ImportSettings.vue";
 import ServerSettings from "../components/settings/ServerSettings.vue";
 import ThemeSwitcher from "../components/ThemeSwitcher.vue";
 import UiSelect from "../components/ui/UiSelect.vue";
@@ -119,6 +120,11 @@ function toggleWrap(event: Event): void {
             @change="toggleWrap"
           />
         </label>
+      </section>
+
+      <section class="space-y-3" aria-labelledby="import">
+        <h2 id="import" class="text-sm font-semibold text-muted">Import</h2>
+        <ImportSettings />
       </section>
 
       <section class="space-y-3" aria-labelledby="about">

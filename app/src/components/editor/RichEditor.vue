@@ -35,12 +35,21 @@ const codeBlockWithToolbar = baseCodeBlock.extend({
   },
 });
 
-/** Ctrl+click (Cmd+click on macOS) opens a link in the system browser. */
-function openLinkOnModifierClick(event: MouseEvent): boolean {
-  if (!(event.ctrlKey || event.metaKey)) return false;
-  const href = (event.target as HTMLElement | null)?.closest("a")?.getAttribute("href");
-  if (!href) return false;
-  openUrl(href).catch((error: unknown) => toasts.error("Impossible d'ouvrir ce lien.", error));
+/**
+ * Ctrl+click (Cmd+click on macOS) opens a link in the system browser. A plain click never
+ * follows it: in a read-only note (trash, triage preview), the window would otherwise open the
+ * link itself, in the browser, at the slightest click.
+ */
+function onLinkClick(event: MouseEvent): boolean {
+  const link = (event.target as HTMLElement | null)?.closest("a");
+  if (!link) return false;
+  // Even without an address: TipTap writes `href=""` for a link it does not allow (`file:`…),
+  // and following it would reload the app.
+  event.preventDefault();
+  const href = link.getAttribute("href");
+  if (href && (event.ctrlKey || event.metaKey)) {
+    openUrl(href).catch((error: unknown) => toasts.error("Impossible d'ouvrir ce lien.", error));
+  }
   return true;
 }
 
@@ -71,7 +80,9 @@ const editor = useEditor({
   editable: props.editable,
   editorProps: {
     attributes: { class: "rich-editor", "aria-label": "Contenu de la note", spellcheck: "true" },
-    handleClick: (_view, _position, event) => openLinkOnModifierClick(event),
+    // A DOM event handler: ProseMirror runs it in read-only notes too, before the browser
+    // follows the link.
+    handleDOMEvents: { click: (_view, event) => onLinkClick(event) },
   },
   onCreate: ({ editor: created }) => emit("ready", serializeMarkdown(created)),
   onUpdate: () => emit("changed"),

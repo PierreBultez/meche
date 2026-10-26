@@ -34,6 +34,12 @@ pub enum Error {
     #[error("the database is unavailable after an internal error")]
     DatabaseLockPoisoned,
 
+    /// The file chosen for an import is not a decrypted Standard Notes backup (docs/07). The
+    /// code is the error's kind: `backup_invalid`, `backup_encrypted`, `backup_too_large` or
+    /// `backup_location` (a file the app cannot open by its path).
+    #[error("this file cannot be imported ({0})")]
+    Backup(&'static str),
+
     /// A request to the server while this device is logged out (devices, invitations).
     #[error("this device is not connected to a server")]
     NotConnected,
@@ -69,6 +75,7 @@ impl Error {
             Error::NotFound(_) => "not_found",
             Error::InvalidInput(_) => "invalid_input",
             Error::DatabaseLockPoisoned => "database_lock",
+            Error::Backup(code) => code,
             Error::NotConnected => "not_connected",
             Error::Network(_) => "network",
             Error::Api { code, .. } => api_kind(code),

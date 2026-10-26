@@ -1,7 +1,11 @@
 # Mèche — the repository is PUBLIC: nothing personal or secret may be committed.
 
-# Personal data: real Standard Notes backups (see docs/07)
+# Personal data: real Standard Notes backups (see docs/07). Kept in import-samples/; the names
+# Standard Notes gives them are ignored too, should one be saved or unzipped anywhere else.
 import-samples/
+Standard Notes*Backup*
+*Backup and Import File*
+**/Items/*/
 
 # Environment files and secrets (CI receives them through GitHub Actions secrets)
 .env

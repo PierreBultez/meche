@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { escapeBlockStarts } from "./markdown-escape";
+import { escapeBlockStarts, escapeClosingHashes } from "./markdown-escape";
 
 describe("escapeBlockStarts", () => {
   it.each([
@@ -66,5 +66,26 @@ describe("escapeBlockStarts", () => {
 
   it("escapes every line of a paragraph with hard breaks", () => {
     expect(escapeBlockStarts("Courses :\\\n- lait")).toBe("Courses :\\\n\\- lait");
+  });
+});
+
+describe("escapeClosingHashes", () => {
+  it.each([
+    ["Langage C #", "Langage C \\#"],
+    ["Étape ##", "Étape \\##"],
+    ["#", "\\#"],
+    ["Fin #  ", "Fin \\#  "],
+    ["C#", "C#"],
+    ["Titre", "Titre"],
+    ["a \\#", "a \\#"],
+  ])("%j → %j", (text, escaped) => {
+    expect(escapeClosingHashes(text)).toBe(escaped);
+  });
+
+  it("takes a time proportional to the text", () => {
+    const text = "a" + " #".repeat(200_000);
+    const started = performance.now();
+    escapeClosingHashes(text);
+    expect(performance.now() - started).toBeLessThan(500);
   });
 });

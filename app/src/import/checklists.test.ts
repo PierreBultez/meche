@@ -42,6 +42,11 @@ describe("Advanced Checklist", () => {
     expect(markdown(doc, sourceText).markdown).toBe("## Liste\n\n- [ ] Pas encore ajoutée\n\n## Vide\n\n- [ ] Sans groupe");
   });
 
+  it("keeps a « #» at the end of a group name", () => {
+    const { doc, sourceText } = advancedChecklistToDoc(checklist([{ name: "Liste #", tasks: [task("a")] }]));
+    expect(markdown(doc, sourceText)).toEqual({ markdown: "## Liste \\#\n\n- [ ] a", exact: true });
+  });
+
   it("keeps the line breaks of a task, and its text as typed", () => {
     const { doc, sourceText } = advancedChecklistToDoc(checklist([{ name: "G", tasks: [task("Ligne 1\nligne 2 avec *étoile*")] }]));
     expect(markdown(doc, sourceText)).toEqual({

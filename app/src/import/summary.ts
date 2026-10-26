@@ -1,5 +1,5 @@
-// The texts of the import summary (docs/07, section 4), in French: « 25 notes trouvées : 9 textes
-// enrichis, 6 Super… », what could not be kept exactly, what is left out.
+// The texts of the import summary (docs/07, section 4), in French: « 40 notes trouvées : 10 textes
+// enrichis, 8 Super… », what could not be kept exactly, what is left out.
 import type { ImportPlan, ImportWarning, SourceFormat } from "./types";
 
 const FORMATS: Array<[SourceFormat, string, string]> = [
@@ -14,7 +14,7 @@ const FORMATS: Array<[SourceFormat, string, string]> = [
 
 const count = (n: number, one: string, many: string) => `${n} ${n > 1 ? many : one}`;
 
-/** « 25 notes trouvées : 3 textes, 9 textes enrichis, 6 Super, 7 checklists. » */
+/** « 40 notes trouvées : 12 textes, 10 textes enrichis, 8 Super, 10 checklists. » */
 export function foundText(plan: ImportPlan): string {
   const total = plan.notes.length;
   if (total === 0) return "Aucune note à importer dans cette sauvegarde.";
@@ -78,7 +78,7 @@ export function notesToCheck(plan: ImportPlan): Array<{ title: string; details: 
     }));
 }
 
-/** « Pas importés : 2 notes de la corbeille de Standard Notes, 34 fichiers joints… » or null. */
+/** « Pas importés : 3 notes de la corbeille de Standard Notes, 12 fichiers joints… » or null. */
 export function leftOutText(plan: ImportPlan): string | null {
   const parts: string[] = [];
   const { trashed, deleted, unreadable } = plan.skipped;

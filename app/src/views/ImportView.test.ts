@@ -27,7 +27,11 @@ async function mountImport(pinia = createPinia()) {
 
 enableAutoUnmount(afterEach);
 
-describe("import screen (docs/07)", () => {
+// The converters pause between notes: on a busy machine (CI, the other test files alongside),
+// reading and converting the backup takes more than the second vi.waitFor gives by default.
+const SLOW = { timeout: 10_000 };
+
+describe("import screen (docs/07)", { timeout: 30_000 }, () => {
   let core: FakeCore;
 
   beforeEach(() => {
@@ -43,7 +47,7 @@ describe("import screen (docs/07)", () => {
     await button(wrapper, "Choisir la sauvegarde").trigger("click");
     // The converters are loaded on demand (a dynamic import), and pause between notes: wait
     // until the file is read and converted.
-    await vi.waitFor(() => expect(wrapper.text()).not.toMatch(/Lecture de la sauvegarde|Conversion des notes/));
+    await vi.waitFor(() => expect(wrapper.text()).not.toMatch(/Lecture de la sauvegarde|Conversion des notes/), SLOW);
     await flushPromises();
   }
 
@@ -62,7 +66,7 @@ describe("import screen (docs/07)", () => {
     const { wrapper, router } = await mountImport();
     await chooseBackup(wrapper);
     await button(wrapper, "Importer 11 notes").trigger("click");
-    await vi.waitFor(() => expect(wrapper.text()).toContain("importées"));
+    await vi.waitFor(() => expect(wrapper.text()).toContain("importées"), SLOW);
     const sent = core.calls.find((call) => call.cmd === "import_notes")?.args.notes as ImportedNote[];
     expect(sent).toHaveLength(11);
     expect(wrapper.text()).toContain("11 notes importées.");
@@ -76,13 +80,13 @@ describe("import screen (docs/07)", () => {
     const { wrapper } = await mountImport();
     await chooseBackup(wrapper);
     await button(wrapper, "Importer").trigger("click");
-    await vi.waitFor(() => expect(wrapper.text()).toContain("importées"));
+    await vi.waitFor(() => expect(wrapper.text()).toContain("importées"), SLOW);
     // Same backup again: nothing new, and nothing to triage once the first triage is done.
     core.triage.waiting = [];
     const again = await mountImport();
     await chooseBackup(again.wrapper);
     await button(again.wrapper, "Importer").trigger("click");
-    await vi.waitFor(() => expect(again.wrapper.text()).toContain("Rien de nouveau"));
+    await vi.waitFor(() => expect(again.wrapper.text()).toContain("Rien de nouveau"), SLOW);
     expect(again.wrapper.text()).toContain("Rien de nouveau : ces notes sont déjà dans Mèche.");
     expect(core.notes).toHaveLength(11);
   });
@@ -108,7 +112,7 @@ describe("import screen (docs/07)", () => {
     await chooseBackup(wrapper);
     core.fail("get_triage", { kind: "database" });
     await button(wrapper, "Importer 11 notes").trigger("click");
-    await vi.waitFor(() => expect(wrapper.text()).toContain("11 notes importées."));
+    await vi.waitFor(() => expect(wrapper.text()).toContain("11 notes importées."), SLOW);
     expect(useToastsStore().toasts).toEqual([]);
   });
 

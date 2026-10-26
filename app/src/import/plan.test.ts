@@ -348,6 +348,12 @@ describe("notes that cannot be imported as they are", () => {
     expect(note.updatedAt).toBe(NOW);
   });
 
+  it("keeps the boxes of a numbered list as text (the editor has no numbered checklist)", async () => {
+    const note = await only({ text: "1. [ ] Acheter\n2. [x] Payer", noteType: "markdown" });
+    expect(note.note.content).toBe("1. \\[ \\] Acheter\n2. \\[x\\] Payer");
+    expect(note.warnings).toEqual([]);
+  });
+
   it("reports what a Markdown note loses: HTML, images, footnotes", async () => {
     const note = await only({ text: "Voir ![schéma](https://example.com/s.png)[^1] <b>gras</b>\n\n[^1]: Wikipédia\n\n```\n<i>code</i> ![pas](une-image)\n```", noteType: "markdown" });
     expect(note.warnings).toEqual([
@@ -402,11 +408,13 @@ describe("crafted notes do not freeze the import (security review, phase 4)", ()
       { text: `<table><tr>${"<td>x</td>".repeat(1000)}</tr>${"<tr><td>y</td></tr>".repeat(1000)}</table>`, noteType: "rich-text" },
     ],
     ["checkboxes after many elements", { text: `<ul><li>${"<i></i>".repeat(3000)}${'<input type="checkbox">'.repeat(3000)}</li></ul>`, noteType: "rich-text" }],
-    ["items holding only a nested list", { text: nestedLists, noteType: "super" }],
-  ])("%s", async (_case, content) => {
+    // 3.3 MB of JSON to convert: about 2 s alone, more when the other test files run alongside
+    // (15 s when it took the square of the items).
+    ["items holding only a nested list", { text: nestedLists, noteType: "super" }, 10_000],
+  ])("%s", async (_case, content, limit = 3_000) => {
     const started = performance.now();
     await planImport(backupFromRust([item(content)]), { now: NOW });
-    expect(performance.now() - started).toBeLessThan(3_000);
+    expect(performance.now() - started).toBeLessThan(limit);
   }, 60_000);
 
   it("ignores names like « __proto__ » in the data of an editor", async () => {

@@ -126,7 +126,8 @@ function cleanList(node: JSONContent, options: CleanOptions): JSONContent[] {
   // A numbered list may go on after a code block or a paragraph: its first number is kept.
   // GFM numbers have 1 to 9 digits.
   const start = Number(node.attrs?.start);
-  if (node.type === "orderedList" && Number.isInteger(start) && start > 1 && start <= 999_999_999) {
+  // The last number must be a GFM number too: « 1000000000. » would join the item above.
+  if (node.type === "orderedList" && Number.isInteger(start) && start > 1 && start + items.length - 1 <= 999_999_999) {
     return [{ type: node.type, attrs: { start }, content: items }];
   }
   return [{ type: node.type, content: items }];
@@ -171,9 +172,7 @@ function cleanTable(node: JSONContent, options: CleanOptions): JSONContent[] {
   const rows = (node.content ?? [])
     .map((row) =>
       (row.content ?? []).map((cell) =>
-        flattenToParagraphs(cell.content ?? [], options).flatMap((line, index) =>
-          index === 0 ? withoutLeadingSpaces(line) : [hardBreak(), ...withoutLeadingSpaces(line)],
-        ),
+        cellText(flattenToParagraphs(cell.content ?? [], options)),
       ),
     )
     .filter((cells) => cells.length > 0);
@@ -201,12 +200,21 @@ function cleanTable(node: JSONContent, options: CleanOptions): JSONContent[] {
   ];
 }
 
-/** A line of a table cell without its leading spaces: GFM trims the text of a cell. */
-function withoutLeadingSpaces(line: JSONContent[]): JSONContent[] {
-  const [first, ...rest] = line;
-  if (first?.type !== "text") return line;
-  const value = (first.text ?? "").replace(/^[ \t]+/, "");
-  return value ? [text(value, first.marks ?? []), ...rest] : rest;
+/**
+ * The inline content of a table cell, its lines joined by line breaks, as the editor writes and
+ * reads it back: no spaces at the start of a line, and one space for a run of them (GFM trims a
+ * cell, and the table writer collapses its spaces).
+ */
+function cellText(lines: JSONContent[][]): JSONContent[] {
+  const content = lines.flatMap((line, index) => (index === 0 ? line : [hardBreak(), ...line]));
+  return content
+    .map((node, index) => {
+      if (node.type !== "text") return node;
+      let value = (node.text ?? "").replace(/[ \t]+/g, " ");
+      if (index === 0 || content[index - 1].type === "hardBreak") value = value.replace(/^ /, "");
+      return text(value, node.marks ?? []);
+    })
+    .filter((node) => node.type !== "text" || node.text);
 }
 
 /** The text of any blocks (lists, headings, code… in a table cell), as the inline content of

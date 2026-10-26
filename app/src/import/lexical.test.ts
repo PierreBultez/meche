@@ -98,6 +98,15 @@ describe("lexicalToDoc", () => {
     expect(convert(json)).toMatchObject({ markdown: "| a   |\n| --- |\n| b   |", exact: true });
   });
 
+  it("does not flag the spaces of a table cell that GFM drops", () => {
+    const cell = (...children: object[]) => ({ type: "tablecell", children: [p(...children)] });
+    const json = state({
+      type: "table",
+      children: [{ type: "tablerow", children: [cell(t("h"))] }, { type: "tablerow", children: [cell(t("Lait"), { type: "linebreak" }, t("  entier"))] }, { type: "tablerow", children: [cell(t("1 L  entier"))] }],
+    });
+    expect(convert(json)).toMatchObject({ markdown: "| h              |\n| -------------- |\n| Lait<br>entier |\n| 1 L entier     |", exact: true });
+  });
+
   it("keeps web and e-mail links only", () => {
     const link = (url: string, text: string) => ({ type: "link", url, children: [t(text)] });
     const json = state(p(link("https://example.com", "site"), t(" "), link("mailto:a@example.com", "écrire"), t(" "), link("file:///etc/passwd", "fichier")));

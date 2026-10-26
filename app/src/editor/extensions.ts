@@ -15,7 +15,7 @@ import {
 import { Placeholder } from "@tiptap/extensions";
 import { Markdown } from "@tiptap/markdown";
 import StarterKit from "@tiptap/starter-kit";
-import { Marked, type marked } from "marked";
+import { Marked, Tokenizer, type marked } from "marked";
 import { codeFence } from "../utils/code-fence";
 import { lowlight } from "./lowlight";
 import { escapeBlockStarts } from "./markdown-escape";
@@ -64,8 +64,12 @@ const stockTableTokenizer = Table.config.markdownTokenizer;
 /** Table without the blank lines the default renderer adds around it (one even at the very
  * start of a note that begins with a table). */
 const TidyTable = Table.extend({
-  renderMarkdown(node, helpers) {
-    return renderTableToMarkdown(node, helpers).replace(/^\n+|\n+$/g, "");
+  renderMarkdown(node, helpers, context) {
+    const table = renderTableToMarkdown(node, helpers).replace(/^\n+|\n+$/g, "");
+    // Right after a sub-list in an item, its rows would continue the last sub-item's text: a
+    // blank line separates them.
+    const afterList = ["bulletList", "orderedList", "taskList"].includes(context?.previousNode?.type ?? "");
+    return afterList && ["listItem", "taskItem"].includes(context?.parentType ?? "") ? `\n${table}` : table;
   },
   markdownTokenizer: stockTableTokenizer && {
     ...stockTableTokenizer,
@@ -133,10 +137,40 @@ function textAsParagraphs<T>(tokens: T[] | undefined): T[] | undefined {
 }
 
 /**
+ * marked reads "[ ] " or "[x] " at the start of an item as a checkbox, which a numbered or bullet
+ * item cannot show: the editor dropped it with no trace (« 1. [ ] Acheter » became « Acheter »).
+ * It is kept as the text it was, in front of the item's text.
+ */
+function boxesAsText<T>(tokens: T[] | undefined): T[] | undefined {
+  if (!tokens) return tokens;
+  const result: T[] = [];
+  let box: string | null = null;
+  for (const token of tokens) {
+    const block = token as BlockToken & { raw?: string; text?: string };
+    if (block.type === "checkbox") {
+      box = block.raw ?? "";
+    } else if (box !== null && block.type === "text") {
+      const prefix = { type: "text", raw: box, text: box };
+      result.push({ ...block, raw: box + (block.raw ?? ""), text: box + (block.text ?? ""), tokens: [prefix, ...(block.tokens ?? [])] } as T);
+      box = null;
+    } else {
+      result.push(token);
+    }
+  }
+  // A box with no text after it.
+  if (box !== null) result.push({ type: "text", raw: box, text: box, tokens: [{ type: "text", raw: box, text: box }] } as T);
+  return result;
+}
+
+/**
  * A blank line above each `---` line that comes right under a line of text, outside code blocks:
  * Markdown would read that text as a heading, underlined by the rule (`- a⏎  ---`). Paragraphs
  * cannot hold such a line themselves (SafeParagraph writes `\---`).
  */
+// The line of an empty item: its marker alone ("-", "10.", "- [ ]"). A rule under it is in the
+// item already; a blank line there would take the rule out of the list.
+const BARE_MARKER = /^(?:[-+*]|\d{1,9}[.)])(?: \[[ xX]\])?$/;
+
 function separateRules(markdown: string): string {
   const lines = markdown.split("\n");
   const result: string[] = [];
@@ -149,7 +183,7 @@ function separateRules(markdown: string): string {
       if (marks && marks[0] === fence[0] && marks.length >= fence.length && trimmed === marks) fence = null;
     } else if (marks) {
       fence = marks;
-    } else if (trimmed === "---" && index > 0 && lines[index - 1].trim()) {
+    } else if (trimmed === "---" && index > 0 && lines[index - 1].trim() && !BARE_MARKER.test(lines[index - 1].trim())) {
       result.push("");
     }
     result.push(line);
@@ -173,35 +207,33 @@ function indentLineBreaks(markdown: string, item: JSONContent, width: number): s
     .join("\n");
 }
 
-/** A list item whose text is empty but which has sub-items. */
-function isEmptiedParent(item: JSONContent | undefined): boolean {
-  return (
-    item?.type === "listItem" &&
-    (item.content?.length ?? 0) > 1 &&
-    item.content?.[0]?.type === "paragraph" &&
-    !item.content[0].content?.length
-  );
+const isList = (node: JSONContent | undefined) => node?.type === "bulletList" || node?.type === "orderedList";
+
+/** A list item whose text is empty (it may have sub-items). */
+function isEmptyItem(item: JSONContent | undefined): boolean {
+  return item?.type === "listItem" && item.content?.[0]?.type === "paragraph" && !item.content[0].content?.length;
 }
 
 const SafeListItem = ListItem.extend({
   renderMarkdown(node, helpers, context) {
     let markdown = this.parent?.(node, helpers, context) ?? "";
-    // An emptied item with sub-items is written "-" or "1." alone on its line: the parser reads
-    // "- " followed by a line break as a paragraph, and the sub-items would move up a level.
-    if (/^(-|\d+\.) \n/.test(markdown)) markdown = markdown.replace(" \n", "\n");
+    // An empty item is written "-" or "1." alone on its line: marked reads "- " or "1. " followed
+    // by a line break as a paragraph (the sub-items moved up a level, a first empty item turned
+    // the whole list into text).
+    markdown = markdown.replace(/^(-|\d+\.) (?=\n|$)/, "$1");
     // Its line breaks: indented under the text, "- " or "1. " wide.
     markdown = indentLineBreaks(markdown, node, /^(-|\d+\.) ?/.exec(markdown)?.[0].length ?? 2);
-    // Right under this item's text, an emptied sub-item ("-") would underline it as a heading: a
-    // blank line separates them, as for a horizontal rule.
+    // Right under this item's text, an empty sub-item ("-") would underline it as a heading, and
+    // "1." would join it: a blank line separates them, as for a horizontal rule.
     const [text, next] = node.content ?? [];
-    if (text?.type === "paragraph" && text.content?.length && next?.type === "bulletList" && isEmptiedParent(next.content?.[0])) {
-      markdown = markdown.replace(/\n([ \t]*-)(?=\n)/, "\n\n$1");
+    if (text?.type === "paragraph" && text.content?.length && isList(next) && isEmptyItem(next?.content?.[0])) {
+      markdown = markdown.replace(/\n([ \t]*(?:-|\d{1,9}\.))(?=\n|$)/, "\n\n$1");
     }
     if (node.content?.some((child) => child.type === "horizontalRule")) markdown = separateRules(markdown);
     return markdown;
   },
   parseMarkdown(token, helpers) {
-    const parsed = this.parent?.({ ...token, tokens: textAsParagraphs(token.tokens) }, helpers);
+    const parsed = this.parent?.({ ...token, tokens: textAsParagraphs(boxesAsText(token.tokens)) }, helpers);
     for (const item of Array.isArray(parsed) ? parsed : [parsed]) {
       if (item) tidyListItem(item as JSONContent);
     }
@@ -330,6 +362,9 @@ const SafeLink = Link.extend({
   },
 });
 
+// A list item marker followed only by spaces or tabs, on the first line.
+const EMPTY_FIRST_ITEM = /^( {0,3}(?:[*+-]|\d{1,9}[.)]))[ \t]+(?=\n|$)/;
+
 /**
  * A Markdown parser for one editor. @tiptap/markdown adds its tokenizers to the parser it is
  * given each time an editor is created: with the shared default parser, they piled up with
@@ -339,7 +374,22 @@ const SafeLink = Link.extend({
  */
 function createParser(): typeof marked {
   const parser = new Marked();
-  parser.use({ tokenizer: { url: () => undefined } });
+  parser.use({
+    tokenizer: {
+      url: () => undefined,
+      // An empty first item followed by a space ("1. ", "- "), as the editor wrote it before
+      // phase 4, does not start a list for marked: the note reopened as plain text. The list is
+      // read without that space; `raw` still covers it, so the reader goes on at the right place.
+      list(src) {
+        const empty = EMPTY_FIRST_ITEM.exec(src);
+        if (!empty) return false;
+        const marker = empty[1];
+        // `call(this, …)`: marked's own list reader, with this tokenizer as its `this`.
+        const token = Tokenizer.prototype.list.call(this, marker + src.slice(empty[0].length));
+        return token ? { ...token, raw: empty[0] + token.raw.slice(marker.length) } : false;
+      },
+    },
+  });
   // A Marked instance has everything @tiptap/markdown uses from the default one.
   return parser as unknown as typeof marked;
 }
@@ -348,7 +398,11 @@ function createParser(): typeof marked {
 const SafeParagraph = Paragraph.extend({
   renderMarkdown(node, helpers, context) {
     // The table renderer passes the table as parent of the paragraphs of its cells.
-    return escapeBlockStarts(this.parent?.(node, helpers, context) ?? "", context?.parentType === "table");
+    const markdown = escapeBlockStarts(this.parent?.(node, helpers, context) ?? "", context?.parentType === "table");
+    // A line or paragraph separator (U+2028, U+2029, pasted) stopped TipTap's readers of list
+    // items, which read an item up to the end of its line: written as an entity, it reads back as
+    // the same character. (In inline code it would show as the entity: such code is unlikely.)
+    return markdown.replace(/\u2028/g, "&#8232;").replace(/\u2029/g, "&#8233;");
   },
 });
 

@@ -63,6 +63,24 @@ describe("hand-written Markdown is normalized once, then stays stable", () => {
     expect(roundTrip(once)).toBe(once);
   });
 
+  it("opens an empty first item written with a space, as before phase 4", () => {
+    const list = (type: string, ...texts: string[]): JSONContent => ({
+      type: "doc",
+      content: [
+        {
+          type,
+          content: texts.map((value) => ({
+            type: "listItem",
+            content: [value ? { type: "paragraph", content: [{ type: "text", text: value }] } : { type: "paragraph" }],
+          })),
+        },
+      ],
+    });
+    expect(editorFor("1. \n2. b").getJSON()).toEqual(editorFor(list("orderedList", "", "b")).getJSON());
+    expect(editorFor("- \n- b").getJSON()).toEqual(editorFor(list("bulletList", "", "b")).getJSON());
+    expect(editorFor("1. ").getJSON()).toEqual(editorFor(list("orderedList", "")).getJSON());
+  });
+
   it("keeps the code of a numbered item as typed", () => {
     expect(roundTrip("1. a\n\n   ```\n   code\n     plus loin\n   ```")).toBe("1. a\n   ```\n   code\n     plus loin\n   ```");
     expect(roundTrip("1.  a\n    - [ ] b\n    - [ ] c")).toBe("1. a\n   - [ ] b\n   - [ ] c");
@@ -517,6 +535,61 @@ describe("what the editor writes reads back the same (phase 1 review)", () => {
       "a sub-item that is just a pipe",
       [{ type: "bulletList", content: [item(paragraph(text("x")), { type: "bulletList", content: [item(paragraph(text("|")))] })] }],
     ],
+    // Verification of round 2 (phase 4).
+    ["an empty first numbered item", [{ type: "orderedList", content: [item(paragraph()), item(paragraph(text("b")))] }]],
+    ["a single empty numbered item", [{ type: "orderedList", content: [item(paragraph())] }]],
+    ["an empty first item of a list starting at 5", [{ type: "orderedList", attrs: { start: 5 }, content: [item(paragraph()), item(paragraph(text("b")))] }]],
+    ["an empty first bullet", [{ type: "bulletList", content: [item(paragraph()), item(paragraph(text("b")))] }]],
+    [
+      "an empty first numbered item under a bullet",
+      [{ type: "bulletList", content: [item(paragraph(text("a")), { type: "orderedList", content: [item(paragraph()), item(paragraph(text("b")))] })] }],
+    ],
+    [
+      "an empty first sub-item right under the text of an item",
+      [
+        { type: "orderedList", content: [item(paragraph(text("a")), { type: "bulletList", content: [item(paragraph()), item(paragraph(text("b")))] })] },
+        { type: "bulletList", content: [item(paragraph(text("c")), { type: "orderedList", content: [item(paragraph()), item(paragraph(text("d")))] })] },
+      ],
+    ],
+    // (An empty paragraph left at the end of an item has no Markdown: the line typed after the
+    // rule is what is kept.)
+    [
+      "a rule inserted in an empty item (« Séparateur » of the slash menu)",
+      [
+        { type: "bulletList", content: [item(paragraph(text("a"))), item(paragraph(), { type: "horizontalRule" }, paragraph(text("suite")))] },
+        { type: "orderedList", attrs: { start: 10 }, content: [item(paragraph(), { type: "horizontalRule" })] },
+      ],
+    ],
+    [
+      "a table after a sub-list in an item",
+      [
+        {
+          type: "bulletList",
+          content: [
+            item(paragraph(text("a")), { type: "bulletList", content: [item(paragraph(text("x")))] }, {
+              type: "table",
+              content: [
+                { type: "tableRow", content: [cell("tableHeader", "h"), cell("tableHeader", "i")] },
+                { type: "tableRow", content: [cell("tableCell", "1"), cell("tableCell", "2")] },
+              ],
+            }),
+          ],
+        },
+        {
+          type: "orderedList",
+          content: [
+            item(paragraph(text("b")), { type: "orderedList", content: [item(paragraph(text("y")))] }, {
+              type: "table",
+              content: [
+                { type: "tableRow", content: [cell("tableHeader", "h")] },
+                { type: "tableRow", content: [cell("tableCell", "1")] },
+              ],
+            }),
+          ],
+        },
+      ],
+    ],
+    ["a line separator in a task", [{ type: "taskList", content: [task(true, paragraph(text("a b c")))] }]],
     [
       "two line breaks in a quote",
       [{ type: "blockquote", content: [paragraph(text("a"), hardBreak, hardBreak, text("b"))] }],

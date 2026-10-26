@@ -86,6 +86,11 @@ describe("htmlToDoc", () => {
     expect(convert(html)).toMatchObject({ markdown: "1. Installer\n\n```\nnpm ci\n```\n\n2. Configurer", exact: true });
   });
 
+  it("keeps a first number only when the last one is still a GFM number", () => {
+    expect(convert('<ol start="999999999"><li>a</li><li>b</li></ol>').markdown).toBe("1. a\n2. b");
+    expect(convert('<ol start="999999998"><li>a</li><li>b</li></ol>').markdown).toBe("999999998. a\n999999999. b");
+  });
+
   it("keeps the link of inline code: the link wins", () => {
     const html = '<p>Voir <a href="https://example.com/x"><code>Array.map()</code></a> et <code><a href="https://example.com/y">fetch()</a></code></p>';
     expect(convert(html)).toMatchObject({ markdown: "Voir [Array.map()](https://example.com/x) et [fetch()](https://example.com/y)", exact: true });

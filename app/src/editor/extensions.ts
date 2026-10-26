@@ -1,6 +1,6 @@
 // TipTap extensions of rich notes (docs/05). Only MIT packages published on npm.
 // The same list is used by the editor and by the Markdown tests, so both share one schema.
-import type { AnyExtension, JSONContent } from "@tiptap/core";
+import { decodeHtmlEntities, type AnyExtension, type JSONContent } from "@tiptap/core";
 import CodeBlockLowlight from "@tiptap/extension-code-block-lowlight";
 import Heading from "@tiptap/extension-heading";
 import Link from "@tiptap/extension-link";
@@ -160,6 +160,44 @@ function boxesAsText<T>(tokens: T[] | undefined): T[] | undefined {
   }
   // A box with no text after it.
   if (box !== null) result.push({ type: "text", raw: box, text: box, tokens: [{ type: "text", raw: box, text: box }] } as T);
+  return result;
+}
+
+interface InlineToken extends BlockToken {
+  raw?: string;
+  text?: string;
+}
+
+/**
+ * TipTap joins the pieces of text of a paragraph with one splice per piece, a time growing with
+ * the square of their number: a paragraph of 8,000 lines full of escapes (`\[`, `\_`), as a
+ * pasted log becomes, took 4 s to open. Each run of text and escape tokens is joined here first,
+ * in one pass, into one `escape` token, whose text TipTap keeps as it is: the text tokens are
+ * decoded beforehand, as TipTap decodes them (`\&amp;` stays « &amp; »).
+ */
+function joinTextRuns<T>(tokens: T[] | undefined): T[] | undefined {
+  if (!tokens) return tokens;
+  const result: T[] = [];
+  let run: InlineToken[] = [];
+  const flush = () => {
+    if (run.length === 1) result.push(run[0] as T);
+    if (run.length > 1) {
+      const raw = run.map((token) => token.raw ?? "").join("");
+      const text = run.map((token) => (token.type === "text" ? decodeHtmlEntities(token.text ?? "") : (token.text ?? ""))).join("");
+      result.push({ type: "escape", raw, text } as T);
+    }
+    run = [];
+  };
+  for (const token of tokens) {
+    const inline = token as InlineToken;
+    if ((inline.type === "text" || inline.type === "escape") && !inline.tokens) {
+      run.push(inline);
+    } else {
+      flush();
+      result.push(token);
+    }
+  }
+  flush();
   return result;
 }
 
@@ -407,6 +445,9 @@ const SafeHeading = Heading.extend({
 
 /** Paragraph whose text never turns into a list, heading or quote when read back. */
 const SafeParagraph = Paragraph.extend({
+  parseMarkdown(token, helpers) {
+    return this.parent?.({ ...token, tokens: joinTextRuns(token.tokens) }, helpers) as ReturnType<NonNullable<typeof this.parent>>;
+  },
   renderMarkdown(node, helpers, context) {
     // The table renderer passes the table as parent of the paragraphs of its cells.
     const markdown = escapeBlockStarts(this.parent?.(node, helpers, context) ?? "", context?.parentType === "table");

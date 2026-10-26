@@ -671,25 +671,40 @@ describe("what the editor writes reads back the same (phase 1 review)", () => {
 describe("a long note is read in a time that grows with its length", () => {
   // Read by the editor at each opening: TipTap's own readers took a time growing with the
   // square of the length (3.6 s for 4,000 short checklists, phase 4 review).
-  const blocks: Array<[string, (index: number) => string, number?]> = [
+  const blocks: Array<[string, (index: number) => string]> = [
     ["paragraphs", (index) => `ligne ${index}\n\n`],
     ["headings", (index) => `## titre ${index}\n`],
     ["checklists between paragraphs", (index) => `- [x] tâche ${index}\n\ntexte ${index}\n\n`],
     ["checklists separated by blank lines", (index) => `- [ ] tâche ${index}\n\n`],
     // One paragraph of 8,000 lines full of escapes, as a pasted log becomes: marked 17 took 7.8 s
-    // for 4,000 such lines (about 30 s for these), marked 18 about 1 s, more when the other test
-    // files run alongside.
-    ["a paragraph full of escapes (a pasted log)", (index) => `12:00:${index} \\[INFO\\] user\\_name \\*x\\* \`code\`  \n`, 10_000],
+    // for 4,000 such lines (it rebuilt the paragraph at each escape), then TipTap 4 s for these
+    // 8,000 (it joined their pieces of text one by one, see joinTextRuns).
+    ["a paragraph full of escapes (a pasted log)", (index) => `12:00:${index} \\[INFO\\] user\\_name \\*x\\* \`code\`  \n`],
     ["tables", (index) => `| a | b |\n| --- | --- |\n| ${index} | x |\n\n`],
     ["numbered lists between headings", (index) => `${index + 1}. point\n## titre\n`],
   ];
 
-  it.each(blocks)("%s", (_case, block, limit = 3000) => {
+  it.each(blocks)("%s", (_case, block) => {
     const editor = editorFor("");
     const markdown = Array.from({ length: 8000 }, (_, index) => block(index)).join("");
     const start = performance.now();
     editor.markdown?.parse(markdown);
-    // About 0.1 s here; the square of the length would take well over 10 s.
-    expect(performance.now() - start).toBeLessThan(limit);
+    // About 0.1 s here (0.5 s for the log); the square of the length would take well over 10 s.
+    expect(performance.now() - start).toBeLessThan(3000);
+  });
+
+  it("reads the escapes and entities of a paragraph as TipTap does, once its text is joined", () => {
+    const paragraph = editorFor("\\&amp; a\\_b &lt; c \\*d\\* `e`\\\nf &#38; \\&nbsp;").getJSON().content;
+    expect(paragraph).toEqual([
+      {
+        type: "paragraph",
+        content: [
+          { type: "text", text: "&amp; a_b < c *d* " },
+          { type: "text", text: "e", marks: [{ type: "code" }] },
+          { type: "hardBreak" },
+          { type: "text", text: "f & &nbsp;" },
+        ],
+      },
+    ]);
   });
 });

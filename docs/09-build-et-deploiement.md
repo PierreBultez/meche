@@ -121,7 +121,13 @@ Workflow `release.yml` déclenché par un tag `v*` (ex. `v0.3.0`), qui crée une
 | Android | `ubuntu-latest` + SDK/NDK | `.apk` signé (universel ou arm64) |
 
 - Desktop : action officielle `tauri-apps/tauri-action`.
-- Version unique dans `app/src-tauri/tauri.conf.json`, incrémentée à chaque release (le `versionCode` Android en découle et doit toujours augmenter, sinon la mise à jour est refusée).
+- Version unique de l'application, incrémentée à chaque release (voir « Numéro de version » ci-dessous).
+
+### Numéro de version
+
+- Une seule version, écrite à cinq endroits qui doivent concorder : `app/package.json` et `app/package-lock.json` ; `app/src-tauri/tauri.conf.json` (version affichée dans Réglages, nom des paquets, `versionCode` Android) ; `app/src-tauri/Cargo.toml` et `Cargo.lock` (version envoyée au serveur dans l'en-tête `User-Agent`). `node scripts/version.mjs 0.4.1` les change tous (avec `npm version` et `cargo update --workspace`, sans rien installer) ; sans argument, il vérifie qu'ils concordent, ce que fait la CI.
+- Avant la V1 : `0.<phase>.<correctif>`. La version passe à `0.N.0` quand la phase N est terminée (`0.4.0` à la fin de la phase 4) ; chaque PR fusionnée ensuite qui change l'application livrée (code de `app/`, hors tests et documentation) ajoute 1 au dernier chiffre (`0.4.1`, `0.4.2`…). Le tag `v1.0.0` termine la phase 6 (`10-feuille-de-route.md`) ; après, versionnage sémantique classique.
+- Pourquoi : `apt` n'installe pas un `.deb` dont la version est déjà installée (il répond « déjà la version la plus récente » et garde l'ancien build), Android refuse une mise à jour dont le `versionCode` n'augmente pas (Tauri le calcule à partir de la version : `0.4.1` donne 4001), et Réglages montre quelle version tourne. Jusqu'à la phase 4, la version était restée à `0.1.0`.
 
 **En attendant (ajouté en phase 3)** : `.github/workflows/windows-build.yml` construit l'installateur Windows (NSIS, `-setup.exe`) pour essayer l'application sur un PC. À lancer à la main : Actions › Windows build › Run workflow (sur `master`) ; il tourne aussi à chaque modification du workflow. L'installateur est joint au run (artefact `meche-windows-x64`, un zip gardé 30 jours). Il n'est pas signé : au premier lancement, SmartScreen affiche « Windows a protégé votre ordinateur » → « Informations complémentaires » → « Exécuter quand même ». Installation pour l'utilisateur courant, sans droits d'administrateur ; WebView2 est déjà présent sur Windows 10 et 11. Données de l'application : `%APPDATA%\fr.pierrebultez.meche`. `release.yml` le remplacera en phase 6.
 
@@ -163,6 +169,7 @@ Deux méthodes :
 ## 7. Installer sur les PC
 
 - **Ubuntu** : `sudo apt install ./meche_x.y.z_amd64.deb`. Format Linux retenu : **`.deb` uniquement**.
+  - À version égale, `apt` garde le build déjà installé (« déjà la version la plus récente ») : pour réinstaller un build de la même version, `sudo apt install --reinstall ./meche_x.y.z_amd64.deb`.
   - Mises à jour : au moment de la phase 6, vérifier dans la documentation de `tauri-plugin-updater` si l'installation automatique d'un `.deb` est prise en charge.
   - Si oui : l'utiliser comme sur Windows.
   - Si non : au démarrage, l'application compare sa version à la dernière GitHub Release et affiche « Nouvelle version disponible » avec un bouton qui télécharge le `.deb` ; l'installation se fait avec `sudo apt install ./meche_….deb`. Ne pas réintroduire l'AppImage sans l'accord de Pierre.

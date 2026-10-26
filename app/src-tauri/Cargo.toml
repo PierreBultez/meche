@@ -1,6 +1,6 @@
 [package]
 name = "meche"
-version = "0.1.0"
+version = "0.4.0"
 description = "Mèche — fast, colorful personal notes with self-destructing notes"
 authors = ["Pierre Bultez"]
 license = "MIT"

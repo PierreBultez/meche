@@ -64,7 +64,7 @@ Essais dans la vraie application (build release, conteneur de développement, é
 
 **Mesures (phase 4)**, mêmes conditions :
 - démarrage à froid jusqu'à la fenêtre visible (compte connecté, 25 notes) : 506 à 572 ms sur 6 lancements ; budget 1 s. Comparé à `master` dans les mêmes conditions (profils neufs, 8 lancements alternés) : médiane 495 ms contre 545 ms, pas d'écart mesurable ;
-- ouverture d'une note : 42 à 95 ms pour une note courte ; une note de 47 000 caractères s'ouvre en 560 à 650 ms, qu'elle soit importée ou créée dans Mèche : le temps d'ouverture de l'éditeur croît avec la taille de la note (à reprendre en phase 7, « Mesure et optimisation des budgets ») ; la plus grosse note réelle de Pierre fait environ 17 000 caractères une fois convertie ;
+- ouverture d'une note : 42 à 95 ms pour une note courte ; une note de 47 000 caractères s'ouvre en 560 à 650 ms, qu'elle soit importée ou créée dans Mèche : le temps d'ouverture de l'éditeur croît avec la taille de la note (à reprendre en phase 7, « Mesure et optimisation des budgets »). Remesurée après les revues : 715 à 990 ms dans une autre session du conteneur ; la lecture du Markdown n'en prend qu'environ 40 ms, la même avec les versions de l'éditeur d'avant et d'après les revues, le reste est l'affichage ; la plus grosse note réelle de Pierre fait environ 17 000 caractères une fois convertie ;
 - recherche : 9 à 62 ms aller-retour WebDriver compris ;
 - paquet `.deb` : 5,3 Mo ; le code de l'import est chargé à la demande (rien de plus au démarrage qu'un libellé de la palette).
 

@@ -73,10 +73,11 @@ Pas de souligné (n'existe pas en Markdown), pas de couleurs, pas d'images en V1
 
 - Un titre qui finit par `#` précédé d'une espace (`## Langage C #`) perdait ce `#` à la réouverture : Markdown y voit la fermeture facultative du titre (`## Titre ##`). Le premier `#` de cette fin est échappé (`## Langage C \#`), par `SafeHeading` (`@tiptap/extension-heading`, déclarée en dépendance directe, validé par Pierre).
 
+- **`marked` 18** (essayé à la demande de Pierre après la phase 4) : `marked` 17 reconstruisait tout le paragraphe à chaque caractère échappé (`\*`, `\_`, `\[`…) ou code en ligne, pour le masquer avant de chercher le gras et l'italique. Le temps croissait avec le carré de leur nombre : une note de texte de 4 000 lignes de journal (un seul paragraphe) prenait 7,8 s à lire. `marked` 18.0.7 fait ce masquage en un seul passage : 0,56 s. `@tiptap/markdown` déclare encore `marked` ^17 : une règle `overrides` de `package.json` lui donne le même `marked` 18 que l'application (une seule copie). Vérifié : les 3 034 documents d'un corpus (fixtures, notes converties, lignes vides en tout genre, documents tirés au hasard) sont lus et réécrits à l'identique avec les deux versions ; un test le surveille (8 000 lignes de journal).
+
 **Limites connues** (à reprendre en phase 7, avec l'accord de Pierre) :
-- `marked` 17 (utilisé par `@tiptap/markdown`) met un temps qui croît avec le carré du nombre de caractères échappés (`\*`, `\_`, `\[`…), de codes en ligne ou de marques de gras et d'italique d'un même paragraphe. Une note de texte de 4 000 lignes de journal (un seul paragraphe, des `_` et des `[`) met environ 3 s à s'ouvrir. `marked` 18 lit le même texte en 0,3 s, mais `@tiptap/markdown` déclare `marked` ^17 : la montée de version est à valider et à tester.
 - Dans une note écrite avant la phase 4, une ligne qui suit un retour à la ligne dans un élément numéroté et qui commence par `#` (`#projet`) sort de la liste à la réouverture : ces lignes n'étaient pas indentées (elles le sont maintenant). Le texte reste.
-- Un élément de liste de milliers de lignes (un long texte collé dans une puce) se lit aussi en temps quadratique avec `marked` 17.
+- Un seul élément de liste de milliers de lignes (un long texte collé dans une puce) se lit en temps quadratique, par `marked` lui-même, en version 17 comme en 18 : environ 3 s pour 8 000 lignes.
 - Un paragraphe vide laissé à la fin d'un élément de liste n'a pas d'écriture Markdown : il ne revient pas à la réouverture.
 
 ### Sauvegarde

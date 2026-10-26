@@ -111,7 +111,7 @@ src-tauri/src/
 | Vue Router | Navigation (indispensable sur mobile : liste → note, bouton retour Android) |
 | Tailwind CSS 4 | Styles |
 | `@tiptap/vue-3` v3 + extensions MIT | Éditeur riche |
-| `@tiptap/markdown` + `marked` (MIT) | Lecture et écriture du Markdown des notes riches (un analyseur `marked` par éditeur, voir `05-editeur.md`) |
+| `@tiptap/markdown` + `marked` 18 (MIT) | Lecture et écriture du Markdown des notes riches (un analyseur `marked` par éditeur, voir `05-editeur.md`). `@tiptap/markdown` déclare `marked` ^17 : la règle `overrides` de `app/package.json` lui donne le `marked` 18 de l'application, plus rapide (`05-editeur.md`) ; à retirer quand TipTap déclarera `marked` 18 |
 | `lowlight` | Coloration des blocs de code dans TipTap |
 | CodeMirror 6 (`@codemirror/*`, `@codemirror/lang-*`) | Notes code |
 | `lucide-vue-next` | Icônes |

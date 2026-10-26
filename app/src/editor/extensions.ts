@@ -2,6 +2,7 @@
 // The same list is used by the editor and by the Markdown tests, so both share one schema.
 import type { AnyExtension, JSONContent } from "@tiptap/core";
 import CodeBlockLowlight from "@tiptap/extension-code-block-lowlight";
+import Heading from "@tiptap/extension-heading";
 import Link from "@tiptap/extension-link";
 import { ListItem, OrderedList, TaskItem, TaskList } from "@tiptap/extension-list";
 import Paragraph from "@tiptap/extension-paragraph";
@@ -18,7 +19,7 @@ import StarterKit from "@tiptap/starter-kit";
 import { Marked, Tokenizer, type marked } from "marked";
 import { codeFence } from "../utils/code-fence";
 import { lowlight } from "./lowlight";
-import { escapeBlockStarts } from "./markdown-escape";
+import { escapeBlockStarts, escapeClosingHashes } from "./markdown-escape";
 
 export interface RichExtensionOptions {
   /** Extra extensions of the interactive editor (slash menu, code block view…). */
@@ -394,6 +395,16 @@ function createParser(): typeof marked {
   return parser as unknown as typeof marked;
 }
 
+/** Heading whose text keeps a « #» at its end when read back (`## Langage C \\#`). */
+const SafeHeading = Heading.extend({
+  renderMarkdown(node, helpers, context) {
+    const markdown = this.parent?.(node, helpers, context) ?? "";
+    // "## " then the text: only the text is looked at.
+    const space = markdown.indexOf(" ");
+    return space === -1 ? markdown : markdown.slice(0, space + 1) + escapeClosingHashes(markdown.slice(space + 1));
+  },
+});
+
 /** Paragraph whose text never turns into a list, heading or quote when read back. */
 const SafeParagraph = Paragraph.extend({
   renderMarkdown(node, helpers, context) {
@@ -409,7 +420,8 @@ const SafeParagraph = Paragraph.extend({
 export function createRichExtensions(options: RichExtensionOptions = {}): AnyExtension[] {
   return [
     StarterKit.configure({
-      heading: { levels: [1, 2, 3] },
+      // Replaced by SafeHeading, levels 1 to 3 (docs/05).
+      heading: false,
       paragraph: false,
       // Replaced by CodeBlockLowlight (syntax highlighting).
       codeBlock: false,
@@ -420,6 +432,7 @@ export function createRichExtensions(options: RichExtensionOptions = {}): AnyExt
       orderedList: false,
       listItem: false,
     }),
+    SafeHeading.configure({ levels: [1, 2, 3] }),
     SafeParagraph,
     SafeListItem,
     SafeOrderedList,

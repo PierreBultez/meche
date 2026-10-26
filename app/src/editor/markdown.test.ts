@@ -591,6 +591,15 @@ describe("what the editor writes reads back the same (phase 1 review)", () => {
     ],
     ["a line separator in a task", [{ type: "taskList", content: [task(true, paragraph(text("a b c")))] }]],
     [
+      "headings ending with « #»",
+      [
+        { type: "heading", attrs: { level: 2 }, content: [text("Langage C #")] },
+        { type: "heading", attrs: { level: 1 }, content: [text("#")] },
+        { type: "heading", attrs: { level: 3 }, content: [text("Étape ##")] },
+        { type: "heading", attrs: { level: 2 }, content: [text("C#")] },
+      ],
+    ],
+    [
       "two line breaks in a quote",
       [{ type: "blockquote", content: [paragraph(text("a"), hardBreak, hardBreak, text("b"))] }],
     ],

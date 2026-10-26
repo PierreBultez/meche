@@ -64,3 +64,18 @@ export function escapeBlockStarts(markdown: string, inTableCell = false): string
     })
     .join("\n");
 }
+
+/**
+ * The text of a heading whose end is a run of `#` after a space (`Langage C #`, or only `#`):
+ * Markdown reads that run as the optional closing of the heading (`## Titre ##`) and drops it.
+ * Its first `#` is escaped. Loops, not a regular expression: linear on any text.
+ */
+export function escapeClosingHashes(text: string): string {
+  let end = text.length;
+  while (end > 0 && (text[end - 1] === " " || text[end - 1] === "\t")) end--;
+  let start = end;
+  while (start > 0 && text[start - 1] === "#") start--;
+  // No run of `#` at the end, or one glued to the text before it (`C#`): nothing to escape.
+  if (start === end || (start > 0 && text[start - 1] !== " " && text[start - 1] !== "\t")) return text;
+  return `${text.slice(0, start)}\\${text.slice(start)}`;
+}

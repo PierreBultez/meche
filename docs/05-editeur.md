@@ -71,12 +71,13 @@ Pas de souligné (n'existe pas en Markdown), pas de couleurs, pas d'images en V1
 - Un sous-élément fait d'une seule barre (`- |`) faisait de l'élément au-dessus un tableau : une ligne faite seulement de `|`, `:`, `-` et d'espaces a ses barres échappées.
 - Un simple clic sur un lien d'une note en lecture seule (corbeille, aperçu du tri) l'ouvrait dans le navigateur, ou rechargeait l'application pour un lien refusé (`file:`, écrit avec une adresse vide) : seul `Ctrl+clic` ouvre un lien, dans tous les cas.
 
+- Un titre qui finit par `#` précédé d'une espace (`## Langage C #`) perdait ce `#` à la réouverture : Markdown y voit la fermeture facultative du titre (`## Titre ##`). Le premier `#` de cette fin est échappé (`## Langage C \#`), par `SafeHeading` (`@tiptap/extension-heading`, déclarée en dépendance directe, validé par Pierre).
+
 **Limites connues** (à reprendre en phase 7, avec l'accord de Pierre) :
 - `marked` 17 (utilisé par `@tiptap/markdown`) met un temps qui croît avec le carré du nombre de caractères échappés (`\*`, `\_`, `\[`…), de codes en ligne ou de marques de gras et d'italique d'un même paragraphe. Une note de texte de 4 000 lignes de journal (un seul paragraphe, des `_` et des `[`) met environ 3 s à s'ouvrir. `marked` 18 lit le même texte en 0,3 s, mais `@tiptap/markdown` déclare `marked` ^17 : la montée de version est à valider et à tester.
 - Dans une note écrite avant la phase 4, une ligne qui suit un retour à la ligne dans un élément numéroté et qui commence par `#` (`#projet`) sort de la liste à la réouverture : ces lignes n'étaient pas indentées (elles le sont maintenant). Le texte reste.
 - Un élément de liste de milliers de lignes (un long texte collé dans une puce) se lit aussi en temps quadratique avec `marked` 17.
 - Un paragraphe vide laissé à la fin d'un élément de liste n'a pas d'écriture Markdown : il ne revient pas à la réouverture.
-- Un titre qui finit par `#` précédé d'une espace (`## Langage C #`) perd ce `#` à la réouverture (Markdown y voit la fermeture facultative du titre). Le corriger demande d'étendre l'extension `Heading`, donc d'ajouter `@tiptap/extension-heading` (MIT, déjà installée par StarterKit) aux dépendances directes.
 
 ### Sauvegarde
 - À chaque modification : anti-rebond de **400 ms**, puis sérialisation en Markdown.

@@ -7,7 +7,7 @@ export interface Backup {
   version: string | null;
   /** The `Note` items, unchecked: everything in them comes from a file and is verified here. */
   notes: unknown[];
-  /** How many items of every other type the backup holds (`"SN|File": 34`…). */
+  /** How many items of every other type the backup holds (`"SN|File": 12`…). */
   otherItems: Record<string, number>;
 }
 
@@ -29,7 +29,7 @@ export interface ImportResult {
   alreadyImported: number;
 }
 
-/** Where a note comes from, for the summary (« 9 HTML, 6 Super… »). */
+/** Where a note comes from, for the summary (« 10 HTML, 8 Super… »). */
 export type SourceFormat = "text" | "markdown" | "html" | "super" | "checklist" | "code" | "other";
 
 /**

@@ -40,10 +40,10 @@ describe("summary of an import", () => {
 
   it("says what is left out", () => {
     const left = leftOutText(
-      plan([], { "SN|File": 34, "SN|SmartTag": 1, "SN|Component": 5, "SN|Theme": 1, "SN|UserPreferences": 1 }, { trashed: 2, deleted: 1, unreadable: 0 }),
+      plan([], { "SN|File": 12, "SN|SmartTag": 2, "SN|Component": 3, "SN|Theme": 2, "SN|UserPreferences": 1 }, { trashed: 3, deleted: 1, unreadable: 0 }),
     );
     expect(left).toBe(
-      "Pas importés : 2 notes de la corbeille de Standard Notes, 1 note supprimée ou illisible, 34 fichiers joints absents de la sauvegarde, 1 étiquette (Mèche n'en a pas), 7 réglages et extensions.",
+      "Pas importés : 3 notes de la corbeille de Standard Notes, 1 note supprimée ou illisible, 12 fichiers joints absents de la sauvegarde, 2 étiquettes (Mèche n'en a pas), 6 réglages et extensions.",
     );
     expect(leftOutText(plan([planned("text")]))).toBeNull();
   });

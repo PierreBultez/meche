@@ -34,7 +34,7 @@ pub struct Backup {
     pub version: Option<String>,
     /// The `Note` items, as they are in the backup (without their HTML preview).
     pub notes: Vec<Value>,
-    /// How many items of every other type were left out (`"SN|File": 34`…), for the summary.
+    /// How many items of every other type were left out (`"SN|File": 12`…), for the summary.
     pub other_items: BTreeMap<String, usize>,
 }
 

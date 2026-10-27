@@ -1,4 +1,4 @@
-# Mèche — instructions pour Claude Code
+# Mèche — instructions pour les agents de développement
 
 **Mèche** est l'application de prise de notes personnelle de Pierre, conçue pour remplacer Standard Notes.
 Signature : les notes éphémères dont on « allume la mèche » et qui explosent à la fin du compte à rebours.
@@ -37,6 +37,7 @@ Rapide, épurée, native sur **Linux, Windows et Android**, synchronisée avec u
 
 ```
 meche/
+├── AGENTS.md
 ├── CLAUDE.md
 ├── README.md
 ├── docs/
@@ -63,14 +64,15 @@ meche/
 8. **Performance** : respecte les budgets de `docs/08-interface.md`. Pas de dépendance lourde sans justification.
 9. **Direction artistique** : aucune couleur en dur dans les composants. Toujours les variables CSS de `docs/11-direction-artistique.md` (jetons d'interface, couleurs de note, thème du code).
 10. **Données personnelles** : ne jamais committer de vraie sauvegarde Standard Notes. Les échantillons de test vont dans `import-samples/` (ignoré par git) ou sont anonymisés dans les fixtures.
-11. **Pull requests** : Claude ouvre une pull request vers `master` sans attendre qu'on la lui demande, dès que c'est judicieux : un lot cohérent, testé et prêt à relire, ou un correctif dont le déploiement a besoin. Il la mène jusqu'à une CI verte, mais ne la fusionne jamais lui-même : Pierre relit et fusionne.
+11. **Pull requests** : l'agent ouvre une pull request vers `master` sans attendre qu'on la lui demande, dès que c'est judicieux : un lot cohérent, testé et prêt à relire, ou un correctif dont le déploiement a besoin. Il la mène jusqu'à une CI verte, mais ne la fusionne jamais lui-même : Pierre relit et fusionne.
 12. **Version** : toute PR qui change l'application livrée (code de `app/`, hors tests et documentation) incrémente la version avec `node scripts/version.mjs x.y.z` : `0.<phase>.<correctif>` avant la V1, `0.N.0` quand la phase N est terminée (`docs/09-build-et-deploiement.md`, « Numéro de version »). La CI vérifie que les cinq endroits où elle est écrite concordent.
+13. **Instructions communes aux agents** : `AGENTS.md` et `CLAUDE.md` doivent rester identiques. Toute modification de l'un doit être reportée systématiquement dans l'autre, dans le même commit. Avant de committer, vérifier leur identité avec `cmp AGENTS.md CLAUDE.md` depuis la racine du dépôt ; aucune sortie et un code de retour 0 confirment qu'ils sont identiques.
 
 ## Commandes usuelles
 
 ```bash
 # Client (depuis app/)
-npm install
+npm ci
 npm run tauri dev                 # desktop en dev
 npm run tauri android dev         # Android (émulateur ou téléphone USB)
 npm run tauri build               # build desktop de la plateforme courante

@@ -1,6 +1,6 @@
 # 09 — Environnement, builds, déploiement et installation
 
-> Pierre n'a jamais développé ni installé d'application mobile hors store. Cette partie doit être accompagnée **pas à pas** par Claude Code au moment de la phase concernée : expliquer chaque commande avant de la lancer et vérifier le résultat avec lui.
+> Pierre n'a jamais développé ni installé d'application mobile hors store. Cette partie doit être accompagnée **pas à pas** par l'agent au moment de la phase concernée : expliquer chaque commande avant de la lancer et vérifier le résultat avec lui.
 
 ## 1. Environnement de développement (Ubuntu 26.10)
 
@@ -34,7 +34,20 @@ Versions minimales (vérifiées en phase 0) :
    rustup target add aarch64-linux-android armv7-linux-androideabi i686-linux-android x86_64-linux-android
    ```
 6. `npm run tauri android init` puis `npm run tauri android dev` (émulateur ou téléphone branché en USB avec le débogage USB activé).
-7. **TLS de la synchro** (relevé en phase 3) : reqwest vérifie les certificats avec `rustls-platform-verifier`, qui doit être initialisé sur Android (appel JNI au démarrage et composant Kotlin ajouté au projet Gradle, voir sa documentation). Sans cela, la première requête HTTPS fait planter l'application. Alternative : sur Android seulement, des racines fournies à reqwest (`tls_certs_only`), en vérifiant leur licence (règle 3).
+7. **TLS de la synchro** (relevé en phase 3, choix confirmé en phase 5) : conserver la vérification des certificats du système par `rustls-platform-verifier`. L'initialiser par JNI avant toute requête HTTPS et ajouter son composant Kotlin au projet Gradle. Sans cela, la première requête HTTPS peut faire planter l'application. La version verrouillée **0.7.1** utilise le composant Android **0.2.0**, désormais distribué par un dépôt Maven hébergé sur GitHub ; suivre la [documentation officielle](https://github.com/rustls/rustls-platform-verifier#android) et les [instructions de migration 0.7.1](https://github.com/rustls/rustls-platform-verifier/releases/tag/v%2F0.7.1).
+
+**Décisions préparatoires validées avec Pierre le 27/10/2026** (mise en œuvre à venir ; aucune installation ni aucun essai Android encore validé avec lui) :
+
+- Suivre les [prérequis officiels Tauri 2](https://v2.tauri.app/start/prerequisites/#android). Le CLI verrouillé est en **2.12.4** ; les versions exactes de Studio, du JDK, du SDK et du NDK seront consignées après l'installation guidée. `NDK_HOME` désignera une version précise, même si plusieurs NDK sont installés.
+- Déclarer directement, pour Android seulement, `rustls-platform-verifier` **0.7.1**, `jni` **0.22.4** et `tauri-plugin-fs` **2.7.1**, déjà présents indirectement dans `Cargo.lock`. Leurs paquets officiels et le composant Android **0.2.0** déclarent **MIT OU Apache-2.0** (règle 3). Aucun ajout npm prévu. Vérifier aussi les dépendances Gradle, que le contrôle actuel des licences npm/Cargo ne couvre pas.
+- Committer les sources et configurations utiles de `app/src-tauri/gen/android` (Kotlin, manifests, ressources, Gradle et wrapper), sans caches, builds, chemins locaux ni fichiers de signature.
+- Développer et signer l'APK définitif **en local**. Prévoir une CI Android qui compile un APK de test signé avec une clé de débogage, sans recevoir la clé définitive de Pierre. `release.yml` reste en phase 6.
+- Import : ouvrir l'URI `content://` choisie via l'API Rust de `tauri-plugin-fs`, sans transmettre de chemin au frontend ni lui donner de permission de lecture. Pour un ZIP dont le fournisseur ne permet pas l'accès aléatoire, prévoir une copie temporaire bornée dans le cache privé, supprimée après usage. La [documentation du sélecteur](https://docs.rs/crate/tauri-plugin-dialog/2.8.3/source/src/lib.rs) recommande le greffon de fichiers pour ces URI.
+- Lire le JSON de manière typée, élément par élément, en ne conservant que les champs utiles des notes et les comptes des autres éléments. Plafond Android initial : **16 Mio**, pour l'archive comme pour le budget cumulé du JSON décompressé ; conserver 64 Mio sur desktop. Une sauvegarde plus grosse sera refusée sur Android ; ne relever ce plafond qu'après mesure de la mémoire.
+- Essais avec des notes inventées, un compte de test et des profils locaux vierges **sur le PC et le téléphone**. Un profil existant ne doit pas être connecté au compte de test : ses notes lui seraient envoyées. Réserver le compte personnel à la vérification finale accompagnée, après les essais et revues.
+- Permission réseau seule ; accès ponctuel au fichier choisi sans permission générale de stockage. Aucune télémétrie. Exclure notes, jeton et fichiers temporaires des sauvegardes automatiques Android vers le cloud, avec les règles adaptées aux versions Android ([documentation Android](https://developer.android.com/identity/data/autobackup)).
+- Pierre génère lui-même la clé de signature définitive sur son PC, hors dépôt, et sauvegarde la clé et ses mots de passe (§ 5). Ne jamais les demander dans la conversation ni les afficher dans un journal. Passer de l'APK de débogage à l'APK définitif pendant que les profils ne contiennent encore que des données de test : leurs signatures différentes peuvent empêcher une mise à jour directe.
+- Distribution retenue pour le moment : **construction du `.apk`, puis installation USB**. Obtainium est différé à une sous-phase dédiée (§ 6), avec explication de son intérêt et décisions de Pierre avant toute configuration.
 
 ## 2. Initialisation du projet
 
@@ -152,19 +165,24 @@ Workflow `release.yml` déclenché par un tag `v*` (ex. `v0.3.0`), qui crée une
 
 ## 6. Installer l'application sur Android sans le Play Store
 
-Deux méthodes :
+### Méthode retenue en phase 5 : câble USB
 
-**A. Obtainium (recommandée, mises à jour automatiques)**
-1. Installer Obtainium sur le téléphone (APK depuis sa page GitHub officielle, ou via F-Droid).
-2. Autoriser Obtainium à installer des applications (Android le demande la première fois : « Installer des applis inconnues »).
-3. Dans Obtainium : « Ajouter une application » → coller l'URL du dépôt GitHub de Mèche.
-4. Obtainium télécharge le dernier `.apk` des Releases et l'installe. Il prévient à chaque nouvelle version.
+Décidé avec Pierre le 27/10/2026 : construire le `.apk`, puis l'installer par USB. Les étapes ci-dessous sont un repère ; chaque commande et chaque réglage seront expliqués avant exécution sur ses appareils, puis vérifiés avec lui.
 
-**B. Câble USB (développement, ou si A est bloqué)**
 1. Activer les options développeur (appuyer 7 fois sur « Numéro de build ») puis le débogage USB.
 2. `adb install -r app-release.apk` depuis le PC.
 
-**Point de vigilance** : Google déploie une vérification d'identité des développeurs, y compris pour les applications installées hors Play Store. Au moment de la phase 5, Claude Code doit **vérifier l'état actuel de cette règle** (calendrier pour la France, compte gratuit « loisir », exception pour `adb`) et adapter la méthode d'installation.
+### Vérification des développeurs Google — état vérifié le 27/10/2026
+
+- Le déploiement du **30 septembre 2026** vise certains stores au Brésil, en Indonésie, à Singapour et en Thaïlande, sur les appareils certifiés Android 7+. La France n'est pas citée ; l'extension mondiale est annoncée pour **2027 et au-delà**, sans date française précise ([calendrier officiel](https://developer.android.com/developer-verification)).
+- Le compte gratuit à diffusion limitée (« loisir ») est disponible pour **20 appareils explicitement autorisés**, sans pièce d'identité. Il demande néanmoins un compte Google, la validation en deux étapes et un profil Google Payments comportant nom légal et adresse ([conditions officielles](https://developer.android.com/developer-verification/guides/limited-distribution)).
+- Les installations par **ADB restent possibles sans enregistrement du développeur**, sans l'attente de 24 h du parcours avancé. Aucun compte développeur Google n'est donc nécessaire pour commencer les essais USB ([FAQ officielle](https://developer.android.com/developer-verification/guides/faq)).
+
+### Sous-phase dédiée, différée : Obtainium
+
+À la demande de Pierre, ne pas installer ni configurer Obtainium pour le moment. Cette sous-phase expliquera son intérêt, les mises à jour et les contraintes de Google, puis recueillera ses décisions. Le [projet officiel](https://github.com/ImranR98/Obtainium) permet notamment de suivre les APK des GitHub Releases ; leur publication automatisée dans Mèche attend `release.yml` en phase 6.
+
+Obtainium n'exempte pas des règles Android d'installation : après extension des contrôles, prévoir un enregistrement adapté ou le parcours avancé pour une application non enregistrée, lequel comporte une attente initiale de 24 h. Refaire le point dans la [FAQ Google](https://developer.android.com/developer-verification/guides/faq) au moment de cette sous-phase. L'installation USB reste la méthode retenue entre-temps.
 
 ## 7. Installer sur les PC
 

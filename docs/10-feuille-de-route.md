@@ -79,18 +79,20 @@ Import réel fait par Pierre dans son application connectée à la production, a
 ## Phase 5 — Android
 - Accompagner Pierre dans l'installation d'Android Studio, SDK, NDK (voir `09-build-et-deploiement.md`).
 - `tauri android init`, adaptation de l'interface mobile (`08-interface.md`) : navigation liste/note, bouton retour, barre d'outils au-dessus du clavier, gestes, safe areas, synchro à la reprise.
-- Génération de la clé de signature, APK signé, installation sur le téléphone de Pierre (USB puis Obtainium).
+- Génération de la clé de signature, APK signé, installation sur le téléphone de Pierre **par USB** (décidé le 27/10/2026). Obtainium est différé à une sous-phase dédiée, après explication de son intérêt et décisions de Pierre.
 - Vérifier la règle Google de vérification des développeurs à ce moment-là.
 - Import Standard Notes sur Android : choisir le fichier par le sélecteur d'Android (adresses `content://`, aujourd'hui refusées avec `backup_location`), et lire la sauvegarde avec moins de mémoire (une sauvegarde de 64 Mo faite de milliers de petites valeurs occupe environ 1 Go une fois lue en `serde_json::Value`) : limite plus basse ou lecture typée qui ignore ce qui n'est pas une note.
 
 **Terminé quand** : l'application tourne sur le téléphone de Pierre, synchronisée avec le PC, et les budgets de performance mobile sont tenus.
+
+**État (préparation, 27/10/2026)** : état des lieux et sources officielles lus, propositions validées par Pierre. Les choix sont consignés dans `09-build-et-deploiement.md`, § 1 « Android » : dépendances Android déjà verrouillées et licences vérifiées, sources de `gen/android` committées à leur initialisation, signature définitive locale, CI de compilation avec signature de débogage, lecture typée de l'import avec plafond Android initial de 16 Mio, profils de test vierges et exclusion des sauvegardes cloud. Ce sont des décisions à mettre en œuvre : environnement de Pierre, code Android, tests, deux tours de revues indépendantes, installation de l'APK signé et budgets sur téléphone restent à faire. Version maintenue à 0.4.0 pour cette préparation documentaire ; 0.4.x pendant les changements applicatifs, puis 0.5.0 seulement quand la phase sera validée avec Pierre.
 
 ## Phase 6 — Windows et releases automatisées
 - Workflow `release.yml` (Linux, Windows, Android) sur tag `v*`.
 - `tauri-plugin-updater` + clés de signature + `latest.json`.
 - Test d'installation et de mise à jour sur Windows et Ubuntu.
 - Déjà fait en phase 3 : `windows-build.yml` construit l'installateur NSIS à la demande ; il s'installe, se lance et synchronise (25/10/2026). Restent à vérifier sous Windows : polices, affichage, raccourcis ; et à décider : langue de l'installateur (anglais par défaut), `.msi` ou NSIS seul.
-- Obtainium configuré sur le téléphone.
+- Sous-phase dédiée **Obtainium**, différée : expliquer son intérêt et les possibilités de mise à jour à Pierre, refaire le point sur les règles Google, puis recueillir ses décisions avant toute installation ou configuration. La méthode retenue entre-temps est l'APK installé par USB.
 
 **Terminé quand** : pousser un tag `v1.0.0` produit les trois installeurs, et les appareils existants se mettent à jour.
 
